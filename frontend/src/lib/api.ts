@@ -65,8 +65,16 @@ export const api = {
   qualifications: () => req("/qualifications/"),
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
+  parties: () => req("/parties/"),
+  certificates: () => req("/certificates/"),
+  rules: (params = "") => req(`/origin-rules/${params}`),
   qualify: (productId: number, treatyId: number) =>
     req(`/products/${productId}/qualify/`, {
+      method: "POST",
+      body: JSON.stringify({ treaty: treatyId }),
+    }),
+  solicit: (productId: number, treatyId: number) =>
+    req(`/products/${productId}/solicit/`, {
       method: "POST",
       body: JSON.stringify({ treaty: treatyId }),
     }),
@@ -78,6 +86,7 @@ export const api = {
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),
+  masterUsers: () => req("/master/users/"),
   masterCreateTenant: (payload: Record<string, unknown>) =>
     req("/master/tenants/", { method: "POST", body: JSON.stringify(payload) }),
   masterDeleteTenant: (id: number) =>
