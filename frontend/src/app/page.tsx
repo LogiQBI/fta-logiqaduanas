@@ -126,42 +126,33 @@ const NAVY = "#0E3A5F";
 const CYAN = "#2CA6CB";
 
 function LogoMark({ size = 34 }: { size?: number }) {
+  // Símbolo LogiQ Aduanas: dos cuadrados redondeados superpuestos (navy atrás-izq,
+  // cyan adelante-der) con un canal blanco interior formando la "G/espiral".
   return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-label="LogiQ Aduanas">
-      <rect x="2" y="13" width="22" height="22" rx="4" fill={NAVY} />
-      <rect x="9" y="5" width="22" height="22" rx="4" fill={CYAN} />
-      <rect x="15.5" y="11.5" width="11" height="11" rx="2" fill="#fff" />
-      <rect x="15.5" y="27.5" width="7" height="6.5" rx="1.5" fill={NAVY} />
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-label="LogiQ Aduanas">
+      {/* cuadrado navy (atrás, izquierda-abajo) */}
+      <rect x="12" y="34" width="50" height="50" rx="9" fill={NAVY} />
+      {/* cuadrado cyan (adelante, arriba-derecha) */}
+      <rect x="40" y="16" width="50" height="50" rx="9" fill={CYAN} />
+      {/* campo blanco interior (el hueco de la G) */}
+      <rect x="33" y="27" width="33" height="33" rx="3" fill="#fff" />
+      {/* pestaña cyan que entra al hueco */}
+      <rect x="54" y="47" width="12" height="13" fill={CYAN} />
+      {/* barra navy inferior que asoma */}
+      <rect x="33" y="66" width="33" height="11" rx="2" fill={NAVY} />
     </svg>
   );
 }
 
-function BrandFallback({ big }: { big?: boolean }) {
-  // Recreación en SVG mientras no esté el archivo oficial en /public/logo-logiq.png
-  return (
-    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5")}>
-      <LogoMark size={big ? 48 : 34} />
-      <div className={cx("font-extrabold leading-none tracking-tight", big ? "text-xl" : "text-[15px]")}>
-        <div style={{ color: NAVY }}>LOGIQ</div>
-        <div style={{ color: CYAN }} className={big ? "text-lg" : "text-[13px]"}>ADUANAS</div>
-      </div>
-    </div>
-  );
-}
-
 function Logo({ center, big }: { center?: boolean; big?: boolean }) {
-  const [imgError, setImgError] = useState(false);
   return (
     <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5", center && "justify-center")}>
-      {imgError ? (
-        <BrandFallback big={big} />
-      ) : (
-        // Usa el archivo oficial si existe en /public/logo-logiq.png (o .svg)
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src="/logo-logiq.png" alt="LogiQ Aduanas" onError={() => setImgError(true)}
-          className={cx("w-auto object-contain", big ? "h-12" : "h-8")} />
-      )}
-      <div className={cx("mx-1 w-px bg-zinc-300", big ? "h-9" : "h-7")} />
+      <LogoMark size={big ? 50 : 36} />
+      <div className={cx("font-extrabold leading-none tracking-tight", big ? "text-2xl" : "text-base")}>
+        <div style={{ color: NAVY }}>LOGIQ</div>
+        <div style={{ color: CYAN }} className={big ? "text-xl" : "text-sm"}>ADUANAS</div>
+      </div>
+      <div className={cx("mx-1 w-px bg-zinc-300", big ? "h-10" : "h-7")} />
       <div className={cx("font-semibold text-zinc-500", big ? "text-2xl" : "text-lg")}>FTA</div>
     </div>
   );
