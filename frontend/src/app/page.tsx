@@ -61,8 +61,21 @@ function Login({ onLogin }: { onLogin: () => void }) {
 
   const adminMode = mode === "admin";
   return (
-    <main className="flex min-h-screen flex-1 items-center justify-center bg-[#f5f6f8]">
-      <div className="w-full max-w-sm">
+    <main className="relative flex min-h-screen flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-[#e9f3f8] via-white to-[#eef2f6]">
+      {/* Fondo animado (colores LogiQ) */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="fta-blob anim-blob absolute -left-24 -top-24 h-[28rem] w-[28rem]"
+          style={{ background: CYAN, opacity: 0.3 }} />
+        <div className="fta-blob anim-blob-rev absolute -bottom-32 -right-24 h-[34rem] w-[34rem]"
+          style={{ background: NAVY, opacity: 0.26 }} />
+        <div className="fta-blob anim-blob absolute left-1/3 top-1/2 h-80 w-80"
+          style={{ background: CYAN, opacity: 0.18, animationDelay: "-6s" }} />
+        <div className="anim-float absolute left-[12%] top-[20%]" style={{ opacity: 0.18 }}><LogoMark size={60} /></div>
+        <div className="anim-float absolute right-[14%] top-[28%]" style={{ opacity: 0.14, animationDelay: "-3s" }}><LogoMark size={40} /></div>
+        <div className="anim-float absolute bottom-[16%] right-[24%]" style={{ opacity: 0.14, animationDelay: "-5s" }}><LogoMark size={50} /></div>
+        <div className="anim-float absolute bottom-[22%] left-[20%]" style={{ opacity: 0.12, animationDelay: "-2s" }}><LogoMark size={34} /></div>
+      </div>
+      <div className="relative z-10 w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo center big />
           <p className="mt-3 text-sm text-zinc-500">Sistema de gestión de origen</p>

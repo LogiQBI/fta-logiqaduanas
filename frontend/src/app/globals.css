@@ -24,3 +24,32 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---- Fondo animado de la pantalla de acceso (colores LogiQ) ---- */
+@keyframes fta-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(40px, -30px) scale(1.12); }
+  66%      { transform: translate(-30px, 25px) scale(0.92); }
+}
+@keyframes fta-blob-rev {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-45px, 30px) scale(0.9); }
+  66%      { transform: translate(35px, -25px) scale(1.15); }
+}
+@keyframes fta-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-26px) rotate(8deg); }
+}
+@keyframes fta-grid-pan {
+  0%   { background-position: 0 0; }
+  100% { background-position: 60px 60px; }
+}
+.fta-blob { will-change: transform; filter: blur(60px); border-radius: 9999px; }
+.anim-blob     { animation: fta-blob 16s ease-in-out infinite; }
+.anim-blob-rev { animation: fta-blob-rev 20s ease-in-out infinite; }
+.anim-float    { animation: fta-float 9s ease-in-out infinite; }
+.anim-grid     { animation: fta-grid-pan 8s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-blob, .anim-blob-rev, .anim-float, .anim-grid { animation: none; }
+}
