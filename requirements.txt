@@ -3,7 +3,11 @@ Django==5.2.14
 django-cors-headers==4.9.0
 django-environ==0.13.0
 djangorestframework==3.17.1
+gunicorn==26.0.0
+packaging==26.2
 psycopg==3.3.4
 psycopg-binary==3.3.4
+pypdf==6.12.2
 sqlparse==0.5.5
 typing_extensions==4.15.0
+whitenoise==6.12.0
