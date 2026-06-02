@@ -12,5 +12,10 @@ __pycache__/
 dist/
 build/
 
+# Django
+*.sqlite3
+media/
+staticfiles/
+
 # Sistema
 .DS_Store
