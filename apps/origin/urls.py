@@ -1,3 +1,5 @@
+from django.urls import path
+from rest_framework.authtoken.views import obtain_auth_token
 from rest_framework.routers import DefaultRouter
 
 from apps.origin import views
@@ -13,4 +15,6 @@ router.register("qualifications", views.QualificationViewSet)
 router.register("certificates", views.CertificateViewSet)
 router.register("solicitations", views.SolicitationRequestViewSet)
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("login/", obtain_auth_token, name="api-login"),
+] + router.urls
