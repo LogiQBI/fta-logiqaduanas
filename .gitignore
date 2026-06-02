@@ -1,0 +1,16 @@
+# Dependencias
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Secretos (NUNCA subir)
+.env
+.env.local
+
+# Builds
+dist/
+build/
+
+# Sistema
+.DS_Store
