@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from apps.tenants.models import Membership, Tenant
+from apps.tenants.models import License, Membership, Tenant
+
+
+@admin.register(License)
+class LicenseAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "plan", "status", "valid_until", "max_users", "max_products")
+    list_filter = ("plan", "status")
+    search_fields = ("tenant__name",)
 
 
 @admin.register(Tenant)

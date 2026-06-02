@@ -75,4 +75,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // --- Master (LogiQ) ---
+  masterTenants: () => req("/master/tenants/"),
+  masterCreateTenant: (payload: Record<string, unknown>) =>
+    req("/master/tenants/", { method: "POST", body: JSON.stringify(payload) }),
+  masterDeleteTenant: (id: number) =>
+    req(`/master/tenants/${id}/`, { method: "DELETE" }),
+  masterSetLicense: (id: number, payload: Record<string, unknown>) =>
+    req(`/master/tenants/${id}/license/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  masterCreateUser: (payload: Record<string, unknown>) =>
+    req("/master/users/", { method: "POST", body: JSON.stringify(payload) }),
+};
+
+export type MasterTenant = {
+  id: number; name: string; rfc: string; slug: string; user_count: number;
+  license: { plan_display: string; status: string; status_display: string;
+             valid_until: string | null } | null;
 };

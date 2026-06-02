@@ -3,11 +3,13 @@
 - Usuarios de empresa (admin/analyst/auditor): ven todo lo de su tenant.
 - Usuarios proveedor (role=supplier): ven SOLO los registros de su propia Party.
 """
+from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from rest_framework import status, viewsets
+from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
@@ -195,18 +197,50 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         return Response(s.SolicitationRequestSerializer(sr).data)
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def login_view(request):
+    """Login con token. Bloquea a usuarios cuya empresa no tenga licencia válida."""
+    user = authenticate(
+        username=request.data.get("username"),
+        password=request.data.get("password"),
+    )
+    if not user:
+        return Response({"error": "Usuario o contraseña incorrectos."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if not user.is_superuser:
+        m = user.memberships.select_related("tenant").first()
+        lic = getattr(m.tenant, "license", None) if m else None
+        if lic and not lic.is_valid:
+            return Response(
+                {"error": f"La licencia de {m.tenant.name} está "
+                          f"{lic.get_status_display().lower()}. Contacta a LogiQ."},
+                status=status.HTTP_403_FORBIDDEN)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({"token": token.key})
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """Identidad del usuario: rol, empresa (tenant) y, si es proveedor, su Party."""
+    """Identidad del usuario: master, empresa o proveedor."""
+    # El equipo de LogiQ (superusuario) es el perfil MASTER del SaaS.
+    if request.user.is_superuser:
+        return Response({
+            "username": request.user.username,
+            "role": "master", "role_display": "Master (LogiQ)",
+            "is_master": True, "is_supplier": False,
+            "tenant": None, "supplier": None,
+        })
     m = request.user.memberships.select_related("tenant", "party").first()
     if not m:
         return Response({"username": request.user.username, "role": None,
-                         "tenant": None, "supplier": None})
+                         "is_master": False, "tenant": None, "supplier": None})
     return Response({
         "username": request.user.username,
         "role": m.role,
         "role_display": m.get_role_display(),
+        "is_master": False,
         "is_supplier": m.is_supplier,
         "tenant": {"id": m.tenant_id, "name": m.tenant.name},
         "supplier": ({"id": m.party_id, "name": m.party.name} if m.party_id else None),

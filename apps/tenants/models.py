@@ -22,11 +22,51 @@ class Tenant(TimeStampedModel):
     is_active = models.BooleanField("Activo", default=True)
 
     class Meta:
+        ordering = ["name"]
         verbose_name = "Empresa (tenant)"
         verbose_name_plural = "Empresas (tenants)"
 
     def __str__(self):
         return self.name
+
+
+class License(TimeStampedModel):
+    """Licencia del SaaS por empresa. La gestiona el equipo master de LogiQ."""
+
+    class Plan(models.TextChoices):
+        TRIAL = "trial", "Prueba"
+        BASIC = "basic", "Básico"
+        PRO = "pro", "Pro"
+        ENTERPRISE = "enterprise", "Enterprise"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Activa"
+        SUSPENDED = "suspended", "Suspendida"
+        EXPIRED = "expired", "Vencida"
+
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="license")
+    plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.TRIAL)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    valid_until = models.DateField("Vigente hasta", null=True, blank=True)
+    max_users = models.PositiveIntegerField("Máx. usuarios", default=5)
+    max_products = models.PositiveIntegerField("Máx. productos", default=100)
+
+    class Meta:
+        verbose_name = "Licencia"
+        verbose_name_plural = "Licencias"
+
+    @property
+    def is_valid(self):
+        """¿La licencia permite el acceso ahora?"""
+        from django.utils import timezone
+        if self.status != self.Status.ACTIVE:
+            return False
+        if self.valid_until and self.valid_until < timezone.localdate():
+            return False
+        return True
+
+    def __str__(self):
+        return f"{self.tenant.name} · {self.get_plan_display()} ({self.get_status_display()})"
 
 
 class TenantOwnedModel(TimeStampedModel):

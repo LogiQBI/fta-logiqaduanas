@@ -7,6 +7,7 @@ from django.urls import include, path
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.origin.urls")),
+    path("api/master/", include("apps.tenants.urls")),
     path("api-auth/", include("rest_framework.urls")),
     path("", include("apps.catalog.urls")),  # portal público de proveedores
 ]

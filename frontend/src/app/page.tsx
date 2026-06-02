@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  api, clearToken, getToken, Me, Product, Qualification, Solicitation, Treaty,
+  api, clearToken, getToken, MasterTenant, Me, Product, Qualification,
+  Solicitation, Treaty,
 } from "@/lib/api";
 
 export default function Home() {
@@ -29,6 +30,7 @@ export default function Home() {
   if (!me) return <Login onLogin={loadMe} />;
 
   const logout = () => { clearToken(); setMe(null); };
+  if (me.role === "master") return <MasterView me={me} onLogout={logout} />;
   return me.is_supplier
     ? <SupplierView me={me} onLogout={logout} />
     : <CompanyView me={me} onLogout={logout} />;
@@ -88,7 +90,11 @@ function Header({ me, onLogout, subtitle }: { me: Me; onLogout: () => void; subt
         <div className="text-right text-sm">
           <div className="font-medium text-zinc-800 dark:text-zinc-200">{me.username}</div>
           <div className="text-zinc-500">
-            {me.is_supplier ? `Proveedor · ${me.supplier?.name}` : `${me.role_display} · ${me.tenant?.name}`}
+            {me.is_supplier
+              ? `Proveedor · ${me.supplier?.name}`
+              : me.role === "master"
+                ? me.role_display
+                : `${me.role_display} · ${me.tenant?.name}`}
           </div>
         </div>
         <button onClick={onLogout}
@@ -290,5 +296,157 @@ function SolicitationCard({ sr, product, treaty, onDone }: {
         </div>
       )}
     </div>
+  );
+}
+
+/* ---------------- Vista MASTER (LogiQ) ---------------- */
+function MasterView({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  const [tenants, setTenants] = useState<MasterTenant[]>([]);
+  const [msg, setMsg] = useState("");
+  // nueva empresa
+  const [name, setName] = useState("");
+  const [rfc, setRfc] = useState("");
+  // nuevo usuario
+  const [uName, setUName] = useState("");
+  const [uPass, setUPass] = useState("");
+  const [uTenant, setUTenant] = useState<number | "">("");
+  const [uRole, setURole] = useState("admin");
+
+  async function load() {
+    setTenants((await api.masterTenants()).results);
+  }
+  useEffect(() => { load().catch((e) => setMsg(e.message)); }, []);
+
+  async function createTenant() {
+    if (!name) return;
+    setMsg("");
+    try { await api.masterCreateTenant({ name, rfc }); setName(""); setRfc(""); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function toggleLicense(t: MasterTenant) {
+    const next = t.license?.status === "active" ? "suspended" : "active";
+    try { await api.masterSetLicense(t.id, { status: next }); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function setPlan(t: MasterTenant, plan: string) {
+    try { await api.masterSetLicense(t.id, { plan }); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function deleteTenant(t: MasterTenant) {
+    if (!confirm(`¿Eliminar la empresa "${t.name}" y todos sus datos?`)) return;
+    try { await api.masterDeleteTenant(t.id); await load(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function createUser() {
+    if (!uName || !uTenant) { setMsg("Usuario y empresa son obligatorios."); return; }
+    setMsg("");
+    try {
+      await api.masterCreateUser({ username: uName, password: uPass, tenant: uTenant, role: uRole });
+      setUName(""); setUPass(""); await load();
+      setMsg(`Usuario "${uName}" creado.`);
+    } catch (e) { setMsg((e as Error).message); }
+  }
+
+  const statusPill = (s?: string) =>
+    s === "active" ? "bg-green-100 text-green-700"
+      : s === "suspended" ? "bg-red-100 text-red-700" : "bg-zinc-200 text-zinc-700";
+
+  return (
+    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">
+      <Header me={me} onLogout={onLogout} subtitle="Panel Master (LogiQ) — empresas, licencias y usuarios" />
+      {msg && <p className="mb-4 text-sm text-amber-600">{msg}</p>}
+
+      {/* Empresas */}
+      <h2 className="mb-3 text-lg font-semibold text-zinc-800 dark:text-zinc-200">Empresas</h2>
+      <div className="mb-8 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-zinc-500 dark:bg-zinc-900">
+            <tr>
+              <th className="px-4 py-3 font-medium">Empresa</th>
+              <th className="px-4 py-3 font-medium">RFC</th>
+              <th className="px-4 py-3 font-medium">Usuarios</th>
+              <th className="px-4 py-3 font-medium">Plan</th>
+              <th className="px-4 py-3 font-medium">Licencia</th>
+              <th className="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {tenants.map((t) => (
+              <tr key={t.id} className="bg-white dark:bg-zinc-950">
+                <td className="px-4 py-3 font-medium">{t.name}</td>
+                <td className="px-4 py-3 font-mono text-xs">{t.rfc || "—"}</td>
+                <td className="px-4 py-3">{t.user_count}</td>
+                <td className="px-4 py-3">
+                  <select value="" onChange={(e) => setPlan(t, e.target.value)}
+                    className="rounded border border-zinc-300 px-1 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                    <option value="">{t.license?.plan_display ?? "—"}</option>
+                    <option value="trial">Prueba</option>
+                    <option value="basic">Básico</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusPill(t.license?.status)}`}>
+                    {t.license?.status_display ?? "—"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => toggleLicense(t)}
+                    className="mr-2 rounded-lg border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700">
+                    {t.license?.status === "active" ? "Suspender" : "Activar"}
+                  </button>
+                  <button onClick={() => deleteTenant(t)}
+                    className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+                    Eliminar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Crear empresa + crear usuario */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+          <h3 className="mb-3 font-semibold text-zinc-800 dark:text-zinc-200">Nueva empresa</h3>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Razón social"
+            className="mb-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800" />
+          <input value={rfc} onChange={(e) => setRfc(e.target.value)} placeholder="RFC (opcional)"
+            className="mb-3 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800" />
+          <button onClick={createTenant}
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900">
+            Crear empresa
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+          <h3 className="mb-3 font-semibold text-zinc-800 dark:text-zinc-200">Nuevo usuario</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={uName} onChange={(e) => setUName(e.target.value)} placeholder="Usuario"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800" />
+            <input value={uPass} onChange={(e) => setUPass(e.target.value)} placeholder="Contraseña" type="text"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800" />
+            <select value={uTenant} onChange={(e) => setUTenant(Number(e.target.value))}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
+              <option value="">— Empresa —</option>
+              {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <select value={uRole} onChange={(e) => setURole(e.target.value)}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
+              <option value="admin">Administrador</option>
+              <option value="analyst">Analista</option>
+              <option value="auditor">Auditor</option>
+            </select>
+          </div>
+          <button onClick={createUser}
+            className="mt-3 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900">
+            Crear usuario
+          </button>
+          <p className="mt-2 text-xs text-zinc-500">Para usuarios proveedor, asígnalos desde el admin (necesitan vincularse a una Party).</p>
+        </div>
+      </div>
+    </main>
   );
 }
