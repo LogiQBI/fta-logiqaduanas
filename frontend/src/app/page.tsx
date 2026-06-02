@@ -123,15 +123,31 @@ function LogoMark({ size = 34 }: { size?: number }) {
   );
 }
 
-function Logo({ center, big }: { center?: boolean; big?: boolean }) {
-  const mark = big ? 48 : 34;
+function BrandFallback({ big }: { big?: boolean }) {
+  // Recreación en SVG mientras no esté el archivo oficial en /public/logo-logiq.png
   return (
-    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5", center && "justify-center")}>
-      <LogoMark size={mark} />
+    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5")}>
+      <LogoMark size={big ? 48 : 34} />
       <div className={cx("font-extrabold leading-none tracking-tight", big ? "text-xl" : "text-[15px]")}>
         <div style={{ color: NAVY }}>LOGIQ</div>
         <div style={{ color: CYAN }} className={big ? "text-lg" : "text-[13px]"}>ADUANAS</div>
       </div>
+    </div>
+  );
+}
+
+function Logo({ center, big }: { center?: boolean; big?: boolean }) {
+  const [imgError, setImgError] = useState(false);
+  return (
+    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5", center && "justify-center")}>
+      {imgError ? (
+        <BrandFallback big={big} />
+      ) : (
+        // Usa el archivo oficial si existe en /public/logo-logiq.png (o .svg)
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src="/logo-logiq.png" alt="LogiQ Aduanas" onError={() => setImgError(true)}
+          className={cx("w-auto object-contain", big ? "h-12" : "h-8")} />
+      )}
       <div className={cx("mx-1 w-px bg-zinc-300", big ? "h-9" : "h-7")} />
       <div className={cx("font-semibold text-zinc-500", big ? "text-2xl" : "text-lg")}>FTA</div>
     </div>
