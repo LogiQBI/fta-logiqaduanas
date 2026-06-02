@@ -29,15 +29,37 @@ export default function Page() {
 }
 
 /* ============ Login ============ */
+type LoginMode = "empresa" | "proveedor" | "admin";
+
 function Login({ onLogin }: { onLogin: () => void }) {
+  const [mode, setMode] = useState<LoginMode>("empresa");
   const [u, setU] = useState(""); const [p, setP] = useState("");
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
+
+  function validate(me: Me): string | null {
+    if (mode === "admin")
+      return me.role === "master" ? null : "Esta cuenta no tiene acceso de administrador.";
+    if (mode === "proveedor")
+      return me.is_supplier ? null : "Esta cuenta no es de proveedor. Cambia a la pestaña Empresa.";
+    // empresa
+    if (me.role === "master") return "Usa “Acceso de administrador” para entrar como LogiQ.";
+    if (me.is_supplier) return "Esta cuenta es de proveedor. Cambia a la pestaña Proveedor.";
+    return null;
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setError(""); setLoading(true);
-    try { await api.login(u, p); onLogin(); }
-    catch (err) { setError((err as Error).message); }
+    try {
+      await api.login(u, p);
+      const me = await api.me();
+      const problem = validate(me);
+      if (problem) { clearToken(); setError(problem); return; }
+      onLogin();
+    } catch (err) { setError((err as Error).message); }
     finally { setLoading(false); }
   }
+
+  const adminMode = mode === "admin";
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-[#f5f6f8]">
       <div className="w-full max-w-sm">
@@ -46,17 +68,42 @@ function Login({ onLogin }: { onLogin: () => void }) {
           <p className="mt-3 text-sm text-zinc-500">Sistema de gestión de origen</p>
         </div>
         <form onSubmit={submit} className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-          <h2 className="mb-5 text-center text-lg font-semibold text-zinc-800">Iniciar sesión</h2>
+          {adminMode ? (
+            <div className="mb-5 flex items-center justify-between rounded-lg bg-zinc-900 px-3 py-2 text-white">
+              <span className="text-sm font-medium">Acceso de administrador (LogiQ)</span>
+              <button type="button" onClick={() => { setMode("empresa"); setError(""); }}
+                className="text-xs text-zinc-300 hover:text-white">← Volver</button>
+            </div>
+          ) : (
+            <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1">
+              {(["empresa", "proveedor"] as const).map((m) => (
+                <button key={m} type="button" onClick={() => { setMode(m); setError(""); }}
+                  className={cx("rounded-md py-2 text-sm font-medium capitalize transition",
+                    mode === m ? "bg-white text-blue-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
           <input value={u} onChange={(e) => setU(e.target.value)} placeholder="Usuario" autoFocus
             className="mb-3 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
           <input type="password" value={p} onChange={(e) => setP(e.target.value)} placeholder="Contraseña"
             className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
           {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
           <button disabled={loading}
-            className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-            {loading ? "Entrando…" : "Entrar"}
+            className={cx("w-full rounded-lg py-2.5 text-sm font-medium text-white disabled:opacity-50",
+              adminMode ? "bg-zinc-900 hover:bg-zinc-800" : "bg-blue-600 hover:bg-blue-700")}>
+            {loading ? "Entrando…" : adminMode ? "Entrar como administrador" : "Entrar"}
           </button>
         </form>
+        {!adminMode && (
+          <div className="mt-4 text-center">
+            <button onClick={() => { setMode("admin"); setError(""); }}
+              className="text-xs text-zinc-400 hover:text-zinc-600 hover:underline">
+              Acceso de administrador
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );
