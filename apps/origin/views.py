@@ -1,4 +1,5 @@
 """API REST. ViewSets filtrados por los tenants del usuario (aislamiento)."""
+from django.core.exceptions import ValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -9,7 +10,9 @@ from apps.catalog.models import (
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin.models import Certificate, Qualification
-from apps.origin.services import qualify_and_save
+from apps.origin.services import (
+    certificate_elements, issue_certificate, qualify_and_save,
+)
 from apps.treaties.models import OriginRule, Treaty
 
 
@@ -94,10 +97,38 @@ class QualificationViewSet(TenantScopedViewSet):
     queryset = Qualification.objects.select_related("product", "treaty").all()
     serializer_class = s.QualificationSerializer
 
+    @action(detail=True, methods=["post"])
+    def issue_certificate(self, request, pk=None):
+        """Emite un certificado de origen para esta calificación.
+        Body: {certifier_type, certifier_data, exporter_data?, producer_data?,
+        importer_data?, blanket_from?, blanket_to?}."""
+        qualification = self.get_object()
+        d = request.data
+        try:
+            cert = issue_certificate(
+                qualification,
+                certifier_type=d.get("certifier_type", "exporter"),
+                certifier_data=d.get("certifier_data"),
+                exporter_data=d.get("exporter_data"),
+                producer_data=d.get("producer_data"),
+                importer_data=d.get("importer_data"),
+                blanket_from=d.get("blanket_from"),
+                blanket_to=d.get("blanket_to"),
+                user=request.user,
+            )
+        except ValidationError as e:
+            return Response({"error": e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(s.CertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
+
 
 class CertificateViewSet(TenantScopedViewSet):
-    queryset = Certificate.objects.all()
+    queryset = Certificate.objects.select_related("qualification__product").all()
     serializer_class = s.CertificateSerializer
+
+    @action(detail=True, methods=["get"])
+    def elements(self, request, pk=None):
+        """Devuelve los 9 elementos mínimos del T-MEC para impresión."""
+        return Response(certificate_elements(self.get_object()))
 
 
 class SolicitationRequestViewSet(TenantScopedViewSet):
