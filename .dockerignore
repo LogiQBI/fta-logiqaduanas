@@ -1,0 +1,11 @@
+# No copiar al backend: entorno local, frontend, build artifacts.
+venv/
+frontend/
+staticfiles/
+media/
+__pycache__/
+*.pyc
+.git/
+.env
+.env.local
+db.sqlite3
