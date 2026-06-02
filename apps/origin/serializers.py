@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from apps.catalog.models import BOMComponent, Party, Product, SupplierDeclaration
+from apps.catalog.models import (
+    BOMComponent, Party, Product, SolicitationRequest, SupplierDeclaration,
+)
 from apps.origin.models import Certificate, Qualification
 from apps.treaties.models import OriginRule, Treaty
 
@@ -52,4 +54,13 @@ class QualificationSerializer(serializers.ModelSerializer):
 class CertificateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Certificate
+        fields = "__all__"
+
+
+class SolicitationRequestSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    portal_path = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = SolicitationRequest
         fields = "__all__"

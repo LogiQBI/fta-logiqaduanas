@@ -1,6 +1,8 @@
 from django.contrib import admin
 
-from apps.catalog.models import BOMComponent, Party, Product, SupplierDeclaration
+from apps.catalog.models import (
+    BOMComponent, Party, Product, SolicitationRequest, SupplierDeclaration,
+)
 
 
 class BOMComponentInline(admin.TabularInline):
@@ -32,3 +34,12 @@ class SupplierDeclarationAdmin(admin.ModelAdmin):
                     "country_of_origin", "valid_from", "valid_to")
     list_filter = ("treaty", "is_originating", "tenant")
     search_fields = ("product__sku", "supplier__name")
+
+
+@admin.register(SolicitationRequest)
+class SolicitationRequestAdmin(admin.ModelAdmin):
+    list_display = ("product", "supplier", "treaty", "status", "due_date",
+                    "responded_at", "tenant")
+    list_filter = ("status", "treaty", "tenant")
+    search_fields = ("product__sku", "supplier__name")
+    readonly_fields = ("token", "sent_at", "responded_at")

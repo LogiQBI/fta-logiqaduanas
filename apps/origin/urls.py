@@ -11,5 +11,6 @@ router.register("bom-components", views.BOMComponentViewSet)
 router.register("supplier-declarations", views.SupplierDeclarationViewSet)
 router.register("qualifications", views.QualificationViewSet)
 router.register("certificates", views.CertificateViewSet)
+router.register("solicitations", views.SolicitationRequestViewSet)
 
 urlpatterns = router.urls

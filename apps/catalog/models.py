@@ -95,3 +95,44 @@ class SupplierDeclaration(TenantOwnedModel):
     def __str__(self):
         estado = "originario" if self.is_originating else "no originario"
         return f"{self.product.sku} / {self.treaty.code}: {estado}"
+
+
+def _new_token():
+    import secrets
+    return secrets.token_urlsafe(32)
+
+
+class SolicitationRequest(TenantOwnedModel):
+    """Solicitud que la empresa envía a un proveedor para que declare el origen
+    de un material, por tratado. El proveedor responde en un portal tokenizado
+    (sin necesidad de cuenta). Al responder se crea la SupplierDeclaration."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendiente de enviar"
+        SENT = "sent", "Enviada al proveedor"
+        RESPONDED = "responded", "Respondida"
+        EXPIRED = "expired", "Vencida"
+
+    supplier = models.ForeignKey(Party, on_delete=models.CASCADE, related_name="solicitations",
+                                 limit_choices_to={"kind": Party.Kind.SUPPLIER})
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="solicitations")
+    treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE, related_name="solicitations")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    token = models.CharField(max_length=64, unique=True, default=_new_token, editable=False)
+    due_date = models.DateField("Fecha límite", null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    declaration = models.ForeignKey(SupplierDeclaration, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="solicitation")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Solicitud a proveedor"
+        verbose_name_plural = "Solicitudes a proveedor"
+
+    def __str__(self):
+        return f"Solicitud {self.product.sku} → {self.supplier.name} ({self.get_status_display()})"
+
+    @property
+    def portal_path(self):
+        return f"/portal/{self.token}/"

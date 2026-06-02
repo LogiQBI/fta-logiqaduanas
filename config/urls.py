@@ -8,6 +8,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.origin.urls")),
     path("api-auth/", include("rest_framework.urls")),
+    path("", include("apps.catalog.urls")),  # portal público de proveedores
 ]
 
 if settings.DEBUG:

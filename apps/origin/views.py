@@ -3,7 +3,10 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.catalog.models import BOMComponent, Party, Product, SupplierDeclaration
+from apps.catalog.models import (
+    BOMComponent, Party, Product, SolicitationRequest, SupplierDeclaration,
+)
+from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin.models import Certificate, Qualification
 from apps.origin.services import qualify_and_save
@@ -56,6 +59,26 @@ class ProductViewSet(TenantScopedViewSet):
         qualification = qualify_and_save(product, treaty, user=request.user)
         return Response(s.QualificationSerializer(qualification).data)
 
+    @action(detail=True, methods=["post"])
+    def solicit(self, request, pk=None):
+        """Genera solicitudes de origen a los proveedores del BOM para un tratado:
+        POST {"treaty": <id>}."""
+        product = self.get_object()
+        treaty_id = request.data.get("treaty")
+        if not treaty_id:
+            return Response({"error": "Falta 'treaty' (id del tratado)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            treaty = Treaty.objects.get(pk=treaty_id)
+        except Treaty.DoesNotExist:
+            return Response({"error": "Tratado no encontrado."},
+                            status=status.HTTP_404_NOT_FOUND)
+        created = generate_solicitations(product, treaty)
+        return Response({
+            "creadas": len(created),
+            "solicitudes": s.SolicitationRequestSerializer(created, many=True).data,
+        })
+
 
 class BOMComponentViewSet(TenantScopedViewSet):
     queryset = BOMComponent.objects.all()
@@ -75,3 +98,9 @@ class QualificationViewSet(TenantScopedViewSet):
 class CertificateViewSet(TenantScopedViewSet):
     queryset = Certificate.objects.all()
     serializer_class = s.CertificateSerializer
+
+
+class SolicitationRequestViewSet(TenantScopedViewSet):
+    queryset = SolicitationRequest.objects.select_related(
+        "product", "supplier", "treaty").all()
+    serializer_class = s.SolicitationRequestSerializer
