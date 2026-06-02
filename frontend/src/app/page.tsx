@@ -41,9 +41,9 @@ function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-[#f5f6f8]">
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <Logo center />
-          <p className="mt-2 text-sm text-zinc-500">Sistema de gestión de origen</p>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <Logo center big />
+          <p className="mt-3 text-sm text-zinc-500">Sistema de gestión de origen</p>
         </div>
         <form onSubmit={submit} className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           <h2 className="mb-5 text-center text-lg font-semibold text-zinc-800">Iniciar sesión</h2>
@@ -62,14 +62,31 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function Logo({ center }: { center?: boolean }) {
+const NAVY = "#0E3A5F";
+const CYAN = "#2CA6CB";
+
+function LogoMark({ size = 34 }: { size?: number }) {
   return (
-    <div className={cx("flex items-center gap-2", center && "justify-center")}>
-      <div className="grid h-9 w-9 place-items-center rounded-lg bg-blue-600 font-bold text-white">FT</div>
-      <div className="leading-tight">
-        <div className="text-sm font-bold tracking-tight text-zinc-900">LogiQ Aduanas</div>
-        <div className="text-[11px] font-medium text-blue-600">FTA · Origen</div>
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-label="LogiQ Aduanas">
+      <rect x="2" y="13" width="22" height="22" rx="4" fill={NAVY} />
+      <rect x="9" y="5" width="22" height="22" rx="4" fill={CYAN} />
+      <rect x="15.5" y="11.5" width="11" height="11" rx="2" fill="#fff" />
+      <rect x="15.5" y="27.5" width="7" height="6.5" rx="1.5" fill={NAVY} />
+    </svg>
+  );
+}
+
+function Logo({ center, big }: { center?: boolean; big?: boolean }) {
+  const mark = big ? 48 : 34;
+  return (
+    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5", center && "justify-center")}>
+      <LogoMark size={mark} />
+      <div className={cx("font-extrabold leading-none tracking-tight", big ? "text-xl" : "text-[15px]")}>
+        <div style={{ color: NAVY }}>LOGIQ</div>
+        <div style={{ color: CYAN }} className={big ? "text-lg" : "text-[13px]"}>ADUANAS</div>
       </div>
+      <div className={cx("mx-1 w-px bg-zinc-300", big ? "h-9" : "h-7")} />
+      <div className={cx("font-semibold text-zinc-500", big ? "text-2xl" : "text-lg")}>FTA</div>
     </div>
   );
 }
