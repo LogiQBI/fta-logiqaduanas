@@ -60,13 +60,33 @@ POST /api/products/<id>/qualify/   body: {"treaty": <id_tratado>}
 
 Devuelve el estado (CALIFICA / NO CALIFICA), el criterio aplicado y el VCR calculado.
 
-## Estado actual (MVP)
+## Frontend (Next.js)
+
+```bash
+cd ~/Desarrollo\ FTA/frontend
+npm run dev      # http://localhost:3000
+```
+
+Requiere el backend corriendo en el puerto 8100. Login con `admin` / `admin12345`.
+
+## Comandos útiles
+
+```bash
+python manage.py seed_demo       # datos demo + una calificación de ejemplo
+python manage.py seed_treaties   # carga los 14 TLC de México
+```
+
+## Estado actual
 
 - [x] Multitenant + datos maestros + BOM multinivel
 - [x] Catálogo de tratados con reglas data-driven
 - [x] Motor: salto arancelario (CTC) + VCR + de minimis
 - [x] API REST con aislamiento por tenant + panel admin
-- [ ] Portal de proveedores (solicitud de declaraciones)
-- [ ] Emisión de certificados (9 elementos T-MEC)
-- [ ] Carga de los 14 TLC de México
-- [ ] Frontend Next.js
+- [x] Portal de proveedores (solicitud de declaraciones por token)
+- [x] Emisión de certificados (9 elementos T-MEC)
+- [x] Carga de los 14 TLC de México
+- [x] Frontend Next.js (login + dashboard de calificación)
+- [ ] Conectar a GitHub
+- [ ] Reglas de origen por producto para todos los TLC (datos)
+- [ ] RLS de PostgreSQL (hardening multitenant)
+- [ ] Despliegue
