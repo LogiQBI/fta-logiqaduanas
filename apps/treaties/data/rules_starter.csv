@@ -1,0 +1,32 @@
+treaty_code,hs_pattern,rule_type,shift_level,rvc_method,rvc_threshold,de_minimis,description,valid_from
+TMEC,28,CTC,CTSH,,,,"Químicos inorgánicos: cambio de subpartida (representativo)",2020-07-01
+TMEC,29,CTC_OR_RVC,CTSH,transaction,60,,"Químicos orgánicos: cambio de subpartida o VCR 60%",2020-07-01
+TMEC,39,CTC,CTH,,,,"Plásticos y sus manufacturas: cambio de partida",2020-07-01
+TMEC,40,CTC,CTH,,,,"Caucho y sus manufacturas: cambio de partida",2020-07-01
+TMEC,48,CTC,CTH,,,,"Papel y cartón: cambio de partida",2020-07-01
+TMEC,52,CTC,CC,,,,"Algodón (textil): cambio de capítulo (regla yarn-forward, representativo)",2020-07-01
+TMEC,54,CTC,CC,,,,"Filamentos sintéticos: cambio de capítulo (yarn-forward)",2020-07-01
+TMEC,61,CTC,CC,,,,"Prendas de vestir de punto: cambio de capítulo (yarn-forward)",2020-07-01
+TMEC,62,CTC,CC,,,,"Prendas de vestir excepto punto: cambio de capítulo (yarn-forward)",2020-07-01
+TMEC,64,CTC,CTH,,,,"Calzado: cambio de partida",2020-07-01
+TMEC,72,CTC,CTH,,,,"Fundición, hierro y acero: cambio de partida",2020-07-01
+TMEC,73,CTC,CTH,,,,"Manufacturas de hierro o acero: cambio de partida",2020-07-01
+TMEC,76,CTC,CTH,,,,"Aluminio y sus manufacturas: cambio de partida",2020-07-01
+TMEC,82,CTC,CTH,,,,"Herramientas y útiles de metal: cambio de partida",2020-07-01
+TMEC,84,CTC_OR_RVC,CTH,transaction,60,,"Máquinas y aparatos mecánicos: cambio de partida o VCR 60%/50%",2020-07-01
+TMEC,8407,CTC_OR_RVC,CTSH,net_cost,50,,"Motores de combustión interna: cambio de subpartida o VCR",2020-07-01
+TMEC,85,CTC_OR_RVC,CTH,transaction,60,,"Máquinas y material eléctrico: cambio de partida o VCR 60%",2020-07-01
+TMEC,8517,CTC_OR_RVC,CTSH,transaction,60,,"Teléfonos y equipos de comunicación",2020-07-01
+TMEC,8536,CTC,CTH,,,,"Aparatos para corte/conexión de circuitos eléctricos",2020-07-01
+TMEC,8537,CTC_OR_RVC,CTH,transaction,60,,"Tableros y cuadros de control eléctrico (ejemplo del demo)",2020-07-01
+TMEC,87,CTC_OR_RVC,CTH,net_cost,62.5,,"Vehículos (otros): VCR por costo neto (transición)",2020-07-01
+TMEC,8703,RVC,,net_cost,75,,"Automóviles de pasajeros: VCR 75% por costo neto",2023-07-01
+TMEC,8704,RVC,,net_cost,70,,"Camiones: VCR 70% por costo neto (representativo)",2023-07-01
+TMEC,8708,RVC,,net_cost,65,,"Partes y accesorios de vehículos: VCR (representativo)",2023-07-01
+TMEC,90,CTC_OR_RVC,CTH,transaction,60,,"Instrumentos ópticos, médicos y de precisión",2020-07-01
+TMEC,94,CTC,CTH,,,,"Muebles: cambio de partida",2020-07-01
+TMEC,95,CTC,CTH,,,,"Juguetes, juegos y artículos deportivos: cambio de partida",2020-07-01
+ACE55,8701,RVC,,transaction,40,0,"Tractores agrícolas: Índice de Contenido Regional mínimo (representativo; varía 35-40% por país)",2003-01-01
+ACE55,8703,RVC,,transaction,40,0,"Automóviles: ICR mínimo (representativo; MX-BR 40% / MX-AR 35%)",2003-01-01
+ACE55,8704,RVC,,transaction,40,0,"Camiones hasta 8845 kg: ICR mínimo (representativo)",2003-01-01
+ACE55,8708,RVC,,transaction,40,0,"Autopartes: ICR mínimo (representativo)",2003-01-01

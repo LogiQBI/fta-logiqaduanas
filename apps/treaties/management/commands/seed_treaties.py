@@ -37,6 +37,8 @@ TREATIES = [
     ("ALIANZA_PACIFICO", "Alianza del Pacífico", ["CL", "CO", "PE"], 50, 40, 10, date(2016, 5, 1)),
     ("REINO_UNIDO", "Acuerdo de Continuidad Comercial México-Reino Unido",
      ["GB"], 50, 40, 10, date(2021, 6, 1)),
+    ("ACE55", "ACE 55 — México-Mercosur (sector automotor)",
+     ["AR", "BR", "PY", "UY"], 40, 40, 0, date(2003, 1, 1)),
 ]
 
 

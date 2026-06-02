@@ -61,6 +61,8 @@ class OriginRule(TimeStampedModel):
     valid_to = models.DateField("Vigente hasta", null=True, blank=True)
 
     class Meta:
+        unique_together = [("treaty", "hs_pattern")]
+        ordering = ["treaty", "hs_pattern"]
         verbose_name = "Regla de origen"
         verbose_name_plural = "Reglas de origen"
 
