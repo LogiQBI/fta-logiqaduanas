@@ -36,6 +36,16 @@ export type Qualification = {
   id: number; product: number; treaty: number; status: string;
   status_display: string; criterion: string; rvc_value: string | null;
 };
+export type Me = {
+  username: string; role: string | null; role_display?: string;
+  is_supplier?: boolean;
+  tenant: { id: number; name: string } | null;
+  supplier: { id: number; name: string } | null;
+};
+export type Solicitation = {
+  id: number; product: number; supplier: number; treaty: number;
+  status: string; status_display: string; due_date: string | null;
+};
 
 export const api = {
   async login(username: string, password: string) {
@@ -49,12 +59,20 @@ export const api = {
     setToken(data.token);
     return data;
   },
+  me: (): Promise<Me> => req("/me/"),
   products: () => req("/products/"),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
+  solicitations: () => req("/solicitations/"),
+  declarations: () => req("/supplier-declarations/"),
   qualify: (productId: number, treatyId: number) =>
     req(`/products/${productId}/qualify/`, {
       method: "POST",
       body: JSON.stringify({ treaty: treatyId }),
+    }),
+  respond: (solicitationId: number, payload: Record<string, unknown>) =>
+    req(`/solicitations/${solicitationId}/respond/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 };

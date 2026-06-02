@@ -56,11 +56,23 @@ class Membership(TimeStampedModel):
         Tenant, on_delete=models.CASCADE, related_name="memberships"
     )
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.ANALYST)
+    # Si el rol es SUPPLIER, este usuario representa a esta empresa proveedora
+    # y solo podrá ver/editar los datos de esa Party.
+    party = models.ForeignKey(
+        "catalog.Party", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="memberships",
+        help_text="Solo para usuarios proveedor: la empresa proveedora que representan.",
+    )
 
     class Meta:
         unique_together = [("user", "tenant")]
         verbose_name = "Membresía"
         verbose_name_plural = "Membresías"
 
+    @property
+    def is_supplier(self):
+        return self.role == self.Role.SUPPLIER
+
     def __str__(self):
-        return f"{self.user} @ {self.tenant} ({self.get_role_display()})"
+        suffix = f" → {self.party.name}" if self.party_id else ""
+        return f"{self.user} @ {self.tenant} ({self.get_role_display()}){suffix}"

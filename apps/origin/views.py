@@ -1,7 +1,13 @@
-"""API REST. ViewSets filtrados por los tenants del usuario (aislamiento)."""
+"""API REST con aislamiento por tenant Y por rol (empresa vs proveedor).
+
+- Usuarios de empresa (admin/analyst/auditor): ven todo lo de su tenant.
+- Usuarios proveedor (role=supplier): ven SOLO los registros de su propia Party.
+"""
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
@@ -17,22 +23,37 @@ from apps.treaties.models import OriginRule, Treaty
 
 
 class TenantScopedViewSet(viewsets.ModelViewSet):
-    """Restringe los registros a los tenants donde el usuario tiene membresía."""
+    """Acota por tenant y, si el usuario es proveedor, por su Party.
 
-    def _user_tenant_ids(self):
-        return self.request.user.memberships.values_list("tenant_id", flat=True)
+    `supplier_field`: nombre del campo que liga el modelo con la Party del
+    proveedor. Si es None, los usuarios proveedor NO ven nada de este modelo.
+    """
+
+    supplier_field = None
+
+    def membership(self):
+        return self.request.user.memberships.select_related("party").first()
 
     def get_queryset(self):
-        return super().get_queryset().filter(tenant_id__in=self._user_tenant_ids())
+        qs = super().get_queryset()
+        m = self.membership()
+        if not m:
+            return qs.none()
+        qs = qs.filter(tenant_id=m.tenant_id)
+        if m.is_supplier:
+            if self.supplier_field and m.party_id:
+                return qs.filter(**{self.supplier_field: m.party_id})
+            return qs.none()
+        return qs
 
 
-class TreatyViewSet(viewsets.ModelViewSet):
-    """Catálogo global de tratados (no está acotado por tenant)."""
+class TreatyViewSet(viewsets.ReadOnlyModelViewSet):
+    """Catálogo global de tratados (referencia, solo lectura para todos)."""
     queryset = Treaty.objects.all()
     serializer_class = s.TreatySerializer
 
 
-class OriginRuleViewSet(viewsets.ModelViewSet):
+class OriginRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OriginRule.objects.select_related("treaty").all()
     serializer_class = s.OriginRuleSerializer
 
@@ -40,11 +61,13 @@ class OriginRuleViewSet(viewsets.ModelViewSet):
 class PartyViewSet(TenantScopedViewSet):
     queryset = Party.objects.all()
     serializer_class = s.PartySerializer
+    supplier_field = "id"  # el proveedor solo se ve a sí mismo
 
 
 class ProductViewSet(TenantScopedViewSet):
     queryset = Product.objects.all()
     serializer_class = s.ProductSerializer
+    supplier_field = "supplier_id"  # productos que ese proveedor surte
 
     @action(detail=True, methods=["post"])
     def qualify(self, request, pk=None):
@@ -86,22 +109,31 @@ class ProductViewSet(TenantScopedViewSet):
 class BOMComponentViewSet(TenantScopedViewSet):
     queryset = BOMComponent.objects.all()
     serializer_class = s.BOMComponentSerializer
+    # supplier_field = None -> los proveedores no ven el BOM de la empresa
 
 
 class SupplierDeclarationViewSet(TenantScopedViewSet):
     queryset = SupplierDeclaration.objects.all()
     serializer_class = s.SupplierDeclarationSerializer
+    supplier_field = "supplier_id"
+
+    def perform_create(self, serializer):
+        """Un proveedor solo puede crear declaraciones a su propio nombre."""
+        m = self.membership()
+        if m and m.is_supplier:
+            serializer.save(tenant=m.tenant, supplier=m.party)
+        else:
+            serializer.save()
 
 
 class QualificationViewSet(TenantScopedViewSet):
     queryset = Qualification.objects.select_related("product", "treaty").all()
     serializer_class = s.QualificationSerializer
+    # los proveedores no ven calificaciones (None)
 
     @action(detail=True, methods=["post"])
     def issue_certificate(self, request, pk=None):
-        """Emite un certificado de origen para esta calificación.
-        Body: {certifier_type, certifier_data, exporter_data?, producer_data?,
-        importer_data?, blanket_from?, blanket_to?}."""
+        """Emite un certificado de origen para esta calificación."""
         qualification = self.get_object()
         d = request.data
         try:
@@ -124,6 +156,7 @@ class QualificationViewSet(TenantScopedViewSet):
 class CertificateViewSet(TenantScopedViewSet):
     queryset = Certificate.objects.select_related("qualification__product").all()
     serializer_class = s.CertificateSerializer
+    # los proveedores no ven certificados (None)
 
     @action(detail=True, methods=["get"])
     def elements(self, request, pk=None):
@@ -135,3 +168,46 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
     queryset = SolicitationRequest.objects.select_related(
         "product", "supplier", "treaty").all()
     serializer_class = s.SolicitationRequestSerializer
+    supplier_field = "supplier_id"  # el proveedor solo ve sus solicitudes
+
+    @action(detail=True, methods=["post"])
+    def respond(self, request, pk=None):
+        """El proveedor logueado responde su solicitud con su declaración de origen.
+        Body: {is_originating, country_of_origin, valid_from, valid_to}."""
+        sr = self.get_object()  # ya viene acotada a SUS solicitudes
+        if sr.status == SolicitationRequest.Status.RESPONDED:
+            return Response({"error": "Esta solicitud ya fue respondida."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        d = request.data
+        if not d.get("valid_from") or not d.get("valid_to"):
+            return Response({"error": "Faltan 'valid_from' y 'valid_to' (vigencia)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        decl = SupplierDeclaration.objects.create(
+            tenant=sr.tenant, supplier=sr.supplier, product=sr.product, treaty=sr.treaty,
+            is_originating=bool(d.get("is_originating")),
+            country_of_origin=d.get("country_of_origin", ""),
+            valid_from=d["valid_from"], valid_to=d["valid_to"],
+        )
+        sr.declaration = decl
+        sr.status = SolicitationRequest.Status.RESPONDED
+        sr.responded_at = timezone.now()
+        sr.save(update_fields=["declaration", "status", "responded_at", "updated_at"])
+        return Response(s.SolicitationRequestSerializer(sr).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def me(request):
+    """Identidad del usuario: rol, empresa (tenant) y, si es proveedor, su Party."""
+    m = request.user.memberships.select_related("tenant", "party").first()
+    if not m:
+        return Response({"username": request.user.username, "role": None,
+                         "tenant": None, "supplier": None})
+    return Response({
+        "username": request.user.username,
+        "role": m.role,
+        "role_display": m.get_role_display(),
+        "is_supplier": m.is_supplier,
+        "tenant": {"id": m.tenant_id, "name": m.tenant.name},
+        "supplier": ({"id": m.party_id, "name": m.party.name} if m.party_id else None),
+    })

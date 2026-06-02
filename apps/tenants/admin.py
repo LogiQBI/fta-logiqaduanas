@@ -12,6 +12,7 @@ class TenantAdmin(admin.ModelAdmin):
 
 @admin.register(Membership)
 class MembershipAdmin(admin.ModelAdmin):
-    list_display = ("user", "tenant", "role")
+    list_display = ("user", "tenant", "role", "party")
     list_filter = ("role", "tenant")
-    search_fields = ("user__username",)
+    search_fields = ("user__username", "party__name")
+    autocomplete_fields = ("user", "party")

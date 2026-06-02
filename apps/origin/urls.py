@@ -17,4 +17,5 @@ router.register("solicitations", views.SolicitationRequestViewSet)
 
 urlpatterns = [
     path("login/", obtain_auth_token, name="api-login"),
+    path("me/", views.me, name="api-me"),
 ] + router.urls
