@@ -13,6 +13,10 @@ import {
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
+// Etiqueta de tratado en inglés para mostrar (interno se mantiene el código).
+const TREATY_LABELS: Record<string, string> = { TMEC: "USMCA" };
+const treatyLabel = (code?: string) => (code ? (TREATY_LABELS[code] ?? code) : "—");
+
 export default function Page() {
   const [me, setMe] = useState<Me | null>(null);
   const [ready, setReady] = useState(false);
@@ -633,26 +637,72 @@ function TratadosView() {
       <PageTitle title="Tratados (TLC)" desc={`${count} tratados en el catálogo.`} />
       <Table head={["Código", "Nombre"]}>
         {data.map((t) => (
-          <tr key={t.id}><td className="px-4 py-3 font-mono text-xs font-semibold">{t.code}</td>
+          <tr key={t.id}><td className="px-4 py-3 font-mono text-xs font-semibold">{treatyLabel(t.code)}</td>
             <td className="px-4 py-3">{t.name}</td></tr>
         ))}
       </Table>
     </div>
   );
 }
+// Formatea la fracción HS: 870810 -> 8708.10 (y 8 o 10 dígitos con más grupos).
+function formatHs(p: string) {
+  const d = (p || "").replace(/\D/g, "");
+  if (d.length <= 4) return d;
+  let out = d.slice(0, 4) + "." + d.slice(4, 6);
+  if (d.length > 6) out += "." + d.slice(6);
+  return out;
+}
 function ReglasView() {
-  const { data, count } = useList<{ id: number; hs_pattern: string; rule_type: string; description: string; treaty: number }>(() => api.rules());
+  const treaties = useList<Treaty>(() => api.treaties());
+  const [treaty, setTreaty] = useState<number | "">("");
+  const [hs, setHs] = useState("");
+  const [pageSize, setPageSize] = useState("50");
+  const buildParams = () => {
+    const p = new URLSearchParams();
+    p.set("page_size", pageSize === "all" ? "5000" : pageSize);
+    if (treaty !== "") p.set("treaty", String(treaty));
+    if (hs.trim()) p.set("q", hs.trim());
+    return "?" + p.toString();
+  };
+  const { data, count, loading } = useList<OriginRule>(
+    () => api.rules(buildParams()), [treaty, hs, pageSize]);
   return (
     <div>
-      <PageTitle title="Reglas de origen" desc={`${count} reglas cargadas (mostrando las primeras 50).`} />
-      <Table head={["HS", "Tipo", "Descripción"]}>
+      <PageTitle title="Reglas de origen" desc={`${count} reglas en total · mostrando ${data.length}.`} />
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</label>
+          <select value={treaty} onChange={(e) => setTreaty(e.target.value === "" ? "" : Number(e.target.value))}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
+            <option value="">Todos los tratados</option>
+            {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-zinc-700">Fracción (HS)</label>
+          <input value={hs} onChange={(e) => setHs(e.target.value)} placeholder="ej. 8708"
+            className="w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-zinc-700">Mostrar</label>
+          <select value={pageSize} onChange={(e) => setPageSize(e.target.value)}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="all">Todo</option>
+          </select>
+        </div>
+      </div>
+      <Table head={["Tratado", "HS", "Tipo", "Descripción"]}>
         {data.map((r) => (
           <tr key={r.id}>
-            <td className="px-4 py-3 font-mono text-xs">{r.hs_pattern}</td>
+            <td className="px-4 py-3"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{r.treaty_label ?? r.treaty_code}</span></td>
+            <td className="px-4 py-3 font-mono text-xs font-semibold">{formatHs(r.hs_pattern)}</td>
             <td className="px-4 py-3"><Pill>{r.rule_type}</Pill></td>
-            <td className="px-4 py-3 text-zinc-600">{r.description?.slice(0, 90)}</td>
+            <td className="px-4 py-3 text-zinc-600">{r.description?.slice(0, 110)}</td>
           </tr>
         ))}
+        {!loading && data.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Sin reglas para ese filtro.</td></tr>}
       </Table>
     </div>
   );
@@ -693,7 +743,7 @@ function ProductosView() {
         <span className="text-sm text-zinc-500">Tratado:</span>
         <select value={treatyId ?? ""} onChange={(e) => setTreatyId(Number(e.target.value))}
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm">
-          {treaties.data.map((t) => <option key={t.id} value={t.id}>{t.code} — {t.name}</option>)}
+          {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
         </select>
         <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo producto</Btn></div>
       </div>
@@ -1212,7 +1262,7 @@ function SolicitudesEmpresaView() {
           <tr key={s.id}>
             <td className="px-4 py-3 font-mono text-xs">{s.product_sku ?? `#${s.product}`}</td>
             <td className="px-4 py-3">{s.supplier_name ?? "—"}</td>
-            <td className="px-4 py-3">{s.treaty_code ?? "—"}</td>
+            <td className="px-4 py-3">{treatyLabel(s.treaty_code)}</td>
             <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
             <td className="px-4 py-3 text-xs">{s.bom_analysis ? "BOM" : "Declaración"}</td>
             <td className="px-4 py-3"><Pill k={s.status}>{s.status_display}</Pill></td>
@@ -1246,7 +1296,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
     <Modal title={`BOM — ${s.product_sku}`} onClose={onClose}>
       <div className="mb-3 text-sm text-zinc-600">
         <div><strong>{s.product_sku}</strong> — {s.product_description}</div>
-        <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {s.treaty_code} · Proveedor {s.supplier_name}</div>
+        <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {treatyLabel(s.treaty_code)} · Proveedor {s.supplier_name}</div>
         {b?.rule_description && <div className="mt-1 text-xs">Regla (PSR): <strong>{b.rule_hs}</strong> — {b.rule_description}</div>}
       </div>
       <Table head={["Núm. de parte", "Descripción", "HS", "Precio", "Cant.", "Total", "País", "Evidencia"]}>
@@ -1349,7 +1399,7 @@ function SolicitudForm({ onClose, onSaved }: {
       <div className="grid gap-3">
         <Field label="Tratado (TLC) para el que pides el origen">
           <select value={treatyId} onChange={(e) => setTreatyId(Number(e.target.value))} className={inputCls}>
-            {treaties.data.map((t) => <option key={t.id} value={t.id}>{t.code} — {t.name}</option>)}
+            {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
           </select>
         </Field>
         <div className="grid grid-cols-3 gap-3">
@@ -1627,7 +1677,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
         <div>
           <div className="font-medium text-zinc-900">{s.product_sku} — {s.product_description}</div>
           <div className="text-xs text-zinc-500">
-            HS {s.product_hs || "—"} · Tratado {s.treaty_code} · Precio {s.product_unit_cost}
+            HS {s.product_hs || "—"} · Tratado {treatyLabel(s.treaty_code)} · Precio {s.product_unit_cost}
           </div>
         </div>
         <Pill k={s.status}>{s.status_display}</Pill>

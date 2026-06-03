@@ -16,6 +16,7 @@ from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -111,23 +112,32 @@ class TreatyViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = s.TreatySerializer
 
 
+class RulesPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"  # ?page_size=100 ; "Todo" -> grande
+    max_page_size = 5000
+
+
 class OriginRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OriginRule.objects.select_related("treaty").all()
     serializer_class = s.OriginRuleSerializer
+    pagination_class = RulesPagination
 
     def get_queryset(self):
         qs = super().get_queryset()
+        digits = lambda x: "".join(c for c in (x or "") if c.isdigit())
         treaty = self.request.query_params.get("treaty")
-        hs = self.request.query_params.get("hs")
+        hs = self.request.query_params.get("hs")          # PSR aplicables a una fracción
+        q = self.request.query_params.get("q")            # buscar por fracción (prefijo)
         if treaty:
             qs = qs.filter(treaty_id=treaty)
+        if q:
+            qs = qs.filter(hs_pattern__startswith=digits(q))
         if hs:
-            # PSR aplicables: el patrón HS de la regla es prefijo de la fracción.
-            digits = lambda x: "".join(c for c in (x or "") if c.isdigit())
             hsd = digits(hs)
             ids = [r.id for r in qs if hsd.startswith(digits(r.hs_pattern))]
             qs = qs.filter(id__in=ids)
-        return qs
+        return qs.order_by("hs_pattern")
 
 
 class PartyViewSet(TenantScopedViewSet):

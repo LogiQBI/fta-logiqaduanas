@@ -14,10 +14,20 @@ class TreatySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# Etiquetas de tratado en inglés para mostrar (interno se mantiene el code).
+TREATY_LABELS = {"TMEC": "USMCA"}
+
+
 class OriginRuleSerializer(serializers.ModelSerializer):
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+    treaty_label = serializers.SerializerMethodField()
+
     class Meta:
         model = OriginRule
         fields = "__all__"
+
+    def get_treaty_label(self, obj):
+        return TREATY_LABELS.get(obj.treaty.code, obj.treaty.code)
 
 
 class PartySerializer(serializers.ModelSerializer):

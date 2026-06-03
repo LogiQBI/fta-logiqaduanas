@@ -63,7 +63,8 @@ export type SubmittedBom = {
   detail?: Record<string, unknown>; computed_at?: string | null;
 };
 export type OriginRule = {
-  id: number; hs_pattern: string; rule_type: string; description: string; treaty: number;
+  id: number; hs_pattern: string; rule_type: string; description: string;
+  treaty: number; treaty_code?: string; treaty_label?: string;
 };
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
