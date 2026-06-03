@@ -529,6 +529,44 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => <ActionCard key={c.k} {...c} onClick={() => go(c.k)} />)}
       </div>
+      {me.is_supplier && <ProveedorDashboard go={go} />}
+    </div>
+  );
+}
+// Dashboard del proveedor: solicitudes pendientes por tratado.
+function ProveedorDashboard({ go }: { go: (v: string) => void }) {
+  const { data } = useList<Solicitation>(() => api.solicitations());
+  const pend = data.filter((s) => s.status !== "responded");
+  const porTratado = new Map<string, number>();
+  for (const s of pend) {
+    const t = treatyLabel(s.treaty_code);
+    porTratado.set(t, (porTratado.get(t) ?? 0) + 1);
+  }
+  const vencidas = pend.filter((s) => dueAlert(s)?.label.startsWith("Vencida")).length;
+  const porVencer = pend.filter((s) => dueAlert(s)?.label.startsWith("Por vencer")).length;
+  return (
+    <div className="mt-8">
+      <h2 className="mb-3 text-lg font-bold text-zinc-900">Solicitudes pendientes por tratado</h2>
+      {pend.length === 0 ? (
+        <Card className="p-6 text-center text-sm text-zinc-400">No tienes solicitudes pendientes. 🎉</Card>
+      ) : (
+        <>
+          <div className="mb-3 flex flex-wrap gap-2 text-sm">
+            <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">{pend.length} pendientes</span>
+            {porVencer > 0 && <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">⏰ {porVencer} por vencer</span>}
+            {vencidas > 0 && <span className="rounded-full bg-red-100 px-3 py-1 font-medium text-red-700">⏰ {vencidas} vencidas</span>}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from(porTratado.entries()).map(([t, n]) => (
+              <button key={t} onClick={() => go("mis-solicitudes")}
+                className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 text-left hover:border-blue-300 hover:shadow-sm">
+                <span className="rounded-md bg-blue-600 px-2.5 py-1 text-sm font-bold text-white">{t}</span>
+                <span className="text-2xl font-bold text-zinc-900">{n}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1760,14 +1798,37 @@ function SolicitudBloque({ items, prod, onDone }: {
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
   const s0 = items[0];
+  const esBom = !!s0.bom_analysis;
   const alert = dueAlert(s0);
   const respondidas = items.filter((i) => i.status === "responded").length;
+  const pendientesItems = items.filter((i) => i.status !== "responded");
   const listas = items.filter((i) => i.bom_analysis && i.submitted_bom?.origin_status && i.status !== "responded");
-  async function enviarListas() {
+  async function traerTodo() {
+    setBusy(true); setMsg("");
+    const sinPrevia: string[] = [];
+    try {
+      for (const i of pendientesItems) {
+        const r = await api.copyPrevious(i.id);
+        if (!r.found) { sinPrevia.push(i.product_sku ?? `#${i.product}`); continue; }
+        await api.submitBom(i.id, { rule: r.rule, lines: r.lines });
+        await api.calculateOrigin(i.id);
+      }
+      setMsg(sinPrevia.length
+        ? `Listo. SIN información anterior (llénalos a mano): ${sinPrevia.join(", ")}.`
+        : "Información traída y origen calculado para todos. Revisa y envía.");
+      await onDone();
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  }
+  async function enviarTodo() {
+    const noListos = pendientesItems.filter((i) => !i.submitted_bom?.origin_status);
+    if (listas.length === 0) { setMsg("No hay productos listos para enviar (calcula el origen primero)."); return; }
+    if (noListos.length && !confirm(
+      `${noListos.length} producto(s) aún no tienen origen calculado y NO se enviarán. ¿Enviar los ${listas.length} listos?`)) return;
     setBusy(true);
-    try { for (const i of listas) await api.sendBom(i.id); onDone(); }
-    finally { setBusy(false); }
+    try { for (const i of listas) await api.sendBom(i.id); await onDone(); }
+    catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   }
   return (
     <Card className="overflow-hidden">
@@ -1792,10 +1853,14 @@ function SolicitudBloque({ items, prod, onDone }: {
       </button>
       {open && (
         <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/50 p-4">
-          {listas.length > 0 && (
-            <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-              <span>{listas.length} producto(s) con origen calculado, listos para enviar.</span>
-              <Btn size="sm" onClick={enviarListas} disabled={busy}>{busy ? "Enviando…" : "Enviar todo el bloque listo"}</Btn>
+          {esBom && respondidas < items.length && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <Btn size="sm" variant="ghost" onClick={traerTodo} disabled={busy}>↩︎ Traer todo de la última solicitud</Btn>
+                <Btn size="sm" onClick={enviarTodo} disabled={busy}>Enviar solicitud completa{listas.length ? ` (${listas.length} listo${listas.length === 1 ? "" : "s"})` : ""}</Btn>
+                <span className="text-zinc-500">o envía cada producto por separado abajo.</span>
+              </div>
+              {msg && <div className="mt-2 text-zinc-700">{msg}</div>}
             </div>
           )}
           {items.map((i) => (
@@ -1813,22 +1878,57 @@ function MisSolicitudesView({ me }: { me: Me }) {
   const products = useList<Product>(() => api.products());
   const prod = (id: number) => products.data.find((p) => p.id === id);
   const cliente = me.tenant?.name;
+  const [estadoF, setEstadoF] = useState("");
+  const [periodoF, setPeriodoF] = useState("");
+  const [tratadoF, setTratadoF] = useState("");
   // Agrupar por BLOQUE: misma solicitud = mismo tratado + periodo + fecha límite.
   const bloques = new Map<string, Solicitation[]>();
   for (const s of data) {
     const key = `${s.treaty_code}__${s.period_from}__${s.period_to}__${s.due_date}`;
     (bloques.get(key) ?? bloques.set(key, []).get(key)!).push(s);
   }
+  const periodos = Array.from(new Set(data.map((s) => periodoTexto(s)).filter((p) => p !== "—")));
+  const tratados = Array.from(new Set(data.map((s) => s.treaty_code ?? "")));
+  const bloquesFiltrados = Array.from(bloques.values()).filter((items) => {
+    const s0 = items[0];
+    const completa = items.every((i) => i.status === "responded");
+    if (estadoF === "pendiente" && completa) return false;
+    if (estadoF === "completa" && !completa) return false;
+    if (periodoF && periodoTexto(s0) !== periodoF) return false;
+    if (tratadoF && (s0.treaty_code ?? "") !== tratadoF) return false;
+    return true;
+  });
+  const selCls = "rounded-lg border border-zinc-300 px-3 py-2 text-sm";
   return (
     <div>
       <PageTitle title={`Solicitudes de cliente${cliente ? ` (${cliente})` : ""}`}
         desc="Cada bloque es una solicitud (tratado + periodo). Haz clic para ver y responder sus productos." />
-      {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
-      <div className="space-y-3">
-        {Array.from(bloques.values()).map((items) => (
-          <SolicitudBloque key={items[0].id} items={items} prod={prod} onDone={reload} />
-        ))}
-      </div>
+      {count === 0
+        ? <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>
+        : <>
+            <div className="mb-4 flex flex-wrap items-end gap-3">
+              <div><label className="mb-1 block text-xs font-semibold text-zinc-700">Estado</label>
+                <select value={estadoF} onChange={(e) => setEstadoF(e.target.value)} className={selCls}>
+                  <option value="">Todas</option><option value="pendiente">Pendientes</option><option value="completa">Completas</option>
+                </select></div>
+              <div><label className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</label>
+                <select value={tratadoF} onChange={(e) => setTratadoF(e.target.value)} className={selCls}>
+                  <option value="">Todos</option>
+                  {tratados.map((t) => <option key={t} value={t}>{treatyLabel(t)}</option>)}
+                </select></div>
+              <div><label className="mb-1 block text-xs font-semibold text-zinc-700">Periodo</label>
+                <select value={periodoF} onChange={(e) => setPeriodoF(e.target.value)} className={selCls}>
+                  <option value="">Todos</option>
+                  {periodos.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select></div>
+            </div>
+            <div className="space-y-3">
+              {bloquesFiltrados.map((items) => (
+                <SolicitudBloque key={items[0].id} items={items} prod={prod} onDone={reload} />
+              ))}
+              {bloquesFiltrados.length === 0 && <Card className="p-8 text-center text-zinc-400">Sin solicitudes para esos filtros.</Card>}
+            </div>
+          </>}
     </div>
   );
 }
