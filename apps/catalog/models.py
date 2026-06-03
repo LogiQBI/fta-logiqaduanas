@@ -152,6 +152,9 @@ class SolicitationRequest(TenantOwnedModel):
     period_type = models.CharField("Periodo", max_length=20, choices=Period.choices, blank=True)
     period_from = models.DateField("Periodo desde", null=True, blank=True)
     period_to = models.DateField("Periodo hasta", null=True, blank=True)
+    # Si está activo, el proveedor debe subir el BOM (lista de materiales) en vez
+    # de solo declarar origen. El cálculo de origen se hace en otro módulo.
+    bom_analysis = models.BooleanField("Análisis por BOM", default=False)
     token = models.CharField(max_length=64, unique=True, default=_new_token, editable=False)
     due_date = models.DateField("Fecha límite", null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
@@ -170,3 +173,48 @@ class SolicitationRequest(TenantOwnedModel):
     @property
     def portal_path(self):
         return f"/portal/{self.token}/"
+
+
+class SolicitationBOM(TenantOwnedModel):
+    """BOM (lista de materiales) que el proveedor sube como respuesta a una
+    solicitud con análisis por BOM. El cálculo de origen se hace aparte."""
+
+    solicitation = models.OneToOneField(
+        SolicitationRequest, on_delete=models.CASCADE, related_name="bom")
+    # Regla de origen específica (PSR) elegida por el proveedor, del catálogo
+    # global que administra LogiQ (apps.treaties.OriginRule).
+    rule = models.ForeignKey("treaties.OriginRule", null=True, blank=True,
+                             on_delete=models.SET_NULL, related_name="solicitation_boms")
+    notes = models.TextField("Notas", blank=True)
+
+    class Meta:
+        verbose_name = "BOM de solicitud"
+        verbose_name_plural = "BOMs de solicitud"
+
+    def __str__(self):
+        return f"BOM de {self.solicitation}"
+
+
+class SolicitationBOMLine(TenantOwnedModel):
+    """Línea de detalle del BOM que captura el proveedor (un componente)."""
+
+    bom = models.ForeignKey(SolicitationBOM, on_delete=models.CASCADE, related_name="lines")
+    part_number = models.CharField("Número de parte", max_length=100)
+    description = models.CharField("Descripción", max_length=255, blank=True)
+    unit_price = models.DecimalField("Precio unitario", max_digits=14, decimal_places=4, default=0)
+    quantity = models.DecimalField("Cantidad utilizada", max_digits=14, decimal_places=4, default=0)
+    country = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)
+    has_origin_evidence = models.BooleanField(
+        "¿Tiene certificado/evidencia de origen?", default=False,
+        help_text="Si no, queda sujeto a auditorías internas.")
+
+    class Meta:
+        verbose_name = "Línea de BOM de solicitud"
+        verbose_name_plural = "Líneas de BOM de solicitud"
+
+    @property
+    def total(self):
+        return (self.unit_price or 0) * (self.quantity or 0)
+
+    def __str__(self):
+        return f"{self.part_number} ×{self.quantity}"

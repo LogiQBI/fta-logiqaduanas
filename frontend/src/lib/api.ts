@@ -51,13 +51,27 @@ export type Me = {
   tenant: { id: number; name: string; slug: string } | null;
   supplier: { id: number; name: string; slug: string } | null;
 };
+export type BomLine = {
+  id?: number; part_number: string; description: string;
+  unit_price: string; quantity: string; country: string;
+  has_origin_evidence: boolean; total?: string;
+};
+export type SubmittedBom = {
+  id: number; rule: number | null; rule_description?: string | null;
+  rule_hs?: string | null; notes: string; lines: BomLine[];
+};
+export type OriginRule = {
+  id: number; hs_pattern: string; rule_type: string; description: string; treaty: number;
+};
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
   status: string; status_display: string; due_date: string | null;
   period_type: string; period_display?: string;
   period_from: string | null; period_to: string | null;
+  bom_analysis: boolean; submitted_bom: SubmittedBom | null;
   product_sku?: string; product_description?: string; product_hs?: string;
-  treaty_code?: string; supplier_name?: string;
+  product_unit_cost?: string; treaty_code?: string; supplier_name?: string;
+  treaty_members?: string[]; treaty_de_minimis?: string;
 };
 
 export const api = {
@@ -135,6 +149,10 @@ export const api = {
     }),
   createSolicitudes: (payload: Record<string, unknown>) =>
     req("/solicitations/batch/", { method: "POST", body: JSON.stringify(payload) }),
+  submitBom: (solicitationId: number, payload: Record<string, unknown>) =>
+    req(`/solicitations/${solicitationId}/submit-bom/`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

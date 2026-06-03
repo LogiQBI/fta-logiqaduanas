@@ -20,7 +20,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
-    BOMComponent, Party, Product, SolicitationRequest, SupplierDeclaration,
+    BOMComponent, Party, Product, SolicitationBOM, SolicitationBOMLine,
+    SolicitationRequest, SupplierDeclaration,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -113,6 +114,20 @@ class TreatyViewSet(viewsets.ReadOnlyModelViewSet):
 class OriginRuleViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OriginRule.objects.select_related("treaty").all()
     serializer_class = s.OriginRuleSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        treaty = self.request.query_params.get("treaty")
+        hs = self.request.query_params.get("hs")
+        if treaty:
+            qs = qs.filter(treaty_id=treaty)
+        if hs:
+            # PSR aplicables: el patrón HS de la regla es prefijo de la fracción.
+            digits = lambda x: "".join(c for c in (x or "") if c.isdigit())
+            hsd = digits(hs)
+            ids = [r.id for r in qs if hsd.startswith(digits(r.hs_pattern))]
+            qs = qs.filter(id__in=ids)
+        return qs
 
 
 class PartyViewSet(TenantScopedViewSet):
@@ -380,6 +395,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         period_type = request.data.get("period_type", "")
         period_from = request.data.get("period_from") or None
         period_to = request.data.get("period_to") or None
+        bom_analysis = bool(request.data.get("bom_analysis"))
         created, sin_proveedor = [], []
         for p in products:
             if not p.supplier_id:
@@ -388,15 +404,56 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             created.append(SolicitationRequest.objects.create(
                 tenant=m.tenant, supplier_id=p.supplier_id, product=p, treaty=treaty,
                 status=SolicitationRequest.Status.SENT, sent_at=timezone.now(),
-                period_type=period_type, period_from=period_from, period_to=period_to))
+                period_type=period_type, period_from=period_from, period_to=period_to,
+                bom_analysis=bom_analysis))
         return Response({"creadas": len(created), "sin_proveedor": sin_proveedor},
                         status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="submit-bom")
+    def submit_bom(self, request, pk=None):
+        """El proveedor sube el BOM (lista de materiales) de una solicitud con
+        análisis por BOM. Body: {rule, notes, lines:[{part_number, description,
+        unit_price, quantity, country}]}. Guarda el BOM y marca respondida.
+        El cálculo de origen se hace en otro módulo."""
+        sr = self.get_object()  # ya acotada al proveedor logueado
+        if not sr.bom_analysis:
+            return Response({"error": "Esta solicitud no pide análisis por BOM."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        lines = request.data.get("lines") or []
+        if not lines:
+            return Response({"error": "Agrega al menos un componente al BOM."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        rule_id = request.data.get("rule") or None
+        with transaction.atomic():
+            bom, _ = SolicitationBOM.objects.get_or_create(
+                solicitation=sr, defaults={"tenant": sr.tenant})
+            bom.rule_id = rule_id
+            bom.notes = request.data.get("notes", "")
+            bom.save()
+            bom.lines.all().delete()
+            for ln in lines:
+                SolicitationBOMLine.objects.create(
+                    tenant=sr.tenant, bom=bom,
+                    part_number=(ln.get("part_number") or "").strip(),
+                    description=(ln.get("description") or "").strip(),
+                    unit_price=ln.get("unit_price") or 0,
+                    quantity=ln.get("quantity") or 0,
+                    country=(ln.get("country") or "").strip().upper()[:2],
+                    has_origin_evidence=bool(ln.get("has_origin_evidence")))
+            sr.status = SolicitationRequest.Status.RESPONDED
+            sr.responded_at = timezone.now()
+            sr.save(update_fields=["status", "responded_at", "updated_at"])
+        return Response(s.SolicitationRequestSerializer(sr).data)
 
     @action(detail=True, methods=["post"])
     def respond(self, request, pk=None):
         """El proveedor logueado responde su solicitud con su declaración de origen.
         Body: {is_originating, country_of_origin, valid_from, valid_to}."""
         sr = self.get_object()  # ya viene acotada a SUS solicitudes
+        if sr.bom_analysis:
+            return Response({"error": "Esta solicitud requiere análisis por BOM. "
+                             "Sube el BOM en vez de declarar manualmente."},
+                            status=status.HTTP_400_BAD_REQUEST)
         if sr.status == SolicitationRequest.Status.RESPONDED:
             return Response({"error": "Esta solicitud ya fue respondida."},
                             status=status.HTTP_400_BAD_REQUEST)

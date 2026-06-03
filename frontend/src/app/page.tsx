@@ -7,8 +7,8 @@ import {
   Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes,
 } from "lucide-react";
 import {
-  api, clearToken, getToken, MasterTenant, Me, Party, Product, Qualification,
-  Solicitation, SupplierUser, Treaty,
+  api, BomLine, clearToken, getToken, MasterTenant, Me, OriginRule, Party,
+  Product, Qualification, Solicitation, SupplierUser, Treaty,
 } from "@/lib/api";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -1198,6 +1198,7 @@ function periodoTexto(s: Solicitation) {
 function SolicitudesEmpresaView() {
   const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
   const [open, setOpen] = useState(false);
+  const [verBom, setVerBom] = useState<Solicitation | null>(null);
   const [msg, setMsg] = useState("");
   return (
     <div>
@@ -1206,18 +1207,23 @@ function SolicitudesEmpresaView() {
         <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
-      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Estado"]}>
+      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Tipo", "Estado", ""]}>
         {data.map((s) => (
           <tr key={s.id}>
             <td className="px-4 py-3 font-mono text-xs">{s.product_sku ?? `#${s.product}`}</td>
             <td className="px-4 py-3">{s.supplier_name ?? "—"}</td>
             <td className="px-4 py-3">{s.treaty_code ?? "—"}</td>
             <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
+            <td className="px-4 py-3 text-xs">{s.bom_analysis ? "BOM" : "Declaración"}</td>
             <td className="px-4 py-3"><Pill k={s.status}>{s.status_display}</Pill></td>
+            <td className="px-4 py-3 text-right">
+              {s.submitted_bom && <Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn>}
+            </td>
           </tr>
         ))}
-        {!loading && count === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
+        {!loading && count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
       </Table>
+      {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
       {open && <SolicitudForm onClose={() => setOpen(false)}
         onSaved={async (r) => {
           setOpen(false);
@@ -1226,6 +1232,50 @@ function SolicitudesEmpresaView() {
           await reload();
         }} />}
     </div>
+  );
+}
+function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) {
+  const b = s.submitted_bom;
+  const total = (b?.lines ?? []).reduce((a, l) => a + Number(l.total ?? 0), 0);
+  const members = (s.treaty_members ?? []).map((c) => c.toUpperCase());
+  const noOrig = (b?.lines ?? []).reduce((a, l) =>
+    a + (l.country && members.includes(l.country.toUpperCase()) ? 0 : Number(l.total ?? 0)), 0);
+  const deMinimis = total > 0 ? (noOrig / total * 100) : 0;
+  const sinEvidencia = (b?.lines ?? []).filter((l) => !l.has_origin_evidence).length;
+  return (
+    <Modal title={`BOM — ${s.product_sku}`} onClose={onClose}>
+      <div className="mb-3 text-sm text-zinc-600">
+        <div><strong>{s.product_sku}</strong> — {s.product_description}</div>
+        <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {s.treaty_code} · Proveedor {s.supplier_name}</div>
+        {b?.rule_description && <div className="mt-1 text-xs">Regla (PSR): <strong>{b.rule_hs}</strong> — {b.rule_description}</div>}
+      </div>
+      <Table head={["Núm. de parte", "Descripción", "Precio", "Cant.", "Total", "País", "Evidencia"]}>
+        {(b?.lines ?? []).map((l, i) => (
+          <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
+            <td className="px-4 py-2 font-mono text-xs">{l.part_number}</td>
+            <td className="px-4 py-2">{l.description}</td>
+            <td className="px-4 py-2 font-mono text-xs">{l.unit_price}</td>
+            <td className="px-4 py-2 font-mono text-xs">{l.quantity}</td>
+            <td className="px-4 py-2 font-mono text-xs">{l.total}</td>
+            <td className="px-4 py-2">{l.country}</td>
+            <td className="px-4 py-2">
+              {l.has_origin_evidence
+                ? <span className="text-xs font-medium text-green-700">Sí</span>
+                : <span className="text-xs font-medium text-amber-700">Sin evidencia</span>}
+            </td>
+          </tr>
+        ))}
+      </Table>
+      {sinEvidencia > 0 && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ⚠️ {sinEvidencia} componente(s) <strong>sin certificado/evidencia de origen</strong> — sujetos a auditorías internas.
+        </p>
+      )}
+      <div className="mt-3 flex items-center justify-between text-sm">
+        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">De Minimis (no originario): <strong>{deMinimis.toFixed(2)}%</strong>{s.treaty_de_minimis ? ` · límite ${s.treaty_de_minimis}%` : ""}</span>
+        <span className="font-semibold">Total BOM: {total.toFixed(2)}</span>
+      </div>
+    </Modal>
   );
 }
 const PERIOD_OPTIONS = [
@@ -1258,6 +1308,7 @@ function SolicitudForm({ onClose, onSaved }: {
   const [mode, setMode] = useState<"proveedor" | "productos">("proveedor");
   const [supplierId, setSupplierId] = useState<number | "">("");
   const [picked, setPicked] = useState<number[]>([]);
+  const [bomAnalysis, setBomAnalysis] = useState(false);
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1286,6 +1337,7 @@ function SolicitudForm({ onClose, onSaved }: {
       const r = await api.createSolicitudes({
         treaty: Number(treatyId), period_type: periodType,
         period_from: from, period_to: to, products: selectedIds,
+        bom_analysis: bomAnalysis,
       });
       onSaved(r);
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
@@ -1346,6 +1398,14 @@ function SolicitudForm({ onClose, onSaved }: {
             </div>
           )}
         </div>
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+          <input type="checkbox" checked={bomAnalysis} onChange={(e) => setBomAnalysis(e.target.checked)} className="mt-0.5" />
+          <span className="text-sm">
+            <span className="font-semibold text-zinc-800">Análisis automático por BOM</span>
+            <span className="block text-xs text-zinc-500">Si lo activas, el proveedor deberá subir la lista de materiales (BOM) en vez de solo declarar el origen.</span>
+          </span>
+        </label>
       </div>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
@@ -1395,7 +1455,9 @@ function MisSolicitudesView() {
       <PageTitle title="Solicitudes de cliente" desc="Completa la información de origen que te piden tus clientes." />
       {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
       <div className="space-y-4">
-        {data.map((s) => <SolCard key={s.id} s={s} product={prod(s.product)} tcode={tcode(s.treaty)} onDone={reload} />)}
+        {data.map((s) => s.bom_analysis
+          ? <BomCard key={s.id} s={s} onDone={reload} />
+          : <SolCard key={s.id} s={s} product={prod(s.product)} tcode={tcode(s.treaty)} onDone={reload} />)}
       </div>
     </div>
   );
@@ -1445,6 +1507,133 @@ function SolCard({ s, product, tcode, onDone }: {
           <div className="col-span-2"><Btn onClick={submit} disabled={saving}>{saving ? "Enviando…" : "Enviar declaración"}</Btn></div>
         </div>
       )}
+    </Card>
+  );
+}
+function emptyBomLine(): BomLine {
+  return { part_number: "", description: "", unit_price: "", quantity: "", country: "", has_origin_evidence: false };
+}
+function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
+  const done = s.status === "responded";
+  const [rules, setRules] = useState<OriginRule[]>([]);
+  const [ruleId, setRuleId] = useState<number | "">(s.submitted_bom?.rule ?? "");
+  const [lines, setLines] = useState<BomLine[]>(
+    s.submitted_bom?.lines?.length ? s.submitted_bom.lines : [emptyBomLine()]);
+  const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
+  useEffect(() => {
+    api.rules(`?treaty=${s.treaty}&hs=${encodeURIComponent(s.product_hs ?? "")}`)
+      .then((d: { results?: OriginRule[] } | OriginRule[]) =>
+        setRules(Array.isArray(d) ? d : (d.results ?? []))).catch(() => {});
+  }, [s.treaty, s.product_hs]);
+  const setLine = (i: number, k: keyof BomLine, v: string | boolean) =>
+    setLines((ls) => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
+  const allEvidence = lines.length > 0 && lines.every((l) => l.has_origin_evidence);
+  const setAllEvidence = (v: boolean) => setLines((ls) => ls.map((l) => ({ ...l, has_origin_evidence: v })));
+  const addLine = () => setLines((ls) => [...ls, emptyBomLine()]);
+  const delLine = (i: number) => setLines((ls) => ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls);
+  const lt = (l: BomLine) => (Number(l.unit_price || 0) * Number(l.quantity || 0));
+  const total = lines.reduce((a, l) => a + lt(l), 0);
+  // De Minimis = % del valor que viene de componentes NO originarios
+  // (país fuera de los miembros del tratado). Se calcula automático.
+  const members = (s.treaty_members ?? []).map((c) => c.toUpperCase());
+  const noOrig = lines.reduce((a, l) =>
+    a + (l.country && members.includes(l.country.toUpperCase()) ? 0 : lt(l)), 0);
+  const deMinimis = total > 0 ? (noOrig / total * 100) : 0;
+  async function submit() {
+    const valid = lines.filter((l) => l.part_number.trim());
+    if (valid.length === 0) { setErr("Agrega al menos un componente con número de parte."); return; }
+    setErr(""); setSaving(true);
+    try {
+      await api.submitBom(s.id, {
+        rule: ruleId === "" ? null : Number(ruleId),
+        lines: valid.map((l) => ({
+          part_number: l.part_number, description: l.description,
+          unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
+          has_origin_evidence: l.has_origin_evidence,
+        })),
+      });
+      onDone();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  const cell = "rounded-lg border border-zinc-300 px-2 py-1.5 text-sm w-full";
+  return (
+    <Card className="p-5">
+      {/* Encabezado (automático) */}
+      <div className="mb-3 flex items-start justify-between">
+        <div>
+          <div className="font-medium text-zinc-900">{s.product_sku} — {s.product_description}</div>
+          <div className="text-xs text-zinc-500">
+            HS {s.product_hs || "—"} · Tratado {s.treaty_code} · Precio {s.product_unit_cost}
+          </div>
+        </div>
+        <Pill k={s.status}>{s.status_display}</Pill>
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Originario: <strong>pendiente de cálculo</strong></span>
+        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">De Minimis (no originario): <strong>{deMinimis.toFixed(2)}%</strong>{s.treaty_de_minimis ? ` · límite ${s.treaty_de_minimis}%` : ""}</span>
+        {done && <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700">BOM enviado — puedes actualizarlo</span>}
+      </div>
+
+      {/* Regla de origen (PSR) */}
+      <div className="mb-3">
+        <label className="mb-1 block text-xs font-semibold text-zinc-700">Regla de origen específica (PSR)</label>
+        <select value={ruleId} onChange={(e) => setRuleId(e.target.value === "" ? "" : Number(e.target.value))} className={cell}>
+          <option value="">— Selecciona la regla aplicable —</option>
+          {rules.map((r) => <option key={r.id} value={r.id}>{r.hs_pattern} · {r.rule_type} — {r.description?.slice(0, 70)}</option>)}
+        </select>
+        {rules.length === 0 && <p className="mt-1 text-xs text-zinc-400">No hay PSR para esta fracción/tratado en el catálogo; puedes continuar sin seleccionarla.</p>}
+      </div>
+
+      {/* Detalle de componentes */}
+      <div className="mb-2 text-xs font-semibold text-zinc-700">Detalle de componentes</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-zinc-500">
+            <tr>
+              <th className="px-1 py-1 font-medium">Núm. de parte</th>
+              <th className="px-1 py-1 font-medium">Descripción</th>
+              <th className="px-1 py-1 font-medium">Precio unit.</th>
+              <th className="px-1 py-1 font-medium">Cantidad</th>
+              <th className="px-1 py-1 font-medium">Total</th>
+              <th className="px-1 py-1 font-medium">País</th>
+              <th className="px-1 py-1 text-center font-medium">
+                <div>Evidencia</div>
+                <label className="flex items-center justify-center gap-1 font-normal text-zinc-400">
+                  <input type="checkbox" checked={allEvidence} onChange={(e) => setAllEvidence(e.target.checked)} /> todos
+                </label>
+              </th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
+                <td className="px-1 py-1"><input value={l.part_number} onChange={(e) => setLine(i, "part_number", e.target.value)} className={cell} /></td>
+                <td className="px-1 py-1"><input value={l.description} onChange={(e) => setLine(i, "description", e.target.value)} className={cell} /></td>
+                <td className="px-1 py-1"><input type="number" step="0.0001" value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)} className={cx(cell, "w-24")} /></td>
+                <td className="px-1 py-1"><input type="number" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} className={cx(cell, "w-20")} /></td>
+                <td className="px-1 py-1 font-mono text-xs text-zinc-600">{lt(l).toFixed(2)}</td>
+                <td className="px-1 py-1"><input value={l.country} onChange={(e) => setLine(i, "country", e.target.value.toUpperCase())} maxLength={2} className={cx(cell, "w-14 uppercase")} placeholder="MX" /></td>
+                <td className="px-1 py-1 text-center">
+                  <input type="checkbox" checked={l.has_origin_evidence} onChange={(e) => setLine(i, "has_origin_evidence", e.target.checked)} title="¿Tiene certificado/evidencia de origen?" />
+                </td>
+                <td className="px-1 py-1"><button onClick={() => delLine(i)} className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        ⚠️ Marca la casilla <strong>Evidencia</strong> en cada componente que cuente con certificado o documento de origen.
+        Los componentes <strong>sin evidencia</strong> (resaltados) quedan sujetos a <strong>auditorías internas</strong>.
+      </p>
+      <div className="mt-2 flex items-center justify-between">
+        <Btn size="sm" variant="ghost" onClick={addLine}><Plus size={14} className="-mt-0.5 mr-1 inline" />Agregar componente</Btn>
+        <div className="text-sm font-semibold text-zinc-700">Total BOM: {total.toFixed(2)}</div>
+      </div>
+
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-4"><Btn onClick={submit} disabled={saving}>{saving ? "Enviando…" : done ? "Actualizar BOM" : "Enviar BOM"}</Btn></div>
     </Card>
   );
 }
