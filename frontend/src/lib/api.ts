@@ -29,7 +29,8 @@ async function req(path: string, opts: RequestInit = {}) {
 
 export type Product = {
   id: number; sku: string; description: string; kind: string;
-  hs_code: string; unit_cost: string; country_of_origin: string;
+  kind_display?: string; hs_code: string; unit_cost: string;
+  currency: string; country_of_origin: string; supplier: number | null;
 };
 export type Treaty = { id: number; code: string; name: string };
 export type Qualification = {
@@ -39,8 +40,8 @@ export type Qualification = {
 export type Me = {
   username: string; role: string | null; role_display?: string;
   is_supplier?: boolean;
-  tenant: { id: number; name: string } | null;
-  supplier: { id: number; name: string } | null;
+  tenant: { id: number; name: string; slug: string } | null;
+  supplier: { id: number; name: string; slug: string } | null;
 };
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
@@ -61,6 +62,12 @@ export const api = {
   },
   me: (): Promise<Me> => req("/me/"),
   products: () => req("/products/"),
+  createProduct: (payload: Record<string, unknown>) =>
+    req("/products/", { method: "POST", body: JSON.stringify(payload) }),
+  updateProduct: (id: number, payload: Record<string, unknown>) =>
+    req(`/products/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteProduct: (id: number) =>
+    req(`/products/${id}/`, { method: "DELETE" }),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
   solicitations: () => req("/solicitations/"),

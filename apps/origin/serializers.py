@@ -26,9 +26,13 @@ class PartySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+
     class Meta:
         model = Product
         fields = "__all__"
+        # El tenant lo asigna el servidor (no lo manda ni lo elige el cliente).
+        read_only_fields = ["tenant"]
 
 
 class BOMComponentSerializer(serializers.ModelSerializer):

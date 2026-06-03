@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
-  Plus, CheckCircle2,
+  Plus, CheckCircle2, Pencil, Trash2, X,
 } from "lucide-react";
 import {
   api, clearToken, getToken, MasterTenant, Me, Product, Qualification,
@@ -33,16 +33,24 @@ type LoginMode = "empresa" | "proveedor" | "admin";
 
 function Login({ onLogin }: { onLogin: () => void }) {
   const [mode, setMode] = useState<LoginMode>("empresa");
+  const [slug, setSlug] = useState("");
   const [u, setU] = useState(""); const [p, setP] = useState("");
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
 
   function validate(me: Me): string | null {
     if (mode === "admin")
       return me.role === "master" ? null : "Esta cuenta no tiene acceso de administrador.";
+
+    // Empresa y proveedor deben indicar el slug de la empresa a la que pertenecen.
+    const want = slug.trim().toLowerCase();
+    if (!want) return "Escribe el slug de tu empresa.";
+    if (me.role === "master") return "Usa “Acceso de administrador” para entrar como LogiQ.";
+    if (me.tenant?.slug !== want)
+      return `Esta cuenta no pertenece a la empresa “${want}”.`;
+
     if (mode === "proveedor")
       return me.is_supplier ? null : "Esta cuenta no es de proveedor. Cambia a la pestaña Empresa.";
     // empresa
-    if (me.role === "master") return "Usa “Acceso de administrador” para entrar como LogiQ.";
     if (me.is_supplier) return "Esta cuenta es de proveedor. Cambia a la pestaña Proveedor.";
     return null;
   }
@@ -98,10 +106,23 @@ function Login({ onLogin }: { onLogin: () => void }) {
               ))}
             </div>
           )}
-          <input value={u} onChange={(e) => setU(e.target.value)} placeholder="Usuario" autoFocus
-            className="mb-3 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
-          <input type="password" value={p} onChange={(e) => setP(e.target.value)} placeholder="Contraseña"
-            className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500" />
+          {!adminMode && (
+            <div className="mb-3">
+              <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Empresa</label>
+              <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="Nombre de tu empresa" autoFocus
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 lowercase outline-none focus:border-blue-500" />
+            </div>
+          )}
+          <div className="mb-3">
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Usuario</label>
+            <input value={u} onChange={(e) => setU(e.target.value)} placeholder="Tu usuario" autoFocus={adminMode}
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-blue-500" />
+          </div>
+          <div className="mb-4">
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Contraseña</label>
+            <input type="password" value={p} onChange={(e) => setP(e.target.value)} placeholder="Tu contraseña"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-blue-500" />
+          </div>
           {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
           <button disabled={loading}
             className={cx("w-full rounded-lg py-2.5 text-sm font-medium text-white disabled:opacity-50",
@@ -338,6 +359,34 @@ function Btn({ children, onClick, variant = "primary", size = "md", disabled }: 
   return <button onClick={onClick} disabled={disabled}
     className={cx("rounded-lg font-medium disabled:opacity-50", v, s)}>{children}</button>;
 }
+function Modal({ title, onClose, children }: {
+  title: string; onClose: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
+          <h3 className="font-semibold text-zinc-900">{title}</h3>
+          <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold text-zinc-700">{label}</span>
+      {children}
+    </label>
+  );
+}
+const inputCls = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-blue-500";
+
 const STATUS_PILL: Record<string, string> = {
   QUALIFIES: "bg-green-100 text-green-700", DOES_NOT: "bg-red-100 text-red-700",
   INSUFFICIENT: "bg-amber-100 text-amber-700",
@@ -527,11 +576,13 @@ function ReglasView() {
 
 /* ============ EMPRESA ============ */
 function ProductosView() {
-  const { data, reload } = useList<Product>(() => api.products());
+  const { data, reload, loading } = useList<Product>(() => api.products());
   const treaties = useList<Treaty>(() => api.treaties());
   const quals = useList<Qualification>(() => api.qualifications());
+  const parties = useList<{ id: number; name: string; kind: string }>(() => api.parties());
   const [treatyId, setTreatyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
+  const [editing, setEditing] = useState<Product | "new" | null>(null);
   useEffect(() => {
     if (!treatyId && treaties.data.length) {
       const tmec = treaties.data.find((t) => t.code === "TMEC");
@@ -543,35 +594,134 @@ function ProductosView() {
     setMsg("…"); try { const q = await fn(); setMsg(`${q.status_display}${q.rvc_value ? ` · VCR ${q.rvc_value}%` : ""}`); await quals.reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
+  async function del(p: Product) {
+    if (!confirm(`¿Eliminar el producto “${p.sku}”?`)) return;
+    setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  const suppliers = parties.data.filter((p) => p.kind === "supplier");
   return (
     <div>
-      <PageTitle title="Productos" desc="Califica tus productos contra los tratados." />
-      <div className="mb-4 flex items-center gap-3">
+      <PageTitle title="Productos" desc="Da de alta tus productos y califícalos contra los tratados." />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className="text-sm text-zinc-500">Tratado:</span>
         <select value={treatyId ?? ""} onChange={(e) => setTreatyId(Number(e.target.value))}
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm">
           {treaties.data.map((t) => <option key={t.id} value={t.id}>{t.code} — {t.name}</option>)}
         </select>
-        {msg && <span className="text-sm text-zinc-500">{msg}</span>}
+        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo producto</Btn></div>
       </div>
-      <Table head={["SKU", "Descripción", "HS", "Resultado", ""]}>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["SKU", "Descripción", "Tipo", "HS", "Resultado", ""]}>
         {data.map((p) => {
           const q = qualFor(p.id);
           return (
             <tr key={p.id}>
               <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
               <td className="px-4 py-3">{p.description}</td>
+              <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
               <td className="px-4 py-3 font-mono text-xs">{p.hs_code}</td>
               <td className="px-4 py-3">{q ? <Pill k={q.status}>{q.status_display}{q.rvc_value ? ` · ${q.rvc_value}%` : ""}</Pill> : <span className="text-zinc-400">—</span>}</td>
-              <td className="px-4 py-3 text-right">
+              <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className="mr-2 inline-block"><Btn size="sm" onClick={() => treatyId && run(p.id, () => api.qualify(p.id, treatyId))}>Calificar</Btn></span>
-                <Btn size="sm" variant="ghost" onClick={() => treatyId && run(p.id, async () => { await api.solicit(p.id, treatyId); return { status_display: "Solicitudes enviadas", rvc_value: null } as unknown as Qualification; })}>Solicitar origen</Btn>
+                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => treatyId && run(p.id, async () => { await api.solicit(p.id, treatyId); return { status_display: "Solicitudes enviadas", rvc_value: null } as unknown as Qualification; })}>Solicitar origen</Btn></span>
+                <button onClick={() => setEditing(p)} title="Editar"
+                  className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+                <button onClick={() => del(p)} title="Eliminar"
+                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
               </td>
             </tr>
           );
         })}
+        {!loading && data.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos. Crea el primero con “Nuevo producto”.</td></tr>}
       </Table>
+      {editing && (
+        <ProductForm product={editing === "new" ? null : editing} suppliers={suppliers}
+          onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
+      )}
     </div>
+  );
+}
+
+const KINDS = [
+  { value: "finished", label: "Producto terminado" },
+  { value: "subassembly", label: "Subensamble" },
+  { value: "material", label: "Material / Insumo" },
+];
+function ProductForm({ product, suppliers, onClose, onSaved }: {
+  product: Product | null; suppliers: { id: number; name: string }[];
+  onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    sku: product?.sku ?? "", description: product?.description ?? "",
+    kind: product?.kind ?? "finished", hs_code: product?.hs_code ?? "",
+    unit_cost: product?.unit_cost ?? "0", currency: product?.currency ?? "USD",
+    country_of_origin: product?.country_of_origin ?? "",
+    supplier: (product?.supplier ?? "") as number | "",
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string | number) => setF({ ...f, [k]: v });
+  async function save() {
+    if (!f.sku.trim() || !f.description.trim() || !f.hs_code.trim()) {
+      setErr("SKU, descripción y fracción arancelaria (HS) son obligatorios."); return;
+    }
+    setErr(""); setSaving(true);
+    const payload = {
+      sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
+      hs_code: f.hs_code.trim(), unit_cost: f.unit_cost || "0",
+      currency: f.currency || "USD",
+      country_of_origin: f.country_of_origin.trim().toUpperCase(),
+      supplier: f.supplier === "" ? null : Number(f.supplier),
+    };
+    try {
+      if (product) await api.updateProduct(product.id, payload);
+      else await api.createProduct(payload);
+      onSaved();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={product ? "Editar producto" : "Nuevo producto"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="SKU / Núm. de parte">
+          <input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} placeholder="PT-001" autoFocus />
+        </Field>
+        <Field label="Tipo">
+          <select value={f.kind} onChange={(e) => set("kind", e.target.value)} className={inputCls}>
+            {KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>
+        </Field>
+        <div className="col-span-2">
+          <Field label="Descripción">
+            <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} placeholder="Nombre del producto" />
+          </Field>
+        </div>
+        <Field label="Fracción arancelaria (HS)">
+          <input value={f.hs_code} onChange={(e) => set("hs_code", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="8703.23" />
+        </Field>
+        <Field label="País de origen (ISO-2)">
+          <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
+        </Field>
+        <Field label="Costo unitario">
+          <input type="number" step="0.0001" value={f.unit_cost} onChange={(e) => set("unit_cost", e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Moneda">
+          <input value={f.currency} onChange={(e) => set("currency", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} maxLength={3} placeholder="USD" />
+        </Field>
+        <div className="col-span-2">
+          <Field label="Proveedor (opcional)">
+            <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+              <option value="">— Sin proveedor —</option>
+              {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : product ? "Guardar cambios" : "Crear producto"}</Btn>
+      </div>
+    </Modal>
   );
 }
 function CalificacionesView() {

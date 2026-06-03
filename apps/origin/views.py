@@ -5,10 +5,13 @@
 """
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import ProtectedError
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -70,6 +73,36 @@ class ProductViewSet(TenantScopedViewSet):
     queryset = Product.objects.all()
     serializer_class = s.ProductSerializer
     supplier_field = "supplier_id"  # productos que ese proveedor surte
+
+    def perform_create(self, serializer):
+        """El alta de productos es solo para usuarios de empresa.
+        El tenant se toma de la membresía (no se confía en el cliente)."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden crear productos.")
+        serializer.save(tenant=m.tenant)
+
+    def perform_update(self, serializer):
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden editar productos.")
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden borrar productos.")
+        product = self.get_object()
+        try:
+            with transaction.atomic():
+                product.delete()
+        except ProtectedError:
+            return Response(
+                {"error": "No se puede borrar: este producto se usa como componente "
+                          "en la lista de materiales de otro producto, o tiene un "
+                          "certificado emitido. Quítalo de ahí primero."},
+                status=status.HTTP_409_CONFLICT)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"])
     def qualify(self, request, pk=None):
@@ -242,6 +275,7 @@ def me(request):
         "role_display": m.get_role_display(),
         "is_master": False,
         "is_supplier": m.is_supplier,
-        "tenant": {"id": m.tenant_id, "name": m.tenant.name},
-        "supplier": ({"id": m.party_id, "name": m.party.name} if m.party_id else None),
+        "tenant": {"id": m.tenant_id, "name": m.tenant.name, "slug": m.tenant.slug},
+        "supplier": ({"id": m.party_id, "name": m.party.name, "slug": m.party.slug}
+                     if m.party_id else None),
     })
