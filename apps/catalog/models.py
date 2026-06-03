@@ -1,11 +1,13 @@
 """Datos maestros: proveedores/clientes, productos, BOM y declaraciones de proveedor."""
 from django.db import models
+from django.utils.text import slugify
 
 from apps.tenants.models import TenantOwnedModel
 
 
 class Party(TenantOwnedModel):
-    """Proveedores y clientes del tenant."""
+    """Proveedores y clientes del tenant. Cada uno tiene un slug único DENTRO de
+    su empresa (para identificarlo en un SaaS multi-empresa: empresa/proveedor)."""
 
     class Kind(models.TextChoices):
         SUPPLIER = "supplier", "Proveedor"
@@ -13,6 +15,8 @@ class Party(TenantOwnedModel):
 
     kind = models.CharField(max_length=20, choices=Kind.choices)
     name = models.CharField("Nombre / Razón social", max_length=255)
+    slug = models.SlugField("Slug", max_length=140, blank=True,
+                            help_text="Identificador único dentro de la empresa.")
     tax_id = models.CharField("RFC / Tax ID", max_length=30, blank=True)
     country = models.CharField("País (ISO-2)", max_length=2, help_text="Ej: MX, US, CN")
     email = models.EmailField(blank=True)
@@ -20,8 +24,24 @@ class Party(TenantOwnedModel):
 
     class Meta:
         ordering = ["name"]
+        unique_together = [("tenant", "slug")]
         verbose_name = "Proveedor/Cliente"
         verbose_name_plural = "Proveedores/Clientes"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name) or self.kind
+            slug, i = base, 1
+            while Party.objects.filter(tenant_id=self.tenant_id, slug=slug).exclude(pk=self.pk).exists():
+                i += 1
+                slug = f"{base}-{i}"
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    @property
+    def full_slug(self):
+        """empresa/proveedor — identificador completo en el SaaS."""
+        return f"{self.tenant.slug}/{self.slug}"
 
     def __str__(self):
         return f"{self.name} ({self.get_kind_display()})"

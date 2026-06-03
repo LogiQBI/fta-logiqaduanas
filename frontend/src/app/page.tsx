@@ -122,38 +122,24 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-const NAVY = "#0E3A5F";
-const CYAN = "#2CA6CB";
+// Colores oficiales de marca LogiQ Aduanas (del SVG oficial)
+const NAVY = "#043a70";
+const CYAN = "#30aac6";
 
+// Isotipo oficial (solo el símbolo) para fondos/animaciones
 function LogoMark({ size = 34 }: { size?: number }) {
-  // Símbolo LogiQ Aduanas: dos cuadrados redondeados superpuestos (navy atrás-izq,
-  // cyan adelante-der) con un canal blanco interior formando la "G/espiral".
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-label="LogiQ Aduanas">
-      {/* cuadrado navy (atrás, izquierda-abajo) */}
-      <rect x="12" y="34" width="50" height="50" rx="9" fill={NAVY} />
-      {/* cuadrado cyan (adelante, arriba-derecha) */}
-      <rect x="40" y="16" width="50" height="50" rx="9" fill={CYAN} />
-      {/* campo blanco interior (el hueco de la G) */}
-      <rect x="33" y="27" width="33" height="33" rx="3" fill="#fff" />
-      {/* pestaña cyan que entra al hueco */}
-      <rect x="54" y="47" width="12" height="13" fill={CYAN} />
-      {/* barra navy inferior que asoma */}
-      <rect x="33" y="66" width="33" height="11" rx="2" fill={NAVY} />
-    </svg>
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/logo-mark.png" alt="" width={size} height={size} className="object-contain" />;
 }
 
 function Logo({ center, big }: { center?: boolean; big?: boolean }) {
   return (
-    <div className={cx("flex items-center", big ? "gap-3" : "gap-2.5", center && "justify-center")}>
-      <LogoMark size={big ? 50 : 36} />
-      <div className={cx("font-extrabold leading-none tracking-tight", big ? "text-2xl" : "text-base")}>
-        <div style={{ color: NAVY }}>LOGIQ</div>
-        <div style={{ color: CYAN }} className={big ? "text-xl" : "text-sm"}>ADUANAS</div>
-      </div>
-      <div className={cx("mx-1 w-px bg-zinc-300", big ? "h-10" : "h-7")} />
-      <div className={cx("font-semibold text-zinc-500", big ? "text-2xl" : "text-lg")}>FTA</div>
+    <div className={cx("flex items-center", big ? "gap-4" : "gap-3", center && "justify-center")}>
+      {/* Logo oficial LogiQ Aduanas (PNG transparente, recortado) */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-logiq.png" alt="LogiQ Aduanas" className={cx("w-auto object-contain", big ? "h-20" : "h-10")} />
+      <div className={cx("w-px bg-zinc-300", big ? "h-12" : "h-7")} />
+      <div className={cx("font-semibold text-zinc-500", big ? "text-3xl" : "text-lg")}>FTA</div>
     </div>
   );
 }
@@ -226,8 +212,8 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className="flex min-h-screen bg-[#f5f6f8] text-zinc-800">
       {/* Sidebar */}
-      <aside className="flex w-64 flex-col border-r border-zinc-200 bg-white">
-        <div className="flex h-14 items-center border-b border-zinc-100 px-4"><Logo /></div>
+      <aside className="flex w-72 flex-col border-r border-zinc-200 bg-white">
+        <div className="flex h-16 items-center border-b border-zinc-100 px-4"><Logo /></div>
         <div className="border-b border-zinc-100 px-4 py-3">
           <div className="text-sm font-semibold text-zinc-900">{headerName}</div>
           <div className="truncate text-xs text-zinc-500">{subtitle}</div>

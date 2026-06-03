@@ -14,9 +14,10 @@ class BOMComponentInline(admin.TabularInline):
 
 @admin.register(Party)
 class PartyAdmin(admin.ModelAdmin):
-    list_display = ("name", "kind", "country", "tax_id", "tenant")
+    list_display = ("name", "slug", "kind", "country", "tax_id", "tenant")
     list_filter = ("kind", "tenant", "country")
-    search_fields = ("name", "tax_id")
+    search_fields = ("name", "slug", "tax_id")
+    prepopulated_fields = {"slug": ("name",)}
 
 
 @admin.register(Product)
