@@ -990,7 +990,7 @@ function InsumosView() {
           Primero da de alta al menos un proveedor en <strong>Catálogos → Proveedores</strong> para poder ligarle números de parte.
         </Card>
       )}
-      <Table head={["Núm. de parte", "Tipo", "Descripción", "Proveedor", "HS", "Estatus", ""]}>
+      <Table head={["Núm. de parte", "Tipo", "Descripción", "Proveedor", "HS", "País", "Precio unitario", "Estatus", ""]}>
         {data.map((p) => (
           <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
@@ -1017,6 +1017,8 @@ function InsumosView() {
                 </div>
               )}
             </td>
+            <td className="px-4 py-3">{p.country_of_origin || <span className="text-zinc-400">—</span>}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
                 p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
@@ -1031,7 +1033,7 @@ function InsumosView() {
             </td>
           </tr>
         ))}
-        {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes números de parte. Crea el primero con el botón de arriba.</td></tr>}
+        {!loading && data.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-zinc-400">Aún no tienes números de parte. Crea el primero con el botón de arriba.</td></tr>}
       </Table>
       {editing && (
         <InsumoForm insumo={editing === "new" ? null : editing} suppliers={suppliers}
