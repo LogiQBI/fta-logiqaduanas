@@ -15,6 +15,8 @@ class Party(TenantOwnedModel):
 
     kind = models.CharField(max_length=20, choices=Kind.choices)
     name = models.CharField("Nombre / Razón social", max_length=255)
+    code = models.CharField("Código de proveedor", max_length=30, blank=True,
+                            help_text="Clave que la empresa asigna al proveedor (ej. ST01).")
     slug = models.SlugField("Slug", max_length=140, blank=True,
                             help_text="Identificador único dentro de la empresa.")
     tax_id = models.CharField("RFC / Tax ID", max_length=30, blank=True)
@@ -58,12 +60,14 @@ class Product(TenantOwnedModel):
     sku = models.CharField("SKU / Núm. de parte", max_length=100)
     description = models.CharField("Descripción", max_length=255)
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.FINISHED)
-    hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10,
+    hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10, blank=True,
                                help_text="6 a 10 dígitos")
     unit_cost = models.DecimalField("Costo unitario", max_digits=14, decimal_places=4, default=0)
     currency = models.CharField("Moneda", max_length=3, default="USD")
     # Para materiales comprados: país de origen declarado del propio item.
     country_of_origin = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)
+    is_active = models.BooleanField("Activo", default=True,
+                                    help_text="Insumos inactivos no se usan en cálculos ni solicitudes.")
     supplier = models.ForeignKey(
         Party, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="supplied_products", limit_choices_to={"kind": Party.Kind.SUPPLIER},

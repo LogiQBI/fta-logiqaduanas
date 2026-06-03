@@ -20,13 +20,29 @@ class OriginRuleSerializer(serializers.ModelSerializer):
 
 
 class PartySerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    # Usuarios de acceso (proveedor) ligados a esta Party.
+    access_users = serializers.SerializerMethodField()
+
     class Meta:
         model = Party
         fields = "__all__"
+        read_only_fields = ["tenant", "slug"]
+        # Por defecto se da de alta un proveedor (lo fija la vista).
+        extra_kwargs = {"kind": {"required": False}}
+
+    def get_access_users(self, obj):
+        return [
+            {"id": m.user_id, "username": m.login_name or m.user.username,
+             "must_change_password": m.must_change_password}
+            for m in obj.memberships.select_related("user").all()
+        ]
 
 
 class ProductSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True, default=None)
+    supplier_code = serializers.CharField(source="supplier.code", read_only=True, default=None)
 
     class Meta:
         model = Product

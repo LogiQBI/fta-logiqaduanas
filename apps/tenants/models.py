@@ -103,6 +103,13 @@ class Membership(TimeStampedModel):
         related_name="memberships",
         help_text="Solo para usuarios proveedor: la empresa proveedora que representan.",
     )
+    must_change_password = models.BooleanField(
+        "Debe cambiar contraseña", default=False,
+        help_text="Activo cuando tiene una contraseña temporal; se apaga al cambiarla.")
+    # Nombre que el proveedor ESCRIBE al entrar (único dentro de su proveedor,
+    # no global). El User.username interno se namespacea para evitar choques
+    # cuando dos empresas tienen el mismo proveedor.
+    login_name = models.CharField("Usuario de acceso", max_length=150, blank=True)
 
     class Meta:
         unique_together = [("user", "tenant")]

@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
-  Plus, CheckCircle2, Pencil, Trash2, X,
+  Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes,
 } from "lucide-react";
 import {
-  api, clearToken, getToken, MasterTenant, Me, Product, Qualification,
-  Solicitation, Treaty,
+  api, clearToken, getToken, MasterTenant, Me, Party, Product, Qualification,
+  Solicitation, SupplierUser, Treaty,
 } from "@/lib/api";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -23,9 +23,57 @@ export default function Page() {
   }
   useEffect(() => { if (getToken()) loadMe(); else setReady(true); }, []);
 
+  const logout = () => { clearToken(); setMe(null); };
   if (!ready) return null;
   if (!me) return <Login onLogin={loadMe} />;
-  return <Shell me={me} onLogout={() => { clearToken(); setMe(null); }} />;
+  if (me.must_change_password)
+    return <FirstLoginPassword me={me} onDone={loadMe} onLogout={logout} />;
+  return <Shell me={me} onLogout={logout} />;
+}
+
+/* ============ Primer ingreso: cambio de contraseña obligatorio ============ */
+function FirstLoginPassword({ me, onDone, onLogout }: {
+  me: Me; onDone: () => void; onLogout: () => void;
+}) {
+  const [p1, setP1] = useState(""); const [p2, setP2] = useState("");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setErr("");
+    if (p1.length < 6) { setErr("La contraseña debe tener al menos 6 caracteres."); return; }
+    if (p1 !== p2) { setErr("Las contraseñas no coinciden."); return; }
+    setSaving(true);
+    try { await api.changePassword(p1); onDone(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <main className="flex min-h-screen flex-1 items-center justify-center bg-gradient-to-br from-[#e9f3f8] via-white to-[#eef2f6]">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex justify-center"><Logo center big /></div>
+        <form onSubmit={submit} className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+          <h2 className="mb-1 text-lg font-bold text-zinc-900">Crea tu contraseña</h2>
+          <p className="mb-5 text-sm text-zinc-500">
+            Hola <strong>{me.username}</strong>. Entraste con una contraseña temporal.
+            Define una nueva para continuar.
+          </p>
+          <div className="mb-3">
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Nueva contraseña</label>
+            <input type="password" value={p1} onChange={(e) => setP1(e.target.value)} autoFocus className={inputCls} />
+          </div>
+          <div className="mb-4">
+            <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Repite la contraseña</label>
+            <input type="password" value={p2} onChange={(e) => setP2(e.target.value)} className={inputCls} />
+          </div>
+          {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+          <button disabled={saving} className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            {saving ? "Guardando…" : "Guardar y entrar"}
+          </button>
+          <button type="button" onClick={onLogout} className="mt-3 w-full text-center text-xs text-zinc-400 hover:text-zinc-600">
+            Cancelar y salir
+          </button>
+        </form>
+      </div>
+    </main>
+  );
 }
 
 /* ============ Login ============ */
@@ -34,31 +82,38 @@ type LoginMode = "empresa" | "proveedor" | "admin";
 function Login({ onLogin }: { onLogin: () => void }) {
   const [mode, setMode] = useState<LoginMode>("empresa");
   const [slug, setSlug] = useState("");
+  const [supplierSlug, setSupplierSlug] = useState("");
   const [u, setU] = useState(""); const [p, setP] = useState("");
   const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
 
   function validate(me: Me): string | null {
     if (mode === "admin")
       return me.role === "master" ? null : "Esta cuenta no tiene acceso de administrador.";
-
-    // Empresa y proveedor deben indicar el slug de la empresa a la que pertenecen.
-    const want = slug.trim().toLowerCase();
-    if (!want) return "Escribe el slug de tu empresa.";
     if (me.role === "master") return "Usa “Acceso de administrador” para entrar como LogiQ.";
-    if (me.tenant?.slug !== want)
-      return `Esta cuenta no pertenece a la empresa “${want}”.`;
 
-    if (mode === "proveedor")
+    if (mode === "proveedor") {
+      // El backend ya resolvió por empresa+proveedor; confirmamos que es proveedor.
       return me.is_supplier ? null : "Esta cuenta no es de proveedor. Cambia a la pestaña Empresa.";
-    // empresa
+    }
+    // Empresa: el slug debe coincidir con su tenant.
+    const want = slug.trim().toLowerCase();
+    if (me.tenant?.slug !== want) return `Esta cuenta no pertenece a la empresa “${want}”.`;
     if (me.is_supplier) return "Esta cuenta es de proveedor. Cambia a la pestaña Proveedor.";
     return null;
   }
 
   async function submit(e: React.FormEvent) {
-    e.preventDefault(); setError(""); setLoading(true);
+    e.preventDefault(); setError("");
+    if (mode !== "admin" && !slug.trim())
+      return setError("Escribe la empresa (cliente).");
+    if (mode === "proveedor" && !supplierSlug.trim())
+      return setError("Escribe el proveedor.");
+    setLoading(true);
     try {
-      await api.login(u, p);
+      const opts = mode === "proveedor"
+        ? { tenantSlug: slug.trim().toLowerCase(), supplierSlug: supplierSlug.trim().toLowerCase() }
+        : undefined;
+      await api.login(u, p, opts);
       const me = await api.me();
       const problem = validate(me);
       if (problem) { clearToken(); setError(problem); return; }
@@ -108,8 +163,18 @@ function Login({ onLogin }: { onLogin: () => void }) {
           )}
           {!adminMode && (
             <div className="mb-3">
-              <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Empresa</label>
-              <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="Nombre de tu empresa" autoFocus
+              <label className="mb-1.5 block text-sm font-semibold text-zinc-800">
+                {mode === "proveedor" ? "Empresa (cliente)" : "Empresa"}
+              </label>
+              <input value={slug} onChange={(e) => setSlug(e.target.value)}
+                placeholder={mode === "proveedor" ? "Empresa que te contrata" : "Nombre de tu empresa"} autoFocus
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 lowercase outline-none focus:border-blue-500" />
+            </div>
+          )}
+          {mode === "proveedor" && (
+            <div className="mb-3">
+              <label className="mb-1.5 block text-sm font-semibold text-zinc-800">Proveedor</label>
+              <input value={supplierSlug} onChange={(e) => setSupplierSlug(e.target.value)} placeholder="Tu identificador de proveedor"
                 className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 lowercase outline-none focus:border-blue-500" />
             </div>
           )}
@@ -195,16 +260,17 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
   }
   return [
     { items: [{ key: "home", label: "Inicio", icon: Home }] },
+    { label: "Catálogos", items: [
+      { key: "proveedores", label: "Proveedores", icon: Truck },
+      { key: "insumos", label: "Números de parte", icon: Package },
+    ] },
     { label: "Origen", items: [
-      { key: "productos", label: "Productos", icon: Package },
+      { key: "productos", label: "Productos", icon: Boxes },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Certificados", icon: BadgeCheck },
-    ] },
-    { label: "Proveedores", items: [
-      { key: "proveedores", label: "Proveedores", icon: Truck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
     ] },
-    { label: "Catálogos", items: [
+    { label: "Referencia", items: [
       { key: "tratados", label: "Tratados (TLC)", icon: ScrollText },
       { key: "reglas", label: "Reglas de origen", icon: BookOpen },
     ] },
@@ -312,9 +378,10 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "tratados": return <TratadosView />;
     case "reglas": return <ReglasView />;
     case "productos": return <ProductosView />;
+    case "insumos": return <InsumosView />;
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosView />;
-    case "proveedores": return <ProveedoresView />;
+    case "proveedores": return <ProveedoresView me={me} />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-solicitudes": return <MisSolicitudesView />;
     case "mis-declaraciones": return <MisDeclaracionesView />;
@@ -600,9 +667,11 @@ function ProductosView() {
     catch (e) { setMsg((e as Error).message); }
   }
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
+  // En "Productos" solo los terminados/subensambles; los insumos van en "Números de parte".
+  const visibles = data.filter((p) => p.kind !== "material");
   return (
     <div>
-      <PageTitle title="Productos" desc="Da de alta tus productos y califícalos contra los tratados." />
+      <PageTitle title="Productos terminados" desc="Tus productos terminados. Califícalos contra los tratados." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <span className="text-sm text-zinc-500">Tratado:</span>
         <select value={treatyId ?? ""} onChange={(e) => setTreatyId(Number(e.target.value))}
@@ -613,7 +682,7 @@ function ProductosView() {
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <Table head={["SKU", "Descripción", "Tipo", "HS", "Resultado", ""]}>
-        {data.map((p) => {
+        {visibles.map((p) => {
           const q = qualFor(p.id);
           return (
             <tr key={p.id}>
@@ -633,7 +702,7 @@ function ProductosView() {
             </tr>
           );
         })}
-        {!loading && data.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos. Crea el primero con “Nuevo producto”.</td></tr>}
+        {!loading && visibles.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos terminados. Crea el primero con “Nuevo producto”.</td></tr>}
       </Table>
       {editing && (
         <ProductForm product={editing === "new" ? null : editing} suppliers={suppliers}
@@ -724,6 +793,143 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     </Modal>
   );
 }
+/* ====== Insumos / Números de parte (lo que la empresa compra) ====== */
+function InsumosView() {
+  const { data, reload, loading } = useList<Product>(() => api.products());
+  const parties = useList<Party>(() => api.parties());
+  const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [msg, setMsg] = useState("");
+  const suppliers = parties.data.filter((p) => p.kind === "supplier");
+  const insumos = data.filter((p) => p.kind === "material");
+  async function del(p: Product) {
+    if (!confirm(`¿Eliminar el número de parte “${p.sku}”?`)) return;
+    setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  return (
+    <div>
+      <PageTitle title="Números de parte" desc="Los insumos que compras, ligados a su proveedor." />
+      <div className="mb-4 flex">
+        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo número de parte</Btn></div>
+      </div>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      {suppliers.length === 0 && !loading && (
+        <Card className="mb-4 p-4 text-sm text-amber-700">
+          Primero da de alta al menos un proveedor en <strong>Catálogos → Proveedores</strong> para poder ligarle números de parte.
+        </Card>
+      )}
+      <Table head={["Núm. de parte", "Descripción", "Proveedor", "País", "Precio", "Estatus", ""]}>
+        {insumos.map((p) => (
+          <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
+            <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
+            <td className="px-4 py-3">{p.description}</td>
+            <td className="px-4 py-3">
+              {p.supplier_name
+                ? <span>{p.supplier_name} {p.supplier_code ? <code className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[11px] text-zinc-600">{p.supplier_code}</code> : null}</span>
+                : <span className="text-zinc-400">—</span>}
+            </td>
+            <td className="px-4 py-3">{p.country_of_origin || "—"}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
+            <td className="px-4 py-3">
+              <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
+                p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
+                {p.is_active ? "Activo" : "Inactivo"}
+              </span>
+            </td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <button onClick={() => setEditing(p)} title="Editar"
+                className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+              <button onClick={() => del(p)} title="Eliminar"
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
+          </tr>
+        ))}
+        {!loading && insumos.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes números de parte. Crea el primero con el botón de arriba.</td></tr>}
+      </Table>
+      {editing && (
+        <InsumoForm insumo={editing === "new" ? null : editing} suppliers={suppliers}
+          onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
+      )}
+    </div>
+  );
+}
+function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
+  insumo: Product | null; suppliers: Party[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    sku: insumo?.sku ?? "", description: insumo?.description ?? "",
+    supplier: (insumo?.supplier ?? "") as number | "",
+    hs_code: insumo?.hs_code ?? "", unit_cost: insumo?.unit_cost ?? "0",
+    currency: insumo?.currency ?? "USD", country_of_origin: insumo?.country_of_origin ?? "",
+    is_active: insumo?.is_active ?? true,
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string | number | boolean) => setF({ ...f, [k]: v });
+  async function save() {
+    if (!f.sku.trim() || !f.description.trim()) {
+      setErr("El número de parte y la descripción son obligatorios."); return;
+    }
+    setErr(""); setSaving(true);
+    const payload = {
+      sku: f.sku.trim(), description: f.description.trim(), kind: "material",
+      supplier: f.supplier === "" ? null : Number(f.supplier),
+      hs_code: f.hs_code.trim(), unit_cost: f.unit_cost || "0",
+      currency: f.currency || "USD",
+      country_of_origin: f.country_of_origin.trim().toUpperCase(),
+      is_active: f.is_active,
+    };
+    try {
+      if (insumo) await api.updateProduct(insumo.id, payload);
+      else await api.createProduct(payload);
+      onSaved();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={insumo ? "Editar número de parte" : "Nuevo número de parte"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Número de parte">
+          <input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="7782-A" autoFocus />
+        </Field>
+        <Field label="Estatus">
+          <select value={f.is_active ? "1" : "0"} onChange={(e) => set("is_active", e.target.value === "1")} className={inputCls}>
+            <option value="1">Activo</option>
+            <option value="0">Inactivo</option>
+          </select>
+        </Field>
+        <div className="col-span-2">
+          <Field label="Descripción">
+            <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} placeholder="Nombre del insumo" />
+          </Field>
+        </div>
+        <div className="col-span-2">
+          <Field label="Proveedor">
+            <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+              <option value="">— Selecciona un proveedor —</option>
+              {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="Fracción HS (opcional)">
+          <input value={f.hs_code} onChange={(e) => set("hs_code", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="853690" />
+        </Field>
+        <Field label="País de origen (ISO-2)">
+          <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
+        </Field>
+        <Field label="Precio unitario">
+          <input type="number" step="0.0001" value={f.unit_cost} onChange={(e) => set("unit_cost", e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Moneda">
+          <input value={f.currency} onChange={(e) => set("currency", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} maxLength={3} />
+        </Field>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : insumo ? "Guardar cambios" : "Crear número de parte"}</Btn>
+      </div>
+    </Modal>
+  );
+}
 function CalificacionesView() {
   const { data, count } = useList<Qualification & { product: number }>(() => api.qualifications());
   const products = useList<Product>(() => api.products());
@@ -762,23 +968,202 @@ function CertificadosView() {
     </div>
   );
 }
-function ProveedoresView() {
-  const { data, count } = useList<{ id: number; name: string; slug: string; country: string; tax_id: string; kind: string }>(() => api.parties());
+function ProveedoresView({ me }: { me: Me }) {
+  const { data, reload, loading } = useList<Party>(() => api.parties());
+  const [editing, setEditing] = useState<Party | "new" | null>(null);
+  const [access, setAccess] = useState<Party | null>(null);
+  const [msg, setMsg] = useState("");
+  async function del(p: Party) {
+    if (!confirm(`¿Eliminar el proveedor “${p.name}”?`)) return;
+    setMsg(""); try { await api.deleteParty(p.id); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
   return (
     <div>
-      <PageTitle title="Proveedores y clientes" desc={`${count} registros. El slug identifica a cada uno dentro de tu empresa.`} />
-      <Table head={["Nombre", "Slug", "Tipo", "País", "RFC / Tax ID"]}>
+      <PageTitle title="Proveedores" desc="Tu padrón de proveedores. Asígnales un código y crea su acceso." />
+      <div className="mb-4 flex">
+        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo proveedor</Btn></div>
+      </div>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["Código", "Proveedor", "País", "RFC / Tax ID", "Acceso", ""]}>
         {data.map((p) => (
           <tr key={p.id}>
-            <td className="px-4 py-3 font-medium">{p.name}</td>
-            <td className="px-4 py-3"><code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{p.slug}</code></td>
-            <td className="px-4 py-3">{p.kind === "supplier" ? "Proveedor" : "Cliente"}</td>
-            <td className="px-4 py-3">{p.country}</td>
+            <td className="px-4 py-3"><code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-700">{p.code || "—"}</code></td>
+            <td className="px-4 py-3">
+              <div className="font-medium">{p.name}</div>
+              <div className="text-[11px] text-zinc-400">{p.slug}</div>
+            </td>
+            <td className="px-4 py-3">{p.country || "—"}</td>
             <td className="px-4 py-3 font-mono text-xs">{p.tax_id || "—"}</td>
+            <td className="px-4 py-3">
+              {p.access_users.length > 0
+                ? <button onClick={() => setAccess(p)} className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">
+                    <KeyRound size={13} />{p.access_users.length} usuario{p.access_users.length > 1 ? "s" : ""}
+                  </button>
+                : <Btn size="sm" variant="ghost" onClick={() => setAccess(p)}><KeyRound size={13} className="-mt-0.5 mr-1 inline" />Crear acceso</Btn>}
+            </td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <button onClick={() => setEditing(p)} title="Editar"
+                className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+              <button onClick={() => del(p)} title="Eliminar"
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
           </tr>
         ))}
+        {!loading && data.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Aún no tienes proveedores. Crea el primero con “Nuevo proveedor”.</td></tr>}
       </Table>
+      {editing && (
+        <ProveedorForm party={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
+      )}
+      {access && (
+        <UsersModal party={access} tenantSlug={me.tenant?.slug ?? ""}
+          onClose={() => setAccess(null)} onChanged={reload} />
+      )}
     </div>
+  );
+}
+function ProveedorForm({ party, onClose, onSaved }: {
+  party: Party | null; onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    name: party?.name ?? "", code: party?.code ?? "", country: party?.country ?? "",
+    tax_id: party?.tax_id ?? "", email: party?.email ?? "", phone: party?.phone ?? "",
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v });
+  async function save() {
+    if (!f.name.trim()) { setErr("El nombre del proveedor es obligatorio."); return; }
+    setErr(""); setSaving(true);
+    const payload = {
+      name: f.name.trim(), code: f.code.trim(), country: f.country.trim().toUpperCase(),
+      tax_id: f.tax_id.trim(), email: f.email.trim(), phone: f.phone.trim(),
+    };
+    try {
+      if (party) await api.updateParty(party.id, payload);
+      else await api.createParty(payload);
+      onSaved();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={party ? "Editar proveedor" : "Nuevo proveedor"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <Field label="Nombre / Razón social">
+            <input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} placeholder="Stellantis" autoFocus />
+          </Field>
+        </div>
+        <Field label="Código de proveedor">
+          <input value={f.code} onChange={(e) => set("code", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="ST01" />
+        </Field>
+        <Field label="País (ISO-2)">
+          <input value={f.country} onChange={(e) => set("country", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
+        </Field>
+        <Field label="RFC / Tax ID">
+          <input value={f.tax_id} onChange={(e) => set("tax_id", e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Teléfono">
+          <input value={f.phone} onChange={(e) => set("phone", e.target.value)} className={inputCls} />
+        </Field>
+        <div className="col-span-2">
+          <Field label="Email">
+            <input value={f.email} onChange={(e) => set("email", e.target.value)} className={inputCls} placeholder="contacto@proveedor.com" />
+          </Field>
+        </div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : party ? "Guardar cambios" : "Crear proveedor"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+function UsersModal({ party, tenantSlug, onClose, onChanged }: {
+  party: Party; tenantSlug: string; onClose: () => void; onChanged: () => void;
+}) {
+  const [users, setUsers] = useState<SupplierUser[]>(party.access_users);
+  const [username, setUsername] = useState("");
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  // Última contraseña temporal generada (para mostrarla/copiarla una sola vez).
+  const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
+  async function refresh() { setUsers(await api.supplierUsers(party.id)); onChanged(); }
+  async function add() {
+    if (!username.trim()) { setErr("Escribe un nombre de usuario."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.addSupplierUser(party.id, username.trim());
+      setTemp({ username: r.username, password: r.temp_password });
+      setUsername(""); await refresh();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function reset(u: SupplierUser) {
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.resetSupplierPassword(party.id, u.id);
+      setTemp({ username: u.username, password: r.temp_password });
+      await refresh();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function remove(u: SupplierUser) {
+    if (!confirm(`¿Quitar el usuario “${u.username}”? Ya no podrá entrar.`)) return;
+    setErr(""); setBusy(true);
+    try { await api.removeSupplierUser(party.id, u.id); if (temp?.username === u.username) setTemp(null); await refresh(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`Usuarios de acceso — ${party.name}`} onClose={onClose}>
+      <p className="mb-4 text-sm text-zinc-500">
+        Para entrar, el proveedor elige la pestaña <strong>Proveedor</strong> y escribe:
+        Empresa (cliente) = <code className="rounded bg-zinc-100 px-1">{tenantSlug}</code>,
+        Proveedor = <code className="rounded bg-zinc-100 px-1">{party.slug}</code>, su usuario y contraseña.
+        Con una contraseña temporal, deberá cambiarla en su primer ingreso.
+      </p>
+
+      {temp && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+          <div className="font-semibold text-emerald-800">Contraseña temporal de “{temp.username}”</div>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="rounded bg-white px-2 py-1 font-mono text-emerald-900 ring-1 ring-emerald-200">{temp.password}</code>
+            <button onClick={() => navigator.clipboard?.writeText(temp.password)}
+              className="text-xs text-emerald-700 hover:underline">Copiar</button>
+          </div>
+          <div className="mt-1 text-xs text-emerald-700">Cópiala y compártela con el proveedor. No se volverá a mostrar.</div>
+        </div>
+      )}
+
+      <div className="mb-4 overflow-hidden rounded-lg border border-zinc-200">
+        {users.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">Aún no hay usuarios.</div>}
+        {users.map((u) => (
+          <div key={u.id} className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 last:border-0">
+            <div className="flex items-center gap-2">
+              <KeyRound size={14} className="text-zinc-400" />
+              <span className="text-sm font-medium">{u.username}</span>
+              {u.must_change_password && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">contraseña temporal</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              <Btn size="sm" variant="ghost" onClick={() => reset(u)} disabled={busy}>Restablecer contraseña</Btn>
+              <button onClick={() => remove(u)} disabled={busy} title="Quitar"
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Field label="Agregar usuario">
+        <div className="flex gap-2">
+          <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputCls}
+            placeholder="usuario del proveedor" onKeyDown={(e) => e.key === "Enter" && add()} />
+          <Btn onClick={add} disabled={busy}><Plus size={15} className="-mt-0.5 mr-1 inline" />Agregar</Btn>
+        </div>
+      </Field>
+      <p className="mt-1 text-xs text-zinc-400">Se generará una contraseña temporal automáticamente.</p>
+
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end">
+        <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+      </div>
+    </Modal>
   );
 }
 function SolicitudesEmpresaView() {

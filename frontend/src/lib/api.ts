@@ -31,15 +31,23 @@ export type Product = {
   id: number; sku: string; description: string; kind: string;
   kind_display?: string; hs_code: string; unit_cost: string;
   currency: string; country_of_origin: string; supplier: number | null;
+  supplier_name?: string | null; supplier_code?: string | null;
+  is_active: boolean;
 };
 export type Treaty = { id: number; code: string; name: string };
+export type SupplierUser = { id: number; username: string; must_change_password: boolean };
+export type Party = {
+  id: number; kind: string; kind_display?: string; name: string;
+  code: string; slug: string; tax_id: string; country: string;
+  email: string; phone: string; access_users: SupplierUser[];
+};
 export type Qualification = {
   id: number; product: number; treaty: number; status: string;
   status_display: string; criterion: string; rvc_value: string | null;
 };
 export type Me = {
   username: string; role: string | null; role_display?: string;
-  is_supplier?: boolean;
+  is_supplier?: boolean; must_change_password?: boolean;
   tenant: { id: number; name: string; slug: string } | null;
   supplier: { id: number; name: string; slug: string } | null;
 };
@@ -49,13 +57,20 @@ export type Solicitation = {
 };
 
 export const api = {
-  async login(username: string, password: string) {
+  async login(username: string, password: string,
+              opts?: { tenantSlug?: string; supplierSlug?: string }) {
+    const body: Record<string, unknown> = { username, password };
+    if (opts?.tenantSlug) body.tenant_slug = opts.tenantSlug;
+    if (opts?.supplierSlug) body.supplier_slug = opts.supplierSlug;
     const res = await fetch(`${BASE}/login/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error("Usuario o contraseña incorrectos.");
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || "Usuario o contraseña incorrectos.");
+    }
     const data = await res.json();
     setToken(data.token);
     return data;
@@ -73,6 +88,28 @@ export const api = {
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
   parties: () => req("/parties/"),
+  createParty: (payload: Record<string, unknown>) =>
+    req("/parties/", { method: "POST", body: JSON.stringify(payload) }),
+  updateParty: (id: number, payload: Record<string, unknown>) =>
+    req(`/parties/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteParty: (id: number) =>
+    req(`/parties/${id}/`, { method: "DELETE" }),
+  supplierUsers: (partyId: number) => req(`/parties/${partyId}/users/`),
+  addSupplierUser: (partyId: number, username: string, password?: string) =>
+    req(`/parties/${partyId}/users/`, {
+      method: "POST",
+      body: JSON.stringify(password ? { username, password } : { username }),
+    }),
+  resetSupplierPassword: (partyId: number, userId: number, password?: string) =>
+    req(`/parties/${partyId}/users/${userId}/reset-password/`, {
+      method: "POST", body: JSON.stringify(password ? { password } : {}),
+    }),
+  removeSupplierUser: (partyId: number, userId: number) =>
+    req(`/parties/${partyId}/users/${userId}/`, { method: "DELETE" }),
+  changePassword: (newPassword: string) =>
+    req("/change-password/", {
+      method: "POST", body: JSON.stringify({ new_password: newPassword }),
+    }),
   certificates: () => req("/certificates/"),
   rules: (params = "") => req(`/origin-rules/${params}`),
   qualify: (productId: number, treatyId: number) =>
