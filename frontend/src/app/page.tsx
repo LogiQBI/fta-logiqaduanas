@@ -1717,9 +1717,13 @@ function ProveedorProductosView() {
     </div>
   );
 }
-// Acordeón con encabezado unificado (tratado, periodo, límite, estado) + colapsable.
-function SolAccordion({ s, defaultOpen, children }: {
-  s: Solicitation; defaultOpen?: boolean; children: React.ReactNode;
+// Estado desde la perspectiva del PROVEEDOR ("sent" -> pendiente por responder).
+function estadoProveedor(s: Solicitation) {
+  return s.status === "sent" ? "Pendiente por responder" : s.status_display;
+}
+// Acordeón por producto (modo compacto cuando va dentro de un bloque).
+function SolAccordion({ s, defaultOpen, compact, children }: {
+  s: Solicitation; defaultOpen?: boolean; compact?: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const alert = dueAlert(s);
@@ -1730,20 +1734,77 @@ function SolAccordion({ s, defaultOpen, children }: {
         <div className="min-w-0">
           <div className="font-semibold text-zinc-900">{s.product_sku} — {s.product_description}</div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="rounded-md bg-blue-600 px-2 py-0.5 font-bold text-white">{treatyLabel(s.treaty_code)}</span>
-            {(s.period_from && s.period_to) &&
-              <span className="rounded-md bg-zinc-800 px-2 py-0.5 font-semibold text-white">{s.period_display}: {s.period_from} → {s.period_to}</span>}
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">{s.bom_analysis ? "BOM" : "Declaración"}</span>
             <span className="text-zinc-500">HS {formatHs(s.product_hs ?? "") || "—"} · Precio {s.product_unit_cost}</span>
-            {s.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Límite: {s.due_date}</span>}
-            {alert && <span className={cx("rounded-full px-2 py-0.5 font-medium", alert.cls)}>⏰ {alert.label}</span>}
+            {!compact && <>
+              <span className="rounded-md bg-blue-600 px-2 py-0.5 font-bold text-white">{treatyLabel(s.treaty_code)}</span>
+              {(s.period_from && s.period_to) &&
+                <span className="rounded-md bg-zinc-800 px-2 py-0.5 font-semibold text-white">{s.period_display}: {s.period_from} → {s.period_to}</span>}
+              {s.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Límite: {s.due_date}</span>}
+              {alert && <span className={cx("rounded-full px-2 py-0.5 font-medium", alert.cls)}>⏰ {alert.label}</span>}
+            </>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Pill k={s.status}>{s.status_display}</Pill>
+          <Pill k={s.status}>{estadoProveedor(s)}</Pill>
           <ChevronDown size={18} className={cx("text-zinc-400 transition-transform", open && "rotate-180")} />
         </div>
       </button>
       {open && <div className="border-t border-zinc-100 p-5">{children}</div>}
+    </Card>
+  );
+}
+// Bloque: una solicitud de origen (tratado + periodo) que cubre varios productos.
+function SolicitudBloque({ items, prod, onDone }: {
+  items: Solicitation[]; prod: (id: number) => Product | undefined; onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const s0 = items[0];
+  const alert = dueAlert(s0);
+  const respondidas = items.filter((i) => i.status === "responded").length;
+  const listas = items.filter((i) => i.bom_analysis && i.submitted_bom?.origin_status && i.status !== "responded");
+  async function enviarListas() {
+    setBusy(true);
+    try { for (const i of listas) await api.sendBom(i.id); onDone(); }
+    finally { setBusy(false); }
+  }
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={() => setOpen(!open)}
+        className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-zinc-50">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-md bg-blue-600 px-2.5 py-1 text-sm font-bold text-white">{treatyLabel(s0.treaty_code)}</span>
+            {(s0.period_from && s0.period_to) &&
+              <span className="rounded-md bg-zinc-800 px-2.5 py-1 text-sm font-semibold text-white">{s0.period_display}: {s0.period_from} → {s0.period_to}</span>}
+            {s0.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">Límite: {s0.due_date}</span>}
+            {alert && <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", alert.cls)}>⏰ {alert.label}</span>}
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">{items.length} número(s) de parte · {respondidas}/{items.length} enviado(s)</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {respondidas === items.length
+            ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Completa</span>
+            : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Pendiente</span>}
+          <ChevronDown size={18} className={cx("text-zinc-400 transition-transform", open && "rotate-180")} />
+        </div>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/50 p-4">
+          {listas.length > 0 && (
+            <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              <span>{listas.length} producto(s) con origen calculado, listos para enviar.</span>
+              <Btn size="sm" onClick={enviarListas} disabled={busy}>{busy ? "Enviando…" : "Enviar todo el bloque listo"}</Btn>
+            </div>
+          )}
+          {items.map((i) => (
+            <SolAccordion key={i.id} s={i} compact>
+              {i.bom_analysis ? <BomCard s={i} onDone={onDone} /> : <SolCard s={i} product={prod(i.product)} onDone={onDone} />}
+            </SolAccordion>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -1752,19 +1813,20 @@ function MisSolicitudesView({ me }: { me: Me }) {
   const products = useList<Product>(() => api.products());
   const prod = (id: number) => products.data.find((p) => p.id === id);
   const cliente = me.tenant?.name;
-  const pendientes = data.filter((s) => s.status !== "responded").length;
+  // Agrupar por BLOQUE: misma solicitud = mismo tratado + periodo + fecha límite.
+  const bloques = new Map<string, Solicitation[]>();
+  for (const s of data) {
+    const key = `${s.treaty_code}__${s.period_from}__${s.period_to}__${s.due_date}`;
+    (bloques.get(key) ?? bloques.set(key, []).get(key)!).push(s);
+  }
   return (
     <div>
       <PageTitle title={`Solicitudes de cliente${cliente ? ` (${cliente})` : ""}`}
-        desc="Completa la información de origen que te piden tus clientes. Haz clic en una solicitud para abrirla." />
+        desc="Cada bloque es una solicitud (tratado + periodo). Haz clic para ver y responder sus productos." />
       {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
       <div className="space-y-3">
-        {data.map((s) => (
-          <SolAccordion key={s.id} s={s} defaultOpen={pendientes === 1 && s.status !== "responded"}>
-            {s.bom_analysis
-              ? <BomCard s={s} onDone={reload} />
-              : <SolCard s={s} product={prod(s.product)} onDone={reload} />}
-          </SolAccordion>
+        {Array.from(bloques.values()).map((items) => (
+          <SolicitudBloque key={items[0].id} items={items} prod={prod} onDone={reload} />
         ))}
       </div>
     </div>
@@ -1830,10 +1892,19 @@ function SolCard({ s, product, onDone }: {
     <div>
       <SugerenciaPanel s={s} ruleId={ruleId} onUse={setRuleId} />
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <label className="col-span-2 flex items-center gap-2">
-          <input type="checkbox" checked={orig} onChange={(e) => setOrig(e.target.checked)} />
-          <strong>Origen:</strong> ¿el material es originario para este tratado?
-        </label>
+        <div className="col-span-2">
+          <label className="block text-xs text-zinc-500">Origen para este tratado</label>
+          <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-zinc-300">
+            <button type="button" onClick={() => setOrig(true)}
+              className={cx("px-4 py-1.5 text-sm font-semibold", orig ? "bg-green-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50")}>
+              Originario
+            </button>
+            <button type="button" onClick={() => setOrig(false)}
+              className={cx("px-4 py-1.5 text-sm font-semibold", !orig ? "bg-red-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50")}>
+              No originario
+            </button>
+          </div>
+        </div>
         <div className="col-span-2">
           <label className="block text-xs text-zinc-500">Regla de origen específica (PSR)</label>
           <select value={ruleId} onChange={(e) => setRuleId(e.target.value === "" ? "" : Number(e.target.value))} className={cellI}>
