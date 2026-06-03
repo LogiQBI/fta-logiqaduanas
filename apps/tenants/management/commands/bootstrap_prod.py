@@ -47,20 +47,20 @@ class Command(BaseCommand):
         else:
             self.stdout.write("SEED_DEMO!=1 -> se omite el sembrado demo.")
 
-        # Catálogo de reglas de origen (PSR). Solo si está casi vacío, para no
-        # reimportar las ~1466 reglas en cada despliegue.
+        # Catálogo de reglas de origen (PSR). El starter es chico (reglas
+        # genéricas por capítulo) -> siempre, idempotente. El GN11 es grande
+        # (~1466) -> solo si el catálogo está casi vacío.
         from pathlib import Path
 
         from django.conf import settings
 
         from apps.treaties.models import OriginRule
 
-        if OriginRule.objects.count() < 50:
-            csv_path = Path(settings.BASE_DIR) / "apps" / "treaties" / "data" / "usmca_gn11_auto.csv"
-            if csv_path.exists():
-                self.stdout.write("Cargando catálogo de reglas de origen (USMCA/T-MEC)…")
-                call_command("import_rules", str(csv_path))
-            else:
-                self.stdout.write(self.style.WARNING(f"No se encontró {csv_path}; reglas no cargadas."))
-        else:
-            self.stdout.write("Catálogo de reglas ya cargado; se omite la importación.")
+        data = Path(settings.BASE_DIR) / "apps" / "treaties" / "data"
+        starter = data / "rules_starter.csv"
+        gn11 = data / "usmca_gn11_auto.csv"
+        if starter.exists():
+            call_command("import_rules", str(starter))
+        if gn11.exists() and OriginRule.objects.count() < 1000:
+            self.stdout.write("Cargando catálogo completo de reglas (GN11)…")
+            call_command("import_rules", str(gn11))
