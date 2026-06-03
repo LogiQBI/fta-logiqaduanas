@@ -137,6 +137,45 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     submitted_bom = serializers.SerializerMethodField()
     logs = serializers.SerializerMethodField()
+    suggested_rule = serializers.SerializerMethodField()
+    origin_hint = serializers.SerializerMethodField()
+    declared_originating = serializers.SerializerMethodField()
+
+    def get_declared_originating(self, obj):
+        return obj.declaration.is_originating if obj.declaration_id else None
+
+    def _psr(self, obj):
+        if not hasattr(obj, "_psr_cache"):
+            from apps.origin import engine
+            obj._psr_cache = engine.find_rule(obj.treaty, obj.product.hs_code or "")
+        return obj._psr_cache
+
+    def get_suggested_rule(self, obj):
+        r = self._psr(obj)
+        if not r:
+            return None
+        return {"id": r.id, "hs_pattern": r.hs_pattern,
+                "rule_type": r.rule_type, "description": r.description}
+
+    def get_origin_hint(self, obj):
+        hs = "".join(c for c in (obj.product.hs_code or "") if c.isdigit())
+        if hs.startswith("8708"):
+            return ("Este producto es una AUTOPARTE (fracción 8708). En el USMCA las autopartes "
+                    "siguen el régimen automotriz (VCR alto + Valor de Contenido Laboral y "
+                    "requisitos de compra de acero/aluminio). Revisa la regla específica con cuidado.")
+        if hs[:2] == "87":
+            return ("Producto del sector automotor (capítulo 87). Aplica el régimen automotriz "
+                    "del USMCA; las reglas son más estrictas que las generales.")
+        r = self._psr(obj)
+        crit = {"CTC": "cambio de clasificación arancelaria (CTH)",
+                "RVC": "valor de contenido regional (VCR)",
+                "CTC_OR_RVC": "CTH o VCR", "CTC_AND_RVC": "CTH y VCR",
+                "WO": "totalmente obtenido"}
+        if r:
+            return (f"Para esta fracción suele aplicar: {crit.get(r.rule_type, r.rule_type)}. "
+                    "Selecciona la regla sugerida y completa el BOM en consecuencia.")
+        return ("No encontramos una regla específica para esta fracción; lo más común es el "
+                "cambio de clasificación arancelaria (CTH). Confírmalo con un especialista.")
 
     ACTION_LABELS = {
         "bom_saved": "BOM guardado", "origin_calculated": "Origen calculado",

@@ -417,12 +417,15 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
   return (
     <Card className="overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-zinc-500">
-          <tr>{head.map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}</tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-100">{children}</tbody>
-      </table>
+      {/* Scroll horizontal cuando la tabla es ancha */}
+      <div className="max-h-[70vh] overflow-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="sticky top-0 z-10 bg-zinc-50 text-left text-zinc-500">
+            <tr>{head.map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}</tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">{children}</tbody>
+        </table>
+      </div>
     </Card>
   );
 }
@@ -439,20 +442,22 @@ function Btn({ children, onClick, variant = "primary", size = "md", disabled }: 
   return <button onClick={onClick} disabled={disabled}
     className={cx("rounded-lg font-medium disabled:opacity-50", v, s)}>{children}</button>;
 }
-function Modal({ title, onClose, children }: {
-  title: string; onClose: () => void; children: React.ReactNode;
+function Modal({ title, onClose, children, wide }: {
+  title: string; onClose: () => void; children: React.ReactNode; wide?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className={cx("flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-xl",
+        wide ? "max-w-5xl" : "max-w-lg")} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
           <h3 className="font-semibold text-zinc-900">{title}</h3>
           <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
             <X size={18} />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        {/* Scroll vertical y horizontal del contenido del modal */}
+        <div className="overflow-auto p-5">{children}</div>
       </div>
     </div>
   );
@@ -1404,20 +1409,47 @@ function dueAlert(s: Solicitation): { label: string; cls: string } | null {
   if (days <= 3) return { label: `Por vencer · límite ${s.due_date} (${days} día${days === 1 ? "" : "s"})`, cls: "bg-amber-100 text-amber-700" };
   return null;
 }
+function OrigenCelda({ s }: { s: Solicitation }) {
+  const st = s.submitted_bom?.origin_status;
+  const decl = s.declared_originating;
+  let label = "Pendiente", cls = "bg-zinc-100 text-zinc-600", crit = s.submitted_bom?.criterion;
+  if (st === "QUALIFIES" || decl === true) { label = "Originario: SÍ"; cls = "bg-green-100 text-green-700"; }
+  else if (st === "DOES_NOT" || decl === false) { label = "Originario: NO"; cls = "bg-red-100 text-red-700"; }
+  else if (st === "INSUFFICIENT") { label = "Datos insuficientes"; cls = "bg-amber-100 text-amber-700"; }
+  const psr = s.submitted_bom?.rule_hs;
+  return (
+    <div>
+      <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", cls)}>{label}</span>
+      {crit && <span className="ml-1 text-[11px] text-zinc-500">{crit}</span>}
+      {psr && <div className="mt-0.5 text-[11px] text-zinc-500">PSR: <span className="font-mono">{formatHs(psr)}</span>{s.submitted_bom?.rule_type ? ` · ${s.submitted_bom.rule_type}` : ""}</div>}
+    </div>
+  );
+}
 function SolicitudesEmpresaView() {
   const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
   const [open, setOpen] = useState(false);
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
+  const [periodo, setPeriodo] = useState("");
   const [msg, setMsg] = useState("");
+  // Periodos distintos presentes (para el filtro).
+  const periodos = Array.from(new Set(data.map((s) => periodoTexto(s)).filter((p) => p !== "—")));
+  const visibles = periodo ? data.filter((s) => periodoTexto(s) === periodo) : data;
   return (
     <div>
       <PageTitle title="Solicitudes a proveedores" desc="Pide a tus proveedores la declaración de origen, por periodo." />
-      <div className="mb-4 flex">
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-zinc-700">Periodo</label>
+          <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
+            <option value="">Todos los periodos</option>
+            {periodos.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
         <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
-      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Tipo", "Límite", "Estado", ""]}>
-        {data.map((s) => {
+      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Origen / PSR", "Límite", "Estado", ""]}>
+        {visibles.map((s) => {
           const alert = dueAlert(s);
           return (
           <tr key={s.id}>
@@ -1425,7 +1457,7 @@ function SolicitudesEmpresaView() {
             <td className="px-4 py-3">{s.supplier_name ?? "—"}</td>
             <td className="px-4 py-3">{treatyLabel(s.treaty_code)}</td>
             <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
-            <td className="px-4 py-3 text-xs">{s.bom_analysis ? "BOM" : "Declaración"}</td>
+            <td className="px-4 py-3"><OrigenCelda s={s} /></td>
             <td className="px-4 py-3 text-xs">
               {s.due_date ?? "—"}
               {alert && <span className={cx("mt-1 block rounded-full px-2 py-0.5 text-[11px] font-medium", alert.cls)}>{alert.label}</span>}
@@ -1437,7 +1469,7 @@ function SolicitudesEmpresaView() {
           </tr>
           );
         })}
-        {!loading && count === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
+        {!loading && visibles.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">{count === 0 ? "Sin solicitudes todavía. Crea una con “Nueva solicitud”." : "Sin solicitudes para ese periodo."}</td></tr>}
       </Table>
       {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
       {open && <SolicitudForm onClose={() => setOpen(false)}
@@ -1459,7 +1491,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
   const deMinimis = total > 0 ? (noOrig / total * 100) : 0;
   const sinEvidencia = (b?.lines ?? []).filter((l) => !l.has_origin_evidence).length;
   return (
-    <Modal title={`BOM — ${s.product_sku}`} onClose={onClose}>
+    <Modal title={`BOM — ${s.product_sku}`} onClose={onClose} wide>
       <div className="mb-3 text-sm text-zinc-600">
         <div><strong>{s.product_sku}</strong> — {s.product_description}</div>
         <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {treatyLabel(s.treaty_code)} · Proveedor {s.supplier_name}</div>
@@ -1828,6 +1860,11 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       .then((d: { results?: OriginRule[] } | OriginRule[]) =>
         setRules(Array.isArray(d) ? d : (d.results ?? []))).catch(() => {});
   }, [s.treaty, s.product_hs]);
+  // Preselecciona la regla sugerida por el sistema si aún no hay una elegida.
+  useEffect(() => {
+    if (ruleId === "" && s.suggested_rule) setRuleId(s.suggested_rule.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.suggested_rule?.id]);
   const setLine = (i: number, k: keyof BomLine, v: string | boolean) =>
     setLines((ls) => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
   const allEvidence = lines.length > 0 && lines.every((l) => l.has_origin_evidence);
@@ -1953,6 +1990,20 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
         {msg && <span className="text-xs text-emerald-700">{msg}</span>}
       </div>
 
+      {/* Sugerencia del sistema (orientación) */}
+      {s.origin_hint && (
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+          💡 <strong>Sugerencia del sistema:</strong> {s.origin_hint}
+          {s.suggested_rule && (
+            <div className="mt-1.5">
+              Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {s.suggested_rule.rule_type} — {s.suggested_rule.description}
+              {ruleId !== s.suggested_rule.id &&
+                <button onClick={() => setRuleId(s.suggested_rule!.id)} className="ml-2 rounded bg-blue-600 px-2 py-0.5 font-medium text-white">Usar</button>}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Regla de origen (PSR) */}
       <div className="mb-3">
         <label className="mb-1 block text-xs font-semibold text-zinc-700">Regla de origen específica (PSR)</label>
@@ -2019,6 +2070,10 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
         <div className="text-sm font-semibold text-zinc-700">Total BOM: {total.toFixed(2)}</div>
       </div>
 
+      <p className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-[11px] text-zinc-500">
+        ⚖️ El sistema te <strong>orienta</strong> en el llenado, pero <strong>no sustituye la asesoría profesional</strong>.
+        Se recomienda que toda la información sea <strong>validada por una persona con conocimientos en certificación de origen</strong>.
+      </p>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Btn variant="ghost" onClick={submit} disabled={saving}>{saving ? "…" : "1 · Guardar BOM"}</Btn>

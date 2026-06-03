@@ -86,6 +86,8 @@ export type Solicitation = {
   product_sku?: string; product_description?: string; product_hs?: string;
   product_unit_cost?: string; treaty_code?: string; supplier_name?: string;
   treaty_members?: string[]; treaty_de_minimis?: string; logs?: SolLog[];
+  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
+  origin_hint?: string; declared_originating?: boolean | null;
 };
 
 export const api = {
