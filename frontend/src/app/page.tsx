@@ -134,12 +134,13 @@ function LogoMark({ size = 34 }: { size?: number }) {
 
 function Logo({ center, big }: { center?: boolean; big?: boolean }) {
   return (
-    <div className={cx("flex items-center", big ? "gap-4" : "gap-3", center && "justify-center")}>
+    <div className={cx("flex items-center", big ? "gap-4" : "gap-2.5", center && "justify-center")}>
       {/* Logo oficial LogiQ Aduanas (PNG transparente, recortado) */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo-logiq.png" alt="LogiQ Aduanas" className={cx("w-auto object-contain", big ? "h-20" : "h-10")} />
-      <div className={cx("w-px bg-zinc-300", big ? "h-12" : "h-7")} />
-      <div className={cx("font-semibold text-zinc-500", big ? "text-3xl" : "text-lg")}>FTA</div>
+      <img src="/logo-logiq.png" alt="LogiQ Aduanas" className={cx("w-auto object-contain", big ? "h-16" : "h-9")} />
+      <span className={cx("font-light leading-none text-zinc-300", big ? "text-5xl" : "text-3xl")}>|</span>
+      <span className={cx("leading-none", big ? "text-5xl" : "text-3xl")}
+        style={{ color: NAVY, fontFamily: "Manifold, sans-serif" }}>FTA</span>
     </div>
   );
 }
@@ -212,7 +213,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className="flex min-h-screen bg-[#f5f6f8] text-zinc-800">
       {/* Sidebar */}
-      <aside className="flex w-72 flex-col border-r border-zinc-200 bg-white">
+      <aside className="flex w-80 flex-col border-r border-zinc-200 bg-white">
         <div className="flex h-16 items-center border-b border-zinc-100 px-4"><Logo /></div>
         <div className="border-b border-zinc-100 px-4 py-3">
           <div className="text-sm font-semibold text-zinc-900">{headerName}</div>
@@ -406,10 +407,11 @@ function EmpresasView() {
     <div>
       <PageTitle title="Empresas" desc="Clientes del sistema y sus licencias." />
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
-      <Table head={["Empresa", "RFC", "Usuarios", "Plan", "Licencia", ""]}>
+      <Table head={["Empresa", "Slug", "RFC", "Usuarios", "Plan", "Licencia", ""]}>
         {data.map((t) => (
           <tr key={t.id}>
             <td className="px-4 py-3 font-medium">{t.name}</td>
+            <td className="px-4 py-3"><code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{t.slug}</code></td>
             <td className="px-4 py-3 font-mono text-xs">{t.rfc || "—"}</td>
             <td className="px-4 py-3">{t.user_count}</td>
             <td className="px-4 py-3">{t.license?.plan_display ?? "—"}</td>
@@ -425,7 +427,7 @@ function EmpresasView() {
             </td>
           </tr>
         ))}
-        {!loading && data.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Sin empresas.</td></tr>}
+        {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin empresas.</td></tr>}
       </Table>
       <Card className="mt-6 max-w-md p-5">
         <h3 className="mb-3 font-semibold">Nueva empresa</h3>
@@ -611,14 +613,15 @@ function CertificadosView() {
   );
 }
 function ProveedoresView() {
-  const { data, count } = useList<{ id: number; name: string; country: string; tax_id: string; kind: string }>(() => api.parties());
+  const { data, count } = useList<{ id: number; name: string; slug: string; country: string; tax_id: string; kind: string }>(() => api.parties());
   return (
     <div>
-      <PageTitle title="Proveedores y clientes" desc={`${count} registros.`} />
-      <Table head={["Nombre", "Tipo", "País", "RFC / Tax ID"]}>
+      <PageTitle title="Proveedores y clientes" desc={`${count} registros. El slug identifica a cada uno dentro de tu empresa.`} />
+      <Table head={["Nombre", "Slug", "Tipo", "País", "RFC / Tax ID"]}>
         {data.map((p) => (
           <tr key={p.id}>
             <td className="px-4 py-3 font-medium">{p.name}</td>
+            <td className="px-4 py-3"><code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">{p.slug}</code></td>
             <td className="px-4 py-3">{p.kind === "supplier" ? "Proveedor" : "Cliente"}</td>
             <td className="px-4 py-3">{p.country}</td>
             <td className="px-4 py-3 font-mono text-xs">{p.tax_id || "—"}</td>

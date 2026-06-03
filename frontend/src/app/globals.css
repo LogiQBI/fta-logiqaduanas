@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Fuente oficial de marca LogiQ Aduanas (para que "FTA" combine con el logo) */
+@font-face {
+  font-family: "Manifold";
+  src: url("/fonts/manifold-extrabold.otf") format("opentype");
+  font-weight: 800;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
