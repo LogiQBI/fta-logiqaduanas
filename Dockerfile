@@ -34,6 +34,7 @@ COPY --from=frontend /fe/out ./frontend_build
 # Recolectar estáticos en build (no requiere base de datos).
 RUN SECRET_KEY=build-only DEBUG=False python manage.py collectstatic --noinput
 
-# Railway inyecta $PORT. Migrar y luego arrancar gunicorn.
+# Railway inyecta $PORT. Migrar, sembrar (idempotente) y arrancar gunicorn.
 CMD python manage.py migrate --noinput && \
+    python manage.py bootstrap_prod && \
     gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 3
