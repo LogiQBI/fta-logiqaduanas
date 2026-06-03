@@ -11,6 +11,10 @@ __pycache__/
 # Builds
 dist/
 build/
+# Frontend (Next.js): el código fuente sí, los artefactos de build no.
+frontend/out/
+frontend/.next/
+frontend_build/
 
 # Django
 *.sqlite3

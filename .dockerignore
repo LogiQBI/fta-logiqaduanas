@@ -1,6 +1,10 @@
-# No copiar al backend: entorno local, frontend, build artifacts.
+# No copiar al build: entorno local y artefactos pesados.
+# OJO: el código de frontend/ SÍ se necesita (lo construye la 1ª etapa del Dockerfile).
 venv/
-frontend/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend_build/
 staticfiles/
 media/
 __pycache__/

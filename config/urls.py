@@ -2,7 +2,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.http import FileResponse, HttpResponse
+from django.urls import include, path, re_path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -14,3 +15,18 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
+def spa_index(request):
+    """Sirve la app de Next.js (index.html) para las rutas del frontend.
+    Los assets (/_next, logos) los entrega WhiteNoise antes de llegar aquí."""
+    index = settings.FRONTEND_BUILD_DIR / "index.html"
+    if index.exists():
+        return FileResponse(open(index, "rb"))
+    return HttpResponse("Frontend no desplegado en este servicio.", status=404)
+
+
+# Catch-all: todo lo que NO sea API/admin/portal/estáticos -> la SPA (frontend).
+urlpatterns += [
+    re_path(r"^(?!api/|admin/|api-auth/|portal/|media/|static/).*$", spa_index),
+]

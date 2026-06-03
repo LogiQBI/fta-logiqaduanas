@@ -129,6 +129,15 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
+# --- Frontend (Next.js exportado) servido por el MISMO servicio ---
+# El Dockerfile construye el frontend y deja su salida estática aquí.
+# Si existe, WhiteNoise la sirve en la raíz del sitio ("/", "/_next/...", logos)
+# y un catch-all en urls.py devuelve index.html para el resto (SPA).
+FRONTEND_BUILD_DIR = BASE_DIR / "frontend_build"
+if FRONTEND_BUILD_DIR.exists():
+    WHITENOISE_ROOT = str(FRONTEND_BUILD_DIR)
+    WHITENOISE_INDEX_FILE = True
+
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
