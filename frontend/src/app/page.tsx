@@ -1717,73 +1717,151 @@ function ProveedorProductosView() {
     </div>
   );
 }
+// Acordeón con encabezado unificado (tratado, periodo, límite, estado) + colapsable.
+function SolAccordion({ s, defaultOpen, children }: {
+  s: Solicitation; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  const alert = dueAlert(s);
+  return (
+    <Card className="overflow-hidden">
+      <button onClick={() => setOpen(!open)}
+        className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-zinc-50">
+        <div className="min-w-0">
+          <div className="font-semibold text-zinc-900">{s.product_sku} — {s.product_description}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="rounded-md bg-blue-600 px-2 py-0.5 font-bold text-white">{treatyLabel(s.treaty_code)}</span>
+            {(s.period_from && s.period_to) &&
+              <span className="rounded-md bg-zinc-800 px-2 py-0.5 font-semibold text-white">{s.period_display}: {s.period_from} → {s.period_to}</span>}
+            <span className="text-zinc-500">HS {formatHs(s.product_hs ?? "") || "—"} · Precio {s.product_unit_cost}</span>
+            {s.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Límite: {s.due_date}</span>}
+            {alert && <span className={cx("rounded-full px-2 py-0.5 font-medium", alert.cls)}>⏰ {alert.label}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Pill k={s.status}>{s.status_display}</Pill>
+          <ChevronDown size={18} className={cx("text-zinc-400 transition-transform", open && "rotate-180")} />
+        </div>
+      </button>
+      {open && <div className="border-t border-zinc-100 p-5">{children}</div>}
+    </Card>
+  );
+}
 function MisSolicitudesView({ me }: { me: Me }) {
   const { data, reload, count } = useList<Solicitation>(() => api.solicitations());
   const products = useList<Product>(() => api.products());
-  const treaties = useList<Treaty>(() => api.treaties());
   const prod = (id: number) => products.data.find((p) => p.id === id);
-  const tcode = (id: number) => treaties.data.find((t) => t.id === id)?.code ?? `#${id}`;
   const cliente = me.tenant?.name;
+  const pendientes = data.filter((s) => s.status !== "responded").length;
   return (
     <div>
       <PageTitle title={`Solicitudes de cliente${cliente ? ` (${cliente})` : ""}`}
-        desc="Completa la información de origen que te piden tus clientes." />
+        desc="Completa la información de origen que te piden tus clientes. Haz clic en una solicitud para abrirla." />
       {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
-      <div className="space-y-4">
-        {data.map((s) => s.bom_analysis
-          ? <BomCard key={s.id} s={s} onDone={reload} />
-          : <SolCard key={s.id} s={s} product={prod(s.product)} tcode={tcode(s.treaty)} onDone={reload} />)}
+      <div className="space-y-3">
+        {data.map((s) => (
+          <SolAccordion key={s.id} s={s} defaultOpen={pendientes === 1 && s.status !== "responded"}>
+            {s.bom_analysis
+              ? <BomCard s={s} onDone={reload} />
+              : <SolCard s={s} product={prod(s.product)} onDone={reload} />}
+          </SolAccordion>
+        ))}
       </div>
     </div>
   );
 }
-function SolCard({ s, product, tcode, onDone }: {
-  s: Solicitation; product?: Product; tcode: string; onDone: () => void;
+// Panel de orientación reutilizable (sugerencia + disclaimer).
+function SugerenciaPanel({ s, onUse, ruleId }: { s: Solicitation; onUse: (id: number) => void; ruleId: number | "" }) {
+  if (!s.origin_hint) return null;
+  return (
+    <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+      💡 <strong>Sugerencia del sistema:</strong> {s.origin_hint}
+      {s.suggested_rule && (
+        <div className="mt-1.5">
+          Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {s.suggested_rule.rule_type} — {s.suggested_rule.description}
+          {ruleId !== s.suggested_rule.id &&
+            <button onClick={() => onUse(s.suggested_rule!.id)} className="ml-2 rounded bg-blue-600 px-2 py-0.5 font-medium text-white">Usar</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+const disclaimerNode = (
+  <p className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-[11px] text-zinc-500">
+    ⚖️ El sistema te <strong>orienta</strong> en el llenado, pero <strong>no sustituye la asesoría profesional</strong>.
+    Se recomienda que toda la información sea <strong>validada por una persona con conocimientos en certificación de origen</strong>.
+  </p>
+);
+function SolCard({ s, product, onDone }: {
+  s: Solicitation; product?: Product; onDone: () => void;
 }) {
   const [orig, setOrig] = useState(true);
   const [country, setCountry] = useState(product?.country_of_origin ?? "");
-  const [from, setFrom] = useState(s.period_from ?? "");
-  const [to, setTo] = useState(s.period_to ?? "");
+  const [ruleId, setRuleId] = useState<number | "">(s.suggested_rule?.id ?? "");
+  const [vOrig, setVOrig] = useState(""); const [vNon, setVNon] = useState("");
+  const [rules, setRules] = useState<OriginRule[]>([]);
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
   const done = s.status === "responded";
+  useEffect(() => {
+    api.rules(`?treaty=${s.treaty}&hs=${encodeURIComponent(s.product_hs ?? "")}`)
+      .then((d: { results?: OriginRule[] } | OriginRule[]) =>
+        setRules(Array.isArray(d) ? d : (d.results ?? []))).catch(() => {});
+  }, [s.treaty, s.product_hs]);
+  const price = Number(s.product_unit_cost ?? product?.unit_cost ?? 0);
+  const sumMat = Number(vOrig || 0) + Number(vNon || 0);
+  const overPrice = price > 0 && sumMat > price;
+  const cellI = "mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5";
   async function submit() {
     if (!isValidCountry(country)) { setErr("País no válido. Usa un código ISO-2 del catálogo."); return; }
+    if (overPrice) { setErr(`La suma de materiales (${sumMat}) no puede superar el precio de venta (${price}).`); return; }
     setErr(""); setSaving(true);
-    try { await api.respond(s.id, { is_originating: orig, country_of_origin: country, valid_from: from, valid_to: to }); onDone(); }
-    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+    try {
+      await api.respond(s.id, {
+        is_originating: orig, country_of_origin: country,
+        rule: ruleId === "" ? null : Number(ruleId),
+        value_originating: vOrig || "0", value_non_originating: vNon || "0",
+        // La vigencia la toma el backend del periodo solicitado por la empresa.
+      });
+      onDone();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
+  if (done) return <p className="text-sm text-zinc-500">Ya enviaste tu declaración. ¡Gracias!</p>;
   return (
-    <Card className="p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <div className="font-medium text-zinc-900">{product ? `${product.sku} — ${product.description}` : (s.product_sku ?? `Material #${s.product}`)}</div>
-          <div className="text-xs text-zinc-500">HS {product?.hs_code ?? s.product_hs} · Tratado {tcode}</div>
+    <div>
+      <SugerenciaPanel s={s} ruleId={ruleId} onUse={setRuleId} />
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <label className="col-span-2 flex items-center gap-2">
+          <input type="checkbox" checked={orig} onChange={(e) => setOrig(e.target.checked)} />
+          <strong>Origen:</strong> ¿el material es originario para este tratado?
+        </label>
+        <div className="col-span-2">
+          <label className="block text-xs text-zinc-500">Regla de origen específica (PSR)</label>
+          <select value={ruleId} onChange={(e) => setRuleId(e.target.value === "" ? "" : Number(e.target.value))} className={cellI}>
+            <option value="">— Selecciona la regla aplicable —</option>
+            {rules.map((r) => <option key={r.id} value={r.id}>{r.hs_pattern} · {r.rule_type} — {r.description?.slice(0, 70)}</option>)}
+          </select>
         </div>
-        <Pill k={s.status}>{s.status_display}</Pill>
+        <div><label className="block text-xs text-zinc-500">País (ISO-2)</label>
+          <span className="mt-1 block"><CountryInput value={country} onChange={setCountry} className="w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></span></div>
+        <div />
+        <div><label className="block text-xs text-zinc-500">Valor de materiales ORIGINARIOS</label>
+          <input type="number" step="0.0001" value={vOrig} onChange={(e) => setVOrig(e.target.value)} className={cellI} /></div>
+        <div><label className="block text-xs text-zinc-500">Valor de materiales NO originarios</label>
+          <input type="number" step="0.0001" value={vNon} onChange={(e) => setVNon(e.target.value)} className={cellI} /></div>
+        <div className="col-span-2 text-xs text-zinc-500">
+          Suma de materiales: <strong className={overPrice ? "text-red-600" : ""}>{sumMat.toFixed(2)}</strong>
+          {price > 0 && <> · Precio de venta: {price.toFixed(2)}</>}
+          {overPrice && <span className="ml-2 font-medium text-red-600">⚠️ La suma supera el precio de venta</span>}
+        </div>
+        <div className="col-span-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+          Vigencia: corresponde al <strong>periodo solicitado por el cliente</strong>
+          {(s.period_from && s.period_to) ? <> ({s.period_from} → {s.period_to})</> : null}.
+        </div>
+        {err && <p className="col-span-2 text-sm text-red-600">{err}</p>}
+        <div className="col-span-2"><Btn onClick={submit} disabled={saving || overPrice}>{saving ? "Enviando…" : "Enviar declaración"}</Btn></div>
       </div>
-      {(s.period_from && s.period_to) && (
-        <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
-          Periodo solicitado: <strong>{s.period_display}</strong> · {s.period_from} → {s.period_to}
-        </div>
-      )}
-      {done ? <p className="text-sm text-zinc-500">Ya enviaste tu declaración. ¡Gracias!</p> : (
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <label className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" checked={orig} onChange={(e) => setOrig(e.target.checked)} />
-            ¿El material es originario para este tratado?
-          </label>
-          <div><label className="block text-xs text-zinc-500">País (ISO-2)</label>
-            <span className="mt-1 block"><CountryInput value={country} onChange={setCountry} className="w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></span></div>
-          <div />
-          <div><label className="block text-xs text-zinc-500">Vigente desde</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></div>
-          <div><label className="block text-xs text-zinc-500">Vigente hasta</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></div>
-          {err && <p className="col-span-2 text-sm text-red-600">{err}</p>}
-          <div className="col-span-2"><Btn onClick={submit} disabled={saving}>{saving ? "Enviando…" : "Enviar declaración"}</Btn></div>
-        </div>
-      )}
-    </Card>
+      {disclaimerNode}
+    </div>
   );
 }
 function emptyBomLine(): BomLine {
@@ -1943,32 +2021,8 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const bomLoaded = !!s.submitted_bom;
   const calculated = !!s.submitted_bom?.origin_status;
   const sent = done;
-  const alert = dueAlert(s);
   return (
-    <Card className="p-5">
-      {/* Encabezado: tratado y periodo EN GRANDE */}
-      <div className="mb-2 flex items-start justify-between">
-        <div>
-          <div className="font-semibold text-zinc-900">{s.product_sku} — {s.product_description}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-blue-600 px-2.5 py-1 text-sm font-bold text-white">{treatyLabel(s.treaty_code)}</span>
-            {(s.period_from && s.period_to) && (
-              <span className="rounded-md bg-zinc-800 px-2.5 py-1 text-sm font-semibold text-white">
-                {s.period_display}: {s.period_from} → {s.period_to}
-              </span>
-            )}
-          </div>
-          <div className="mt-1 text-xs text-zinc-500">HS {formatHs(s.product_hs ?? "") || "—"} · Precio {s.product_unit_cost}</div>
-        </div>
-        <Pill k={s.status}>{s.status_display}</Pill>
-      </div>
-
-      {/* Fecha límite + alerta de vencimiento */}
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        {s.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Fecha límite: <strong>{s.due_date}</strong></span>}
-        {alert && <span className={cx("rounded-full px-2 py-0.5 font-medium", alert.cls)}>⏰ {alert.label}</span>}
-      </div>
-
+    <>
       {/* Estado del flujo (alertas) */}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">De Minimis (no originario): <strong>{deMinimis.toFixed(2)}%</strong>{s.treaty_de_minimis ? ` · límite ${s.treaty_de_minimis}%` : ""}</span>
@@ -2098,7 +2152,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
           <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={() => setShowLog(false)}>Cerrar</Btn></div>
         </Modal>
       )}
-    </Card>
+    </>
   );
 }
 function MisDeclaracionesView() {

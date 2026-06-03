@@ -145,6 +145,12 @@ class SupplierDeclaration(TenantOwnedModel):
     treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE, related_name="declarations")
     is_originating = models.BooleanField("¿Es originario para el tratado?", default=False)
     country_of_origin = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)
+    rule = models.ForeignKey("treaties.OriginRule", null=True, blank=True,
+                             on_delete=models.SET_NULL, related_name="declarations")
+    value_originating = models.DecimalField("Valor de materiales originarios",
+                                            max_digits=14, decimal_places=4, default=0)
+    value_non_originating = models.DecimalField("Valor de materiales no originarios",
+                                                max_digits=14, decimal_places=4, default=0)
     valid_from = models.DateField("Vigente desde")
     valid_to = models.DateField("Vigente hasta")
 

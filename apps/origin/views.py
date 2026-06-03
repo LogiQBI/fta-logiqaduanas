@@ -610,12 +610,28 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         if not valid_from or not valid_to:
             return Response({"error": "Faltan las fechas de vigencia."},
                             status=status.HTTP_400_BAD_REQUEST)
+        from decimal import Decimal
+        def _dec(x):
+            try:
+                return Decimal(str(x or 0))
+            except Exception:
+                return Decimal("0")
+        v_orig = _dec(d.get("value_originating"))
+        v_non = _dec(d.get("value_non_originating"))
+        price = sr.product.unit_cost or Decimal("0")
+        if price and (v_orig + v_non) > price:
+            return Response({"error": "La suma de materiales (originarios + no originarios) "
+                             f"no puede superar el precio de venta del producto ({price})."},
+                            status=status.HTTP_400_BAD_REQUEST)
         decl = SupplierDeclaration.objects.create(
             tenant=sr.tenant, supplier=sr.supplier, product=sr.product, treaty=sr.treaty,
             is_originating=bool(d.get("is_originating")),
             country_of_origin=d.get("country_of_origin", ""),
+            rule_id=d.get("rule") or None,
+            value_originating=v_orig, value_non_originating=v_non,
             valid_from=valid_from, valid_to=valid_to,
         )
+        _log_sol(sr, "sent", "declaración manual", request.user)
         sr.declaration = decl
         sr.status = SolicitationRequest.Status.RESPONDED
         sr.responded_at = timezone.now()

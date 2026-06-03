@@ -1,0 +1,284 @@
+================================================================================
+  LOGIQ ADUANAS | FTA  —  ESTADO DEL SISTEMA
+  Sistema SaaS de gestión de origen preferencial (Reglas de Origen / TLC)
+  Documento generado: 2026-06-02
+================================================================================
+
+--------------------------------------------------------------------------------
+1. RESUMEN
+--------------------------------------------------------------------------------
+FTA es una aplicación web multiempresa (SaaS) para gestionar el ORIGEN
+PREFERENCIAL de productos bajo tratados de libre comercio (principalmente
+USMCA / T-MEC). Conecta a tres tipos de usuarios:
+
+  • ADMINISTRADOR (LogiQ / "Master"): dueño del sistema; administra empresas,
+    usuarios y el catálogo global de reglas de origen.
+  • EMPRESA (cliente): registra sus proveedores e insumos (números de parte) y
+    solicita a sus proveedores la declaración de origen.
+  • PROVEEDOR: responde las solicitudes de sus clientes; sube la lista de
+    materiales (BOM), calcula el origen y envía el resultado.
+
+Flujo de negocio central:
+  EMPRESA (compra) ── solicita origen ──▶ PROVEEDOR (vende) ── responde/envía
+  origen ──▶ EMPRESA recibe el resultado (Originario SÍ/NO + regla aplicada).
+
+--------------------------------------------------------------------------------
+2. STACK TÉCNICO
+--------------------------------------------------------------------------------
+  • Backend:  Django + Django REST Framework (DRF), autenticación por Token.
+  • Base de datos: PostgreSQL (local: fta_dev en puerto 8100).
+  • Frontend: Next.js (React) + Tailwind CSS. Exportación estática (output:export).
+  • Despliegue: Railway, UN SOLO servicio (Docker multi-stage):
+      - Etapa Node construye el frontend (API en /api, mismo dominio).
+      - Etapa Django sirve el frontend (WhiteNoise) + la API + el admin.
+  • Repositorio: LogiQBI/fta-logiqaduanas (privado).
+  • URL producción: https://fta-logiqaduanas-production.up.railway.app
+  • Arranque (Dockerfile): migrate -> bootstrap_prod -> gunicorn.
+      bootstrap_prod (idempotente): crea superusuario admin, siembra datos demo
+      (si SEED_DEMO=1) e importa el catálogo de reglas (rules_starter.csv y
+      usmca_gn11_auto.csv, ~1470 reglas).
+
+--------------------------------------------------------------------------------
+3. ACCESOS DE PRUEBA (demo)
+--------------------------------------------------------------------------------
+  • Administrador (LogiQ): botón "Acceso de administrador" (sin empresa)
+        usuario: admin        contraseña: admin12345
+  • Empresa:   Empresa = demo   usuario: empresa1       contraseña: demo12345
+  • Proveedor: Empresa = demo   Proveedor = componentes-mx
+               usuario: proveedor_mx                    contraseña: demo12345
+               (otro: Proveedor = imports-china, usuario proveedor_cn)
+
+  NOTA: El login de PROVEEDOR pide 3 datos: Empresa (cliente) + Proveedor + Usuario.
+  El nombre de usuario es único DENTRO de cada proveedor (no global), así dos
+  empresas pueden tener el mismo proveedor con el mismo usuario sin chocar.
+
+--------------------------------------------------------------------------------
+4. MÓDULOS POR ROL
+--------------------------------------------------------------------------------
+ADMINISTRADOR (LogiQ):
+  • Inicio (tablero)
+  • Empresas: alta/baja de empresas cliente, licencias (activar/suspender), borrar.
+  • Usuarios: alta de usuarios; estado bloqueado/activo; DESBLOQUEAR usuarios.
+  • Tratados (TLC): catálogo (USMCA y otros).
+  • Reglas de origen (PSR): catálogo global (~1470 reglas USMCA), con:
+        - columna de Tratado (USMCA),
+        - filtro por tratado y por fracción (HS),
+        - formato de fracción 8708.10,
+        - mostrar 50 / 100 / Todo.
+
+EMPRESA:
+  • Inicio
+  • CATÁLOGOS:
+      - Proveedores: alta/edición/borrado; código de proveedor (ej. ST01); slug
+        automático; gestión de VARIOS usuarios de acceso por proveedor
+        (contraseña temporal, restablecer, quitar, desbloquear).
+      - Números de parte (insumos/subproductos/productos): alta/edición/borrado;
+        SKU, tipo (badge Insumo/Subproducto/Producto), descripción, proveedor,
+        fracción HS (6 dígitos), precio unitario, moneda, estatus activo/inactivo.
+        Recibe SUGERENCIAS de fracción del proveedor (aceptar/rechazar + bitácora).
+  • ORIGEN:
+      - Productos (terminados): calificar contra tratado, emitir solicitudes.
+      - Calificaciones: resultados de calificación.
+      - Certificados: certificados de origen emitidos.
+      - Solicitudes: pedir declaración de origen a proveedores (ver punto 5).
+  • REFERENCIA: Tratados (TLC), Reglas de origen.
+
+PROVEEDOR:
+  • Inicio
+  • CATÁLOGO > Productos: ve (solo lectura) los insumos que sus clientes le
+    asignaron; DEFINE el país de origen; SUGIERE corrección de fracción.
+  • ORIGEN > Solicitudes de cliente (con razón social del cliente): responde las
+    solicitudes (declaración manual o BOM, ver punto 5).
+  • ORIGEN > Mis declaraciones: declaraciones enviadas.
+
+--------------------------------------------------------------------------------
+5. FLUJO DE SOLICITUDES DE ORIGEN (lo más importante)
+--------------------------------------------------------------------------------
+LA EMPRESA crea una solicitud ("Nueva solicitud"):
+  • Elige el TRATADO (TLC) para el que pide el origen.
+  • Elige el PERIODO de cobertura: Mensual / Semestral / Anual / Personalizado
+    (con fechas desde/hasta).
+  • Define una FECHA LÍMITE para que el proveedor responda.
+  • Selecciona los productos: por PROVEEDOR (jala todos sus números de parte) o
+    PRODUCTOS individuales.
+  • TOGGLE "Análisis automático por BOM":
+       - APAGADO: el proveedor responde con una declaración manual (originario
+         sí/no, país, vigencia).
+       - ENCENDIDO: el proveedor debe subir el BOM (lista de materiales).
+
+EL PROVEEDOR responde (cuando es por BOM), en 3 pasos:
+  1) GUARDAR BOM   2) CALCULAR ORIGEN   3) ENVIAR al cliente.
+  • Encabezado automático: número de parte, descripción, precio, tratado y
+    periodo (mostrados en grande).
+  • Selecciona la REGLA DE ORIGEN ESPECÍFICA (PSR), filtrada por fracción+tratado.
+  • Panel "Sugerencia del sistema" que orienta según la fracción:
+       - Autoparte (8708) -> régimen automotriz USMCA (VCR alto, LVC, acero/aluminio).
+       - Capítulo 87 -> sector automotor (reglas más estrictas).
+       - General -> normalmente CTH (cambio de partida) o VCR.
+       Preselecciona la regla sugerida.
+  • Detalle de componentes: número de parte, descripción, fracción HS (6 díg.),
+    precio unitario, cantidad, TOTAL (automático), país (validado contra catálogo
+    ISO-2) y casilla "¿Documento de origen?" (Sí/No tengo documento) por línea o
+    "marcar todos".
+  • DE MINIMIS (% de valor no originario) se calcula automáticamente en vivo.
+  • Botón "Traer información de última solicitud": copia el BOM del periodo
+    anterior del mismo producto/proveedor. Si se envía sin cambios, aparece una
+    advertencia para verificar precios y orígenes.
+  • Alertas de estado: "BOM cargado - falta CALCULAR", "Calculado - falta ENVIAR",
+    "Enviado". Y alerta de fecha límite: "por vencer" / "vencida".
+  • Disclaimer: el sistema orienta, pero la información debe ser validada por una
+    persona con conocimientos en certificación de origen.
+
+LA EMPRESA ve el resultado en su lista de Solicitudes:
+  • Columna Origen/PSR: Originario SÍ / NO / Datos insuficientes / Pendiente +
+    criterio (CTC/RVC) + regla (PSR) aplicada.
+  • Filtro por periodo.
+  • Botón "Ver BOM" (modal) con el detalle, el reporte del análisis y la evidencia.
+  • Columna Límite con alerta de vencimiento.
+
+--------------------------------------------------------------------------------
+6. MOTOR DE CÁLCULO DE ORIGEN
+--------------------------------------------------------------------------------
+  • Reglas almacenadas como datos (OriginRule) con patrón HS, tipo y parámetros.
+  • Criterios soportados: WO (totalmente obtenido), CTC (salto arancelario:
+    CC/CTH/CTSH con de minimis), RVC/VCR (valor de transacción o costo neto),
+    CTC_OR_RVC y CTC_AND_RVC.
+  • Selección de regla: la más específica (patrón HS más largo que coincide).
+  • Sobre el BOM del proveedor: un componente cuenta como originario si su país
+    es miembro del tratado (simplificación actual). Calcula salto arancelario
+    (compara HS de componentes vs producto) y/o VCR según la regla.
+  • Devuelve resultado + traza/reporte (qué componentes saltan, % de violación
+    vs de minimis, desglose de VCR). Visible para proveedor y empresa.
+
+--------------------------------------------------------------------------------
+7. SEGURIDAD Y CONTROL DE ACCESO
+--------------------------------------------------------------------------------
+  • Aislamiento multiempresa (tenant): cada empresa ve solo sus datos.
+  • El proveedor ve SOLO los productos/solicitudes de su propia "Party".
+  • Login por rol con validación (empresa vs proveedor vs admin).
+  • Bloqueo por intentos fallidos: a los 5 intentos se bloquea la cuenta; avisa a
+    los 3, 2 y 1 intentos restantes. Una cuenta bloqueada no entra ni con la
+    contraseña correcta. Desbloqueo según rol:
+        - Proveedor -> lo desbloquea la EMPRESA.
+        - Empresa   -> lo desbloquea el ADMINISTRADOR (LogiQ).
+        - Admin     -> lo desbloquea otro ADMINISTRADOR (LogiQ).
+  • Contraseñas temporales: al crear un usuario de proveedor se genera una
+    temporal; en el primer ingreso el usuario debe definir la suya.
+  • Validación de país contra catálogo ISO-2 (no permite códigos inexistentes).
+
+--------------------------------------------------------------------------------
+8. BITÁCORAS / TRAZABILIDAD (logs)
+--------------------------------------------------------------------------------
+  • Cambios de fracción (HsChangeLog): cuando el proveedor sugiere y la empresa
+    acepta/rechaza, queda registrado (fracción anterior -> nueva, por quién,
+    motivo y fecha).
+  • Eventos de solicitud (SolicitationLog): BOM guardado, origen calculado,
+    información traída de periodo anterior, enviada (y marca especial si se envió
+    SIN cambios respecto al periodo anterior). Visible en "Ver historial".
+
+--------------------------------------------------------------------------------
+9. MODELO DE DATOS (principales)
+--------------------------------------------------------------------------------
+  tenants:
+    • Tenant (empresa), License (licencia/plan), Membership (usuario-empresa-rol,
+      login_name, must_change_password), UserSecurity (intentos/bloqueo).
+  catalog:
+    • Party (proveedor/cliente: code, slug, país, etc.)
+    • Product (parte: sku, tipo, hs_code, unit_cost, country_of_origin,
+      is_active, supplier; sugerencia de fracción: hs_suggested/status/by)
+    • BOMComponent (lista de materiales interna)
+    • SupplierDeclaration (declaración de origen del proveedor)
+    • SolicitationRequest (solicitud: producto, proveedor, tratado, periodo,
+      due_date, bom_analysis, estado)
+    • SolicitationBOM + SolicitationBOMLine (BOM que sube el proveedor + resultado
+      del cálculo: origin_status, criterion, rvc_value, detail)
+    • SolicitationLog (bitácora de la solicitud)
+    • HsChangeLog (bitácora de cambios de fracción)
+  treaties:
+    • Treaty (tratado: code, member_countries, umbrales VCR, de_minimis)
+    • OriginRule (regla de origen / PSR: hs_pattern, rule_type, params)
+  origin:
+    • Qualification (calificación de un producto vs tratado)
+    • Certificate (certificado de origen emitido)
+    • ExpedienteDocument (documento de soporte del expediente)
+
+--------------------------------------------------------------------------------
+10. API (endpoints principales, prefijo /api/)
+--------------------------------------------------------------------------------
+  • POST /login/                         login (empresa/admin o proveedor 3 datos)
+  • GET  /me/                            identidad del usuario
+  • POST /change-password/               el usuario define su contraseña
+  • /treaties/                           tratados (lectura)
+  • /origin-rules/?treaty=&hs=&q=&page_size=   reglas de origen (filtros + paginado)
+  • /parties/                            proveedores (CRUD empresa)
+      - POST /parties/{id}/users/                crear usuario de proveedor
+      - POST /parties/{id}/users/{uid}/reset-password/   restablecer
+      - DELETE /parties/{id}/users/{uid}/        quitar usuario
+      - POST /parties/{id}/users/{uid}/unlock/   desbloquear
+  • /products/                           insumos/productos (CRUD empresa)
+      - POST /products/{id}/set-country/         proveedor define país
+      - POST /products/{id}/suggest-hs/          proveedor sugiere fracción
+      - POST /products/{id}/resolve-hs/          empresa acepta/rechaza fracción
+      - POST /products/{id}/qualify/  /solicit/  calificar / solicitar origen
+  • /solicitations/                      solicitudes
+      - POST /solicitations/batch/               alta masiva (por proveedor/productos)
+      - POST /solicitations/{id}/submit-bom/     guardar BOM
+      - POST /solicitations/{id}/calculate-origin/  calcular origen
+      - POST /solicitations/{id}/send-bom/       enviar al cliente
+      - POST /solicitations/{id}/copy-previous/  traer info de periodo anterior
+      - POST /solicitations/{id}/respond/        declaración manual
+  • /master/tenants/  /master/users/      panel administrador (LogiQ)
+
+--------------------------------------------------------------------------------
+11. HISTORIAL DE DESARROLLO (commits, del más reciente al más antiguo)
+--------------------------------------------------------------------------------
+  • UI+origen: regla sugerida, columna Origen/PSR, filtro por periodo y scroll
+  • solicitudes: flujo guardar/calcular/enviar, fecha límite, traer periodo
+    anterior y bitácora
+  • UI: validar país contra catálogo ISO-2 y HS siempre a 6 dígitos
+  • empresa: mostrar País y Precio unitario en la lista de Números de parte
+  • origen: el país de origen lo define el PROVEEDOR, no la empresa
+  • catálogo: fracción HS 6 dígitos, tipo con badge y sugerencia de fracción
+  • fix(admin): eliminar empresa fallaba con HTTP 500 (ProtectedError en cascada)
+  • deploy: cargar catálogo de reglas (rules_starter.csv + usmca_gn11_auto.csv)
+  • origen: cálculo de origen sobre el BOM (CTC/VCR) con reporte
+  • origen: análisis por BOM del proveedor (captura), De Minimis y evidencia
+  • origen: solicitudes de origen por periodo y alta masiva por proveedor
+  • seguridad+proveedor: bloqueo por intentos fallidos y vista Productos proveedor
+  • empresa: catálogo de proveedores e insumos + accesos de proveedor
+  • deploy: bootstrap idempotente en producción (superusuario + datos demo)
+  • deploy: servir el frontend Next.js desde el mismo servicio (un solo Railway)
+  • empresa: alta/edición/borrado de productos desde la UI
+  • UI: rediseño completo estilo LogiQ Aduanas (shell + sidebar + vistas)
+  • perfil Master (LogiQ): empresas, licencias, usuarios
+  • login por rol (empresa vs proveedor) con aislamiento de datos
+  • deploy: configuración de producción para Railway + Dockerfile
+  • parser de la Nota General 11 (USMCA) -> 1466 reglas de origen
+
+--------------------------------------------------------------------------------
+12. PENDIENTES / PRÓXIMOS PASOS
+--------------------------------------------------------------------------------
+  • Certificado de origen: emisión con los 9 elementos mínimos del T-MEC
+    (la lógica de backend existe; falta la pantalla/UI).
+  • Expediente: subir y conservar documentos de soporte (retención 5 años).
+  • Módulos de Administrador (LogiQ): reportes, gestión avanzada.
+  • Refinar el motor de origen:
+      - usar declaraciones de proveedor por material (no solo el país),
+      - "De Minimis" formal del T-MEC (no solo % de valor no originario),
+      - régimen automotriz completo (VCR escalonado, LVC, acero/aluminio).
+  • Endpoint bom-components actualmente devuelve 400 (no asigna tenant); sin uso
+    en la UI hoy.
+
+--------------------------------------------------------------------------------
+13. NOTAS DE OPERACIÓN
+--------------------------------------------------------------------------------
+  • Desarrollo y pruebas en localhost (Django :8100, Next :3000). Producción
+    (Railway) solo se actualiza con autorización explícita ("súbelo"); Railway
+    redespliega automáticamente al hacer push a origin/main.
+  • La base de datos de PRODUCCIÓN es independiente de la local; los datos demo
+    se siembran con bootstrap_prod (SEED_DEMO=1).
+  • Tratados: internamente el T-MEC tiene código "TMEC"; se MUESTRA como "USMCA".
+
+================================================================================
+  Fin del documento — LogiQ Aduanas | FTA
+================================================================================
