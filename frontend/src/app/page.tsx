@@ -692,6 +692,32 @@ function SuggestHsModal({ product, onClose, onSaved }: {
     </Modal>
   );
 }
+// Modal: el proveedor define el país de origen del producto.
+function CountryModal({ product, onClose, onSaved }: {
+  product: Product; onClose: () => void; onSaved: () => void;
+}) {
+  const [c, setC] = useState(product.country_of_origin ?? "");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function save() {
+    setErr(""); setSaving(true);
+    try { await api.setCountry(product.id, c.trim().toUpperCase()); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`País de origen — ${product.sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">{product.description}</p>
+      <Field label="País de origen (ISO-2)">
+        <input value={c} onChange={(e) => setC(e.target.value.toUpperCase())} maxLength={2}
+          className={cx(inputCls, "uppercase")} placeholder="MX" autoFocus />
+      </Field>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar país"}</Btn>
+      </div>
+    </Modal>
+  );
+}
 // Modal: historial (bitácora) de cambios de fracción.
 function HsLogModal({ product, onClose }: { product: Product; onClose: () => void }) {
   const logs = product.hs_logs ?? [];
@@ -1038,7 +1064,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
       supplier: f.supplier === "" ? null : Number(f.supplier),
       hs_code: f.hs_code, unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD",
-      country_of_origin: f.country_of_origin.trim().toUpperCase(),
+      // El país de origen lo define el PROVEEDOR (no la empresa).
       is_active: f.is_active,
     };
     try {
@@ -1082,9 +1108,6 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
             </select>
           </Field>
         </div>
-        <Field label="País de origen (ISO-2)">
-          <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
-        </Field>
         <Field label="Precio unitario">
           <input type="number" step="0.0001" value={f.unit_cost} onChange={(e) => set("unit_cost", e.target.value)} className={inputCls} />
         </Field>
@@ -1092,6 +1115,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
           <input value={f.currency} onChange={(e) => set("currency", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} maxLength={3} />
         </Field>
       </div>
+      <p className="mt-2 text-xs text-zinc-400">El <strong>país de origen</strong> lo define el proveedor desde su acceso.</p>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -1575,9 +1599,10 @@ function SolicitudForm({ onClose, onSaved }: {
 function ProveedorProductosView() {
   const { data, count, loading, reload } = useList<Product>(() => api.products());
   const [suggest, setSuggest] = useState<Product | null>(null);
+  const [country, setCountry] = useState<Product | null>(null);
   return (
     <div>
-      <PageTitle title="Productos" desc="Lo que tus clientes te compran. Las altas las hace la empresa; si una fracción es incorrecta, puedes sugerir la correcta." />
+      <PageTitle title="Productos" desc="Lo que tus clientes te compran. Tú defines el país de origen; si una fracción es incorrecta, puedes sugerir la correcta." />
       <Table head={["Núm. de parte", "Descripción", "Tipo", "HS", "País", "Estatus", ""]}>
         {data.map((p) => (
           <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
@@ -1590,7 +1615,11 @@ function ProveedorProductosView() {
                 <div className="mt-0.5 text-[11px] text-amber-700">Sugeriste <strong className="font-mono">{formatHs(p.hs_suggested ?? "")}</strong> · pendiente</div>
               )}
             </td>
-            <td className="px-4 py-3">{p.country_of_origin || "—"}</td>
+            <td className="px-4 py-3">
+              {p.country_of_origin
+                ? <span>{p.country_of_origin} <button onClick={() => setCountry(p)} className="ml-1 text-[11px] text-blue-600 hover:underline">editar</button></span>
+                : <Btn size="sm" variant="ghost" onClick={() => setCountry(p)}>Poner país</Btn>}
+            </td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
                 p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
@@ -1607,6 +1636,8 @@ function ProveedorProductosView() {
       </Table>
       {suggest && <SuggestHsModal product={suggest}
         onClose={() => setSuggest(null)} onSaved={async () => { setSuggest(null); await reload(); }} />}
+      {country && <CountryModal product={country}
+        onClose={() => setCountry(null)} onSaved={async () => { setCountry(null); await reload(); }} />}
     </div>
   );
 }

@@ -119,6 +119,10 @@ export const api = {
     req(`/products/${productId}/resolve-hs/`, {
       method: "POST", body: JSON.stringify({ action }),
     }),
+  setCountry: (productId: number, country_of_origin: string) =>
+    req(`/products/${productId}/set-country/`, {
+      method: "POST", body: JSON.stringify({ country_of_origin }),
+    }),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
   solicitations: () => req("/solicitations/"),

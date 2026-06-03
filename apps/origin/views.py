@@ -284,6 +284,17 @@ class ProductViewSet(TenantScopedViewSet):
                 status=status.HTTP_409_CONFLICT)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["post"], url_path="set-country")
+    def set_country(self, request, pk=None):
+        """El PROVEEDOR define el país de origen del producto que surte."""
+        m = self.membership()
+        if not m or not m.is_supplier:
+            raise PermissionDenied("Solo el proveedor puede definir el país de origen.")
+        product = self.get_object()  # acotado a productos de su Party
+        product.country_of_origin = (request.data.get("country_of_origin") or "").strip().upper()[:2]
+        product.save(update_fields=["country_of_origin", "updated_at"])
+        return Response(s.ProductSerializer(product).data)
+
     @action(detail=True, methods=["post"], url_path="suggest-hs")
     def suggest_hs(self, request, pk=None):
         """El PROVEEDOR sugiere corregir la fracción del producto.
