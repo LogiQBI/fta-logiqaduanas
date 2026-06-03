@@ -87,18 +87,21 @@ class SolicitationBOMLineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SolicitationBOMLine
-        fields = ["id", "part_number", "description", "unit_price", "quantity",
-                  "country", "has_origin_evidence", "total"]
+        fields = ["id", "part_number", "description", "hs_code", "unit_price",
+                  "quantity", "country", "has_origin_evidence", "total"]
 
 
 class SolicitationBOMSerializer(serializers.ModelSerializer):
     lines = SolicitationBOMLineSerializer(many=True, read_only=True)
     rule_description = serializers.CharField(source="rule.description", read_only=True, default=None)
     rule_hs = serializers.CharField(source="rule.hs_pattern", read_only=True, default=None)
+    rule_type = serializers.CharField(source="rule.rule_type", read_only=True, default=None)
 
     class Meta:
         model = SolicitationBOM
-        fields = ["id", "rule", "rule_description", "rule_hs", "notes", "lines"]
+        fields = ["id", "rule", "rule_description", "rule_hs", "rule_type", "notes",
+                  "lines", "origin_status", "criterion", "rvc_value", "detail",
+                  "computed_at"]
 
 
 class SolicitationRequestSerializer(serializers.ModelSerializer):

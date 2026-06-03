@@ -27,7 +27,7 @@ from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin.models import Certificate, Qualification
 from apps.origin.services import (
-    certificate_elements, issue_certificate, qualify_and_save,
+    calculate_bom_origin, certificate_elements, issue_certificate, qualify_and_save,
 )
 from apps.tenants.models import Membership, Tenant, UserSecurity
 from apps.treaties.models import OriginRule, Treaty
@@ -436,6 +436,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                     tenant=sr.tenant, bom=bom,
                     part_number=(ln.get("part_number") or "").strip(),
                     description=(ln.get("description") or "").strip(),
+                    hs_code=(ln.get("hs_code") or "").strip(),
                     unit_price=ln.get("unit_price") or 0,
                     quantity=ln.get("quantity") or 0,
                     country=(ln.get("country") or "").strip().upper()[:2],
@@ -444,6 +445,18 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             sr.responded_at = timezone.now()
             sr.save(update_fields=["status", "responded_at", "updated_at"])
         return Response(s.SolicitationRequestSerializer(sr).data)
+
+    @action(detail=True, methods=["post"], url_path="calculate-origin")
+    def calculate_origin(self, request, pk=None):
+        """Calcula el origen del producto a partir del BOM ya capturado.
+        Devuelve el resultado y la traza del análisis (CTC / VCR)."""
+        sr = self.get_object()
+        bom = SolicitationBOM.objects.filter(solicitation=sr).first()
+        if not bom or not bom.lines.exists():
+            return Response({"error": "Primero guarda el BOM con sus componentes."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        result = calculate_bom_origin(bom)
+        return Response(result)
 
     @action(detail=True, methods=["post"])
     def respond(self, request, pk=None):

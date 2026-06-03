@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   api, BomLine, clearToken, getToken, MasterTenant, Me, OriginRule, Party,
-  Product, Qualification, Solicitation, SupplierUser, Treaty,
+  Product, Qualification, Solicitation, SubmittedBom, SupplierUser, Treaty,
 } from "@/lib/api";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -1249,11 +1249,12 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
         <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {s.treaty_code} · Proveedor {s.supplier_name}</div>
         {b?.rule_description && <div className="mt-1 text-xs">Regla (PSR): <strong>{b.rule_hs}</strong> — {b.rule_description}</div>}
       </div>
-      <Table head={["Núm. de parte", "Descripción", "Precio", "Cant.", "Total", "País", "Evidencia"]}>
+      <Table head={["Núm. de parte", "Descripción", "HS", "Precio", "Cant.", "Total", "País", "Evidencia"]}>
         {(b?.lines ?? []).map((l, i) => (
           <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
             <td className="px-4 py-2 font-mono text-xs">{l.part_number}</td>
             <td className="px-4 py-2">{l.description}</td>
+            <td className="px-4 py-2 font-mono text-xs">{l.hs_code || "—"}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.unit_price}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.quantity}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.total}</td>
@@ -1271,6 +1272,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
           ⚠️ {sinEvidencia} componente(s) <strong>sin certificado/evidencia de origen</strong> — sujetos a auditorías internas.
         </p>
       )}
+      {b && <OriginReport bom={b} />}
       <div className="mt-3 flex items-center justify-between text-sm">
         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">De Minimis (no originario): <strong>{deMinimis.toFixed(2)}%</strong>{s.treaty_de_minimis ? ` · límite ${s.treaty_de_minimis}%` : ""}</span>
         <span className="font-semibold">Total BOM: {total.toFixed(2)}</span>
@@ -1511,7 +1513,51 @@ function SolCard({ s, product, tcode, onDone }: {
   );
 }
 function emptyBomLine(): BomLine {
-  return { part_number: "", description: "", unit_price: "", quantity: "", country: "", has_origin_evidence: false };
+  return { part_number: "", description: "", hs_code: "", unit_price: "", quantity: "", country: "", has_origin_evidence: false };
+}
+/* Reporte del análisis de origen (CTC / VCR) a partir del detalle calculado. */
+function OriginReport({ bom }: { bom: SubmittedBom }) {
+  if (!bom.origin_status) return null;
+  const d = (bom.detail ?? {}) as {
+    rule?: string; rule_type?: string; error?: string;
+    tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; components: { sku: string; shifted: boolean }[] };
+    rvc?: { method: string; threshold: string; rvc: string; vnm: string; transaction_value: string };
+  };
+  const ok = bom.origin_status === "QUALIFIES";
+  const insf = bom.origin_status === "INSUFFICIENT";
+  return (
+    <div className="mt-3 rounded-lg border border-zinc-200 p-3">
+      <div className="flex items-center gap-2">
+        <span className={cx("rounded-full px-2.5 py-0.5 text-sm font-semibold",
+          ok ? "bg-green-100 text-green-700" : insf ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
+          {ok ? "Originario: SÍ" : insf ? "Datos insuficientes" : "Originario: NO"}
+        </span>
+        {bom.criterion && <span className="text-xs text-zinc-500">Criterio: <strong>{bom.criterion}</strong></span>}
+        {bom.rvc_value != null && <span className="text-xs text-zinc-500">VCR: <strong>{bom.rvc_value}%</strong></span>}
+      </div>
+      {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
+      {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
+      {d.tariff_shift && (
+        <div className="mt-2 text-xs">
+          <div className="font-semibold text-zinc-700">Salto arancelario ({d.tariff_shift.shift_level})</div>
+          <div className="text-zinc-500">Valor que no salta: {d.tariff_shift.violating_value} ({d.tariff_shift.violating_pct}%) · de minimis permitido {d.tariff_shift.de_minimis}%</div>
+          <ul className="mt-1 space-y-0.5">
+            {d.tariff_shift.components.map((c, i) => (
+              <li key={i} className={c.shifted ? "text-green-700" : "text-red-700"}>
+                {c.shifted ? "✓" : "✗"} {c.sku} — {c.shifted ? "cambia de clasificación" : "NO cambia (mismo capítulo/partida)"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {d.rvc && (
+        <div className="mt-2 text-xs">
+          <div className="font-semibold text-zinc-700">Valor de Contenido Regional (VCR)</div>
+          <div className="text-zinc-500">VCR {d.rvc.rvc}% vs umbral {d.rvc.threshold}% · método {d.rvc.method} · valor no originario {d.rvc.vnm} de {d.rvc.transaction_value}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const done = s.status === "responded";
@@ -1547,11 +1593,29 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       await api.submitBom(s.id, {
         rule: ruleId === "" ? null : Number(ruleId),
         lines: valid.map((l) => ({
-          part_number: l.part_number, description: l.description,
+          part_number: l.part_number, description: l.description, hs_code: l.hs_code,
           unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
           has_origin_evidence: l.has_origin_evidence,
         })),
       });
+      onDone();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  async function calcular() {
+    const valid = lines.filter((l) => l.part_number.trim());
+    if (valid.length === 0) { setErr("Agrega al menos un componente con número de parte."); return; }
+    setErr(""); setSaving(true);
+    try {
+      // Guarda el BOM actual y luego calcula el origen.
+      await api.submitBom(s.id, {
+        rule: ruleId === "" ? null : Number(ruleId),
+        lines: valid.map((l) => ({
+          part_number: l.part_number, description: l.description, hs_code: l.hs_code,
+          unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
+          has_origin_evidence: l.has_origin_evidence,
+        })),
+      });
+      await api.calculateOrigin(s.id);
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
@@ -1592,6 +1656,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
             <tr>
               <th className="px-1 py-1 font-medium">Núm. de parte</th>
               <th className="px-1 py-1 font-medium">Descripción</th>
+              <th className="px-1 py-1 font-medium">HS</th>
               <th className="px-1 py-1 font-medium">Precio unit.</th>
               <th className="px-1 py-1 font-medium">Cantidad</th>
               <th className="px-1 py-1 font-medium">Total</th>
@@ -1610,6 +1675,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
               <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
                 <td className="px-1 py-1"><input value={l.part_number} onChange={(e) => setLine(i, "part_number", e.target.value)} className={cell} /></td>
                 <td className="px-1 py-1"><input value={l.description} onChange={(e) => setLine(i, "description", e.target.value)} className={cell} /></td>
+                <td className="px-1 py-1"><input value={l.hs_code} onChange={(e) => setLine(i, "hs_code", e.target.value)} className={cx(cell, "w-24 font-mono")} placeholder="7318.15" /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} className={cx(cell, "w-20")} /></td>
                 <td className="px-1 py-1 font-mono text-xs text-zinc-600">{lt(l).toFixed(2)}</td>
@@ -1633,7 +1699,11 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       </div>
 
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-      <div className="mt-4"><Btn onClick={submit} disabled={saving}>{saving ? "Enviando…" : done ? "Actualizar BOM" : "Enviar BOM"}</Btn></div>
+      <div className="mt-4 flex gap-2">
+        <Btn variant="ghost" onClick={submit} disabled={saving}>{saving ? "…" : done ? "Actualizar BOM" : "Guardar BOM"}</Btn>
+        <Btn onClick={calcular} disabled={saving}>{saving ? "Calculando…" : "Calcular origen"}</Btn>
+      </div>
+      {s.submitted_bom && <OriginReport bom={s.submitted_bom} />}
     </Card>
   );
 }

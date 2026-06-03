@@ -52,13 +52,15 @@ export type Me = {
   supplier: { id: number; name: string; slug: string } | null;
 };
 export type BomLine = {
-  id?: number; part_number: string; description: string;
+  id?: number; part_number: string; description: string; hs_code: string;
   unit_price: string; quantity: string; country: string;
   has_origin_evidence: boolean; total?: string;
 };
 export type SubmittedBom = {
   id: number; rule: number | null; rule_description?: string | null;
-  rule_hs?: string | null; notes: string; lines: BomLine[];
+  rule_hs?: string | null; rule_type?: string | null; notes: string; lines: BomLine[];
+  origin_status?: string; criterion?: string; rvc_value?: string | null;
+  detail?: Record<string, unknown>; computed_at?: string | null;
 };
 export type OriginRule = {
   id: number; hs_pattern: string; rule_type: string; description: string; treaty: number;
@@ -153,6 +155,8 @@ export const api = {
     req(`/solicitations/${solicitationId}/submit-bom/`, {
       method: "POST", body: JSON.stringify(payload),
     }),
+  calculateOrigin: (solicitationId: number) =>
+    req(`/solicitations/${solicitationId}/calculate-origin/`, { method: "POST" }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

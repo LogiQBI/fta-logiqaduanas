@@ -186,6 +186,12 @@ class SolicitationBOM(TenantOwnedModel):
     rule = models.ForeignKey("treaties.OriginRule", null=True, blank=True,
                              on_delete=models.SET_NULL, related_name="solicitation_boms")
     notes = models.TextField("Notas", blank=True)
+    # Resultado del cálculo de origen (se llena al presionar "Calcular origen").
+    origin_status = models.CharField("Resultado de origen", max_length=20, blank=True)
+    criterion = models.CharField("Criterio aplicado", max_length=20, blank=True)
+    rvc_value = models.DecimalField("VCR (%)", max_digits=6, decimal_places=2, null=True, blank=True)
+    detail = models.JSONField("Traza del cálculo", default=dict, blank=True)
+    computed_at = models.DateTimeField("Calculado el", null=True, blank=True)
 
     class Meta:
         verbose_name = "BOM de solicitud"
@@ -201,6 +207,8 @@ class SolicitationBOMLine(TenantOwnedModel):
     bom = models.ForeignKey(SolicitationBOM, on_delete=models.CASCADE, related_name="lines")
     part_number = models.CharField("Número de parte", max_length=100)
     description = models.CharField("Descripción", max_length=255, blank=True)
+    hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10, blank=True,
+                               help_text="Necesaria para evaluar el salto arancelario (CTH).")
     unit_price = models.DecimalField("Precio unitario", max_digits=14, decimal_places=4, default=0)
     quantity = models.DecimalField("Cantidad utilizada", max_digits=14, decimal_places=4, default=0)
     country = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)
