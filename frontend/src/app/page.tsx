@@ -10,6 +10,7 @@ import {
   api, BomLine, clearToken, getToken, MasterTenant, Me, OriginRule, Party,
   Product, Qualification, Solicitation, SubmittedBom, SupplierUser, Treaty,
 } from "@/lib/api";
+import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -306,6 +307,10 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   return (
     <div className="flex min-h-screen bg-[#f5f6f8] text-zinc-800">
+      {/* Catálogo de países para autocompletar/validar inputs de país */}
+      <datalist id="iso-countries">
+        {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+      </datalist>
       {/* Sidebar */}
       <aside className="flex w-80 flex-col border-r border-zinc-200 bg-white">
         <div className="flex h-16 items-center border-b border-zinc-100 px-4"><Logo /></div>
@@ -662,6 +667,21 @@ function HsInput({ value, onChange, className, placeholder }: {
       className={cx(className ?? inputCls, "font-mono")} />
   );
 }
+// Campo de país (ISO-2) con autocompletado y validación contra catálogo.
+function CountryInput({ value, onChange, className }: {
+  value: string; onChange: (v: string) => void; className?: string;
+}) {
+  const v = (value || "").toUpperCase();
+  const valid = isValidCountry(v);
+  return (
+    <span className="block">
+      <input list="iso-countries" value={v} maxLength={2} placeholder="MX"
+        onChange={(e) => onChange(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))}
+        className={cx(className ?? inputCls, "uppercase", !valid && "border-red-400 bg-red-50")} />
+      {!valid && <span className="mt-0.5 block text-[11px] text-red-600">País no válido</span>}
+    </span>
+  );
+}
 // Modal: el proveedor sugiere corregir la fracción.
 function SuggestHsModal({ product, onClose, onSaved }: {
   product: Product; onClose: () => void; onSaved: () => void;
@@ -699,6 +719,7 @@ function CountryModal({ product, onClose, onSaved }: {
   const [c, setC] = useState(product.country_of_origin ?? "");
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
   async function save() {
+    if (!isValidCountry(c)) { setErr("País no válido. Usa un código ISO-2 del catálogo (ej. MX, US, CN)."); return; }
     setErr(""); setSaving(true);
     try { await api.setCountry(product.id, c.trim().toUpperCase()); onSaved(); }
     catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
@@ -707,8 +728,7 @@ function CountryModal({ product, onClose, onSaved }: {
     <Modal title={`País de origen — ${product.sku}`} onClose={onClose}>
       <p className="mb-3 text-sm text-zinc-500">{product.description}</p>
       <Field label="País de origen (ISO-2)">
-        <input value={c} onChange={(e) => setC(e.target.value.toUpperCase())} maxLength={2}
-          className={cx(inputCls, "uppercase")} placeholder="MX" autoFocus />
+        <CountryInput value={c} onChange={setC} />
       </Field>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
@@ -1433,7 +1453,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
           <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
             <td className="px-4 py-2 font-mono text-xs">{l.part_number}</td>
             <td className="px-4 py-2">{l.description}</td>
-            <td className="px-4 py-2 font-mono text-xs">{l.hs_code || "—"}</td>
+            <td className="px-4 py-2 font-mono text-xs">{formatHs(l.hs_code) || "—"}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.unit_price}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.quantity}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.total}</td>
@@ -1671,6 +1691,7 @@ function SolCard({ s, product, tcode, onDone }: {
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
   const done = s.status === "responded";
   async function submit() {
+    if (!isValidCountry(country)) { setErr("País no válido. Usa un código ISO-2 del catálogo."); return; }
     setErr(""); setSaving(true);
     try { await api.respond(s.id, { is_originating: orig, country_of_origin: country, valid_from: from, valid_to: to }); onDone(); }
     catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
@@ -1696,7 +1717,7 @@ function SolCard({ s, product, tcode, onDone }: {
             ¿El material es originario para este tratado?
           </label>
           <div><label className="block text-xs text-zinc-500">País (ISO-2)</label>
-            <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="MX" className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></div>
+            <span className="mt-1 block"><CountryInput value={country} onChange={setCountry} className="w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></span></div>
           <div />
           <div><label className="block text-xs text-zinc-500">Vigente desde</label>
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5" /></div>
@@ -1785,6 +1806,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   async function submit() {
     const valid = lines.filter((l) => l.part_number.trim());
     if (valid.length === 0) { setErr("Agrega al menos un componente con número de parte."); return; }
+    if (valid.some((l) => !isValidCountry(l.country))) { setErr("Hay un país no válido en el detalle (usa un código ISO-2 del catálogo)."); return; }
     setErr(""); setSaving(true);
     try {
       await api.submitBom(s.id, {
@@ -1801,6 +1823,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   async function calcular() {
     const valid = lines.filter((l) => l.part_number.trim());
     if (valid.length === 0) { setErr("Agrega al menos un componente con número de parte."); return; }
+    if (valid.some((l) => !isValidCountry(l.country))) { setErr("Hay un país no válido en el detalle (usa un código ISO-2 del catálogo)."); return; }
     setErr(""); setSaving(true);
     try {
       // Guarda el BOM actual y luego calcula el origen.
@@ -1872,11 +1895,11 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
               <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
                 <td className="px-1 py-1"><input value={l.part_number} onChange={(e) => setLine(i, "part_number", e.target.value)} className={cell} /></td>
                 <td className="px-1 py-1"><input value={l.description} onChange={(e) => setLine(i, "description", e.target.value)} className={cell} /></td>
-                <td className="px-1 py-1"><input value={l.hs_code} onChange={(e) => setLine(i, "hs_code", e.target.value)} className={cx(cell, "w-24 font-mono")} placeholder="7318.15" /></td>
+                <td className="px-1 py-1"><HsInput value={l.hs_code} onChange={(v) => setLine(i, "hs_code", v)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} className={cx(cell, "w-20")} /></td>
                 <td className="px-1 py-1 font-mono text-xs text-zinc-600">{lt(l).toFixed(2)}</td>
-                <td className="px-1 py-1"><input value={l.country} onChange={(e) => setLine(i, "country", e.target.value.toUpperCase())} maxLength={2} className={cx(cell, "w-14 uppercase")} placeholder="MX" /></td>
+                <td className="px-1 py-1"><CountryInput value={l.country} onChange={(v) => setLine(i, "country", v)} className={cx(cell, "w-20")} /></td>
                 <td className="px-1 py-1 text-center">
                   <input type="checkbox" checked={l.has_origin_evidence} onChange={(e) => setLine(i, "has_origin_evidence", e.target.checked)} title="¿Tiene certificado/evidencia de origen?" />
                 </td>
