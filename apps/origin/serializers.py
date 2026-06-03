@@ -118,8 +118,8 @@ class SolicitationBOMSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolicitationBOM
         fields = ["id", "rule", "rule_description", "rule_hs", "rule_type", "notes",
-                  "lines", "origin_status", "criterion", "rvc_value", "detail",
-                  "computed_at"]
+                  "rvc_method", "net_cost", "lines", "origin_status", "criterion",
+                  "rvc_value", "detail", "computed_at"]
 
 
 class SolicitationRequestSerializer(serializers.ModelSerializer):

@@ -507,6 +507,8 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                 solicitation=sr, defaults={"tenant": sr.tenant})
             bom.rule_id = rule_id
             bom.notes = request.data.get("notes", "")
+            bom.rvc_method = request.data.get("rvc_method") or "transaction"
+            bom.net_cost = request.data.get("net_cost") or 0
             # Guardar invalida el cálculo previo: hay que recalcular antes de enviar.
             bom.origin_status = ""
             bom.criterion = ""
@@ -531,27 +533,42 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="copy-previous")
     def copy_previous(self, request, pk=None):
-        """Trae el BOM de la solicitud ANTERIOR del mismo producto+proveedor
-        (periodo pasado). Devuelve regla y líneas para rellenar el formulario."""
+        """Trae la información del periodo ANTERIOR del mismo producto+proveedor.
+        Por BOM: regla + líneas. Por declaración manual: los valores declarados."""
         sr = self.get_object()
-        prev = (SolicitationBOM.objects
-                .filter(solicitation__product_id=sr.product_id,
-                        solicitation__supplier_id=sr.supplier_id)
-                .exclude(solicitation_id=sr.id)
+        if sr.bom_analysis:
+            prev = (SolicitationBOM.objects
+                    .filter(solicitation__product_id=sr.product_id,
+                            solicitation__supplier_id=sr.supplier_id)
+                    .exclude(solicitation_id=sr.id)
+                    .order_by("-created_at").first())
+            if not prev or not prev.lines.exists():
+                return Response({"found": False})
+            lines = [{
+                "part_number": l.part_number, "description": l.description,
+                "hs_code": l.hs_code, "unit_price": str(l.unit_price),
+                "quantity": str(l.quantity), "country": l.country,
+                "has_origin_evidence": l.has_origin_evidence,
+            } for l in prev.lines.all()]
+            src = prev.solicitation
+            src_period = f"{src.get_period_type_display()} {src.period_from} → {src.period_to}".strip()
+            _log_sol(sr, "copied_previous", f"BOM de solicitud #{src.id} ({src_period})", request.user)
+            return Response({"found": True, "type": "bom", "rule": prev.rule_id,
+                             "lines": lines, "source_period": src_period})
+        # Declaración manual: última declaración entregada de ese producto/proveedor.
+        decl = (SupplierDeclaration.objects
+                .filter(tenant=sr.tenant, product_id=sr.product_id, supplier_id=sr.supplier_id)
                 .order_by("-created_at").first())
-        if not prev or not prev.lines.exists():
+        if not decl:
             return Response({"found": False})
-        lines = [{
-            "part_number": l.part_number, "description": l.description,
-            "hs_code": l.hs_code, "unit_price": str(l.unit_price),
-            "quantity": str(l.quantity), "country": l.country,
-            "has_origin_evidence": l.has_origin_evidence,
-        } for l in prev.lines.all()]
-        src = prev.solicitation
-        src_period = f"{src.get_period_type_display()} {src.period_from} → {src.period_to}".strip()
-        _log_sol(sr, "copied_previous", f"de solicitud #{src.id} ({src_period})", request.user)
-        return Response({"found": True, "rule": prev.rule_id, "lines": lines,
-                         "source_period": src_period})
+        _log_sol(sr, "copied_previous", "declaración anterior", request.user)
+        return Response({"found": True, "type": "manual",
+                         "is_originating": decl.is_originating,
+                         "country_of_origin": decl.country_of_origin,
+                         "rule": decl.rule_id,
+                         "value_originating": str(decl.value_originating),
+                         "value_non_originating": str(decl.value_non_originating),
+                         "source_period": f"{decl.valid_from} → {decl.valid_to}"})
 
     @action(detail=True, methods=["post"], url_path="send-bom")
     def send_bom(self, request, pk=None):

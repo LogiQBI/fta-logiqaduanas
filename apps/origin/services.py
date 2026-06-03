@@ -49,9 +49,18 @@ def calculate_bom_origin(bom):
         })
 
     transaction_value = product.unit_cost if product.unit_cost else total
+    # Base del VCR según el método elegido por el proveedor.
+    method = bom.rvc_method or "transaction"
+    if method == "net_cost" and bom.net_cost and Decimal(bom.net_cost) > 0:
+        rvc_base = Decimal(bom.net_cost)
+    else:
+        rvc_base = transaction_value
+        if method == "net_cost":
+            method = "transaction"  # sin costo neto capturado, se usa transacción
     fake_product = SimpleNamespace(hs_code=product.hs_code or "")
     rt = rule.rule_type
-    params = rule.params or {}
+    params = dict(rule.params or {})
+    params["rvc_method"] = method  # el método lo decide el proveedor
     shift_level = params.get("shift_level", "CTH")
     de_minimis = params.get("de_minimis", treaty.de_minimis_pct)
     detail = {"rule": str(rule), "rule_type": rt, "bom": lines,
@@ -65,7 +74,7 @@ def calculate_bom_origin(bom):
         detail["tariff_shift"] = ctc_detail
     if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
         rvc_pass, rvc_value, rvc_detail = engine._check_rvc(
-            treaty, params, transaction_value, vnm)
+            treaty, params, rvc_base, vnm)
         detail["rvc"] = rvc_detail
 
     if rt == "WO":

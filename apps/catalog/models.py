@@ -248,6 +248,14 @@ class SolicitationBOM(TenantOwnedModel):
     rule = models.ForeignKey("treaties.OriginRule", null=True, blank=True,
                              on_delete=models.SET_NULL, related_name="solicitation_boms")
     notes = models.TextField("Notas", blank=True)
+
+    class RvcMethod(models.TextChoices):
+        TRANSACTION = "transaction", "Valor de transacción"
+        NET_COST = "net_cost", "Costo neto"
+
+    rvc_method = models.CharField("Método VCR", max_length=20,
+                                  choices=RvcMethod.choices, default=RvcMethod.TRANSACTION)
+    net_cost = models.DecimalField("Costo neto", max_digits=14, decimal_places=4, default=0)
     # Resultado del cálculo de origen (se llena al presionar "Calcular origen").
     origin_status = models.CharField("Resultado de origen", max_length=20, blank=True)
     criterion = models.CharField("Criterio aplicado", max_length=20, blank=True)

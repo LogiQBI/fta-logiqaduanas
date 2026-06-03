@@ -66,6 +66,7 @@ export type BomLine = {
 export type SubmittedBom = {
   id: number; rule: number | null; rule_description?: string | null;
   rule_hs?: string | null; rule_type?: string | null; notes: string; lines: BomLine[];
+  rvc_method?: string; net_cost?: string;
   origin_status?: string; criterion?: string; rvc_value?: string | null;
   detail?: Record<string, unknown>; computed_at?: string | null;
 };

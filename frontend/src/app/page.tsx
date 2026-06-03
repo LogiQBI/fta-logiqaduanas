@@ -700,6 +700,25 @@ function formatHs(p: string) {
   if (d.length > 6) out += "." + d.slice(6);
   return out;
 }
+// Etiqueta legible del tipo de regla de origen.
+function ruleTypeLabel(t?: string) {
+  return ({
+    CTC: "Cambio de clasificación arancelaria (CTC)",
+    RVC: "Valor de contenido regional (VCR)",
+    CTC_OR_RVC: "Cambio de clasificación arancelaria o VCR",
+    CTC_AND_RVC: "Cambio de clasificación arancelaria y VCR",
+    WO: "Totalmente obtenido",
+  } as Record<string, string>)[t ?? ""] ?? (t ?? "");
+}
+// Limpia la descripción de la regla (quita el marcador interno [AUTO-GN11 ...]).
+function cleanRuleDesc(d?: string) {
+  return (d ?? "").replace(/\[AUTO-GN11[^\]]*\]\s*/g, "").trim();
+}
+// Texto completo y legible de una regla para los desplegables.
+function ruleOptionLabel(r: { hs_pattern: string; rule_type: string; description: string }) {
+  const desc = cleanRuleDesc(r.description);
+  return `${formatHs(r.hs_pattern)} · ${ruleTypeLabel(r.rule_type)}${desc ? " — " + desc : ""}`;
+}
 // Input de fracción: solo 6 dígitos, se muestra con punto (8708.10).
 function HsInput({ value, onChange, className, placeholder }: {
   value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
@@ -850,8 +869,8 @@ function ReglasView() {
           <tr key={r.id}>
             <td className="px-4 py-3"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{r.treaty_label ?? r.treaty_code}</span></td>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{formatHs(r.hs_pattern)}</td>
-            <td className="px-4 py-3"><Pill>{r.rule_type}</Pill></td>
-            <td className="px-4 py-3 text-zinc-600">{r.description?.slice(0, 110)}</td>
+            <td className="px-4 py-3"><Pill>{ruleTypeLabel(r.rule_type)}</Pill></td>
+            <td className="px-4 py-3 text-zinc-600">{cleanRuleDesc(r.description)}</td>
           </tr>
         ))}
         {!loading && data.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Sin reglas para ese filtro.</td></tr>}
@@ -1940,7 +1959,7 @@ function SugerenciaPanel({ s, onUse, ruleId }: { s: Solicitation; onUse: (id: nu
       💡 <strong>Sugerencia del sistema:</strong> {s.origin_hint}
       {s.suggested_rule && (
         <div className="mt-1.5">
-          Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {s.suggested_rule.rule_type} — {s.suggested_rule.description}
+          Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {ruleTypeLabel(s.suggested_rule.rule_type)}{cleanRuleDesc(s.suggested_rule.description) ? ` — ${cleanRuleDesc(s.suggested_rule.description)}` : ""}
           {ruleId !== s.suggested_rule.id &&
             <button onClick={() => onUse(s.suggested_rule!.id)} className="ml-2 rounded bg-blue-600 px-2 py-0.5 font-medium text-white">Usar</button>}
         </div>
@@ -1962,7 +1981,7 @@ function SolCard({ s, product, onDone }: {
   const [ruleId, setRuleId] = useState<number | "">(s.suggested_rule?.id ?? "");
   const [vOrig, setVOrig] = useState(""); const [vNon, setVNon] = useState("");
   const [rules, setRules] = useState<OriginRule[]>([]);
-  const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
   const done = s.status === "responded";
   useEffect(() => {
     api.rules(`?treaty=${s.treaty}&hs=${encodeURIComponent(s.product_hs ?? "")}`)
@@ -1987,9 +2006,25 @@ function SolCard({ s, product, onDone }: {
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
+  async function traerPrevia() {
+    setErr(""); setMsg(""); setSaving(true);
+    try {
+      const r = await api.copyPrevious(s.id);
+      if (!r.found) { setMsg("No hay información de un periodo anterior para este producto."); return; }
+      setOrig(!!r.is_originating);
+      setCountry(r.country_of_origin ?? "");
+      setRuleId(r.rule ?? "");
+      setVOrig(String(r.value_originating ?? "")); setVNon(String(r.value_non_originating ?? ""));
+      setMsg(`Información traída del periodo anterior (${r.source_period ?? ""}). Revisa y envía.`);
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
   if (done) return <p className="text-sm text-zinc-500">Ya enviaste tu declaración. ¡Gracias!</p>;
   return (
     <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Btn size="sm" variant="ghost" onClick={traerPrevia} disabled={saving}>↩︎ Traer información de última solicitud</Btn>
+        {msg && <span className="text-xs text-emerald-700">{msg}</span>}
+      </div>
       <SugerenciaPanel s={s} ruleId={ruleId} onUse={setRuleId} />
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="col-span-2">
@@ -2009,7 +2044,7 @@ function SolCard({ s, product, onDone }: {
           <label className="block text-xs text-zinc-500">Regla de origen específica (PSR)</label>
           <select value={ruleId} onChange={(e) => setRuleId(e.target.value === "" ? "" : Number(e.target.value))} className={cellI}>
             <option value="">— Selecciona la regla aplicable —</option>
-            {rules.map((r) => <option key={r.id} value={r.id}>{r.hs_pattern} · {r.rule_type} — {r.description?.slice(0, 70)}</option>)}
+            {rules.map((r) => <option key={r.id} value={r.id}>{ruleOptionLabel(r)}</option>)}
           </select>
         </div>
         <div><label className="block text-xs text-zinc-500">País (ISO-2)</label>
@@ -2076,7 +2111,7 @@ function OriginReport({ bom }: { bom: SubmittedBom }) {
       {d.rvc && (
         <div className="mt-2 text-xs">
           <div className="font-semibold text-zinc-700">Valor de Contenido Regional (VCR)</div>
-          <div className="text-zinc-500">VCR {d.rvc.rvc}% vs umbral {d.rvc.threshold}% · método {d.rvc.method} · valor no originario {d.rvc.vnm} de {d.rvc.transaction_value}</div>
+          <div className="text-zinc-500">VCR {d.rvc.rvc}% vs umbral {d.rvc.threshold}% · método {d.rvc.method === "net_cost" ? "Costo neto" : "Valor de transacción"} · valor no originario {d.rvc.vnm} sobre base {d.rvc.transaction_value}</div>
         </div>
       )}
     </div>
@@ -2097,6 +2132,8 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const done = s.status === "responded";
   const [rules, setRules] = useState<OriginRule[]>([]);
   const [ruleId, setRuleId] = useState<number | "">(s.submitted_bom?.rule ?? "");
+  const [rvcMethod, setRvcMethod] = useState(s.submitted_bom?.rvc_method ?? "transaction");
+  const [netCost, setNetCost] = useState(s.submitted_bom?.net_cost ?? "");
   const [lines, setLines] = useState<BomLine[]>(
     s.submitted_bom?.lines?.length ? s.submitted_bom.lines : [emptyBomLine()]);
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
@@ -2134,16 +2171,20 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
     if (valid.some((l) => !isValidCountry(l.country))) { setErr("Hay un país no válido en el detalle (usa un código ISO-2 del catálogo)."); return; }
     setErr(""); setSaving(true);
     try {
-      await api.submitBom(s.id, {
-        rule: ruleId === "" ? null : Number(ruleId),
-        lines: valid.map((l) => ({
-          part_number: l.part_number, description: l.description, hs_code: l.hs_code,
-          unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
-          has_origin_evidence: l.has_origin_evidence,
-        })),
-      });
+      await api.submitBom(s.id, bomPayload(valid));
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  function bomPayload(valid: BomLine[]) {
+    return {
+      rule: ruleId === "" ? null : Number(ruleId),
+      rvc_method: rvcMethod, net_cost: rvcMethod === "net_cost" ? (netCost || "0") : "0",
+      lines: valid.map((l) => ({
+        part_number: l.part_number, description: l.description, hs_code: l.hs_code,
+        unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
+        has_origin_evidence: l.has_origin_evidence,
+      })),
+    };
   }
   async function calcular() {
     const valid = lines.filter((l) => l.part_number.trim());
@@ -2152,14 +2193,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
     setErr(""); setSaving(true);
     try {
       // Guarda el BOM actual y luego calcula el origen.
-      await api.submitBom(s.id, {
-        rule: ruleId === "" ? null : Number(ruleId),
-        lines: valid.map((l) => ({
-          part_number: l.part_number, description: l.description, hs_code: l.hs_code,
-          unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
-          has_origin_evidence: l.has_origin_evidence,
-        })),
-      });
+      await api.submitBom(s.id, bomPayload(valid));
       await api.calculateOrigin(s.id);
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
@@ -2234,9 +2268,27 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
         <label className="mb-1 block text-xs font-semibold text-zinc-700">Regla de origen específica (PSR)</label>
         <select value={ruleId} onChange={(e) => setRuleId(e.target.value === "" ? "" : Number(e.target.value))} className={cell}>
           <option value="">— Selecciona la regla aplicable —</option>
-          {rules.map((r) => <option key={r.id} value={r.id}>{r.hs_pattern} · {r.rule_type} — {r.description?.slice(0, 70)}</option>)}
+          {rules.map((r) => <option key={r.id} value={r.id}>{ruleOptionLabel(r)}</option>)}
         </select>
         {rules.length === 0 && <p className="mt-1 text-xs text-zinc-400">No hay PSR para esta fracción/tratado en el catálogo; puedes continuar sin seleccionarla.</p>}
+      </div>
+
+      {/* Método de VCR (valor de transacción o costo neto) */}
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-zinc-700">Método de VCR</label>
+          <select value={rvcMethod} onChange={(e) => setRvcMethod(e.target.value)} className={cell}>
+            <option value="transaction">Valor de transacción (precio de venta)</option>
+            <option value="net_cost">Costo neto</option>
+          </select>
+        </div>
+        {rvcMethod === "net_cost" && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-zinc-700">Costo neto</label>
+            <input type="number" step="0.0001" value={netCost} onChange={(e) => setNetCost(e.target.value)} className={cx(cell, "w-40")} placeholder="0.00" />
+          </div>
+        )}
+        <span className="text-xs text-zinc-400">El VCR se calcula sobre esta base; cada método tiene su umbral.</span>
       </div>
 
       {/* Detalle de componentes */}
