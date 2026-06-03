@@ -28,8 +28,25 @@ from apps.origin.models import Certificate, Qualification
 from apps.origin.services import (
     certificate_elements, issue_certificate, qualify_and_save,
 )
-from apps.tenants.models import Membership, Tenant
+from apps.tenants.models import Membership, Tenant, UserSecurity
 from apps.treaties.models import OriginRule, Treaty
+
+MAX_LOGIN_ATTEMPTS = 5  # al 5º fallo se bloquea la cuenta
+
+
+def _unlock_authority(user):
+    """Quién puede desbloquear a este usuario (frase con preposición incluida)."""
+    if user.is_superuser:
+        return "a otro administrador de LogiQ"
+    m = user.memberships.first()
+    if m and m.is_supplier:
+        return "a tu empresa"
+    return "al administrador de LogiQ"
+
+
+def _locked_message(user):
+    return ("Tu cuenta está bloqueada por demasiados intentos fallidos. "
+            f"Pide {_unlock_authority(user)} que la desbloquee.")
 
 
 def _temp_password(n=8):
@@ -52,9 +69,12 @@ def _unique_username(tenant_slug, party_slug, login_name):
 
 def _party_users(party):
     """Lista de usuarios de acceso de un proveedor (muestra el nombre que escriben)."""
+    locked_ids = set(UserSecurity.objects.filter(
+        user__memberships__party=party, is_locked=True).values_list("user_id", flat=True))
     return [
         {"id": m.user_id, "username": m.login_name or m.user.username,
-         "must_change_password": m.must_change_password}
+         "must_change_password": m.must_change_password,
+         "is_locked": m.user_id in locked_ids}
         for m in party.memberships.select_related("user").all()
     ]
 
@@ -187,6 +207,21 @@ class PartyViewSet(TenantScopedViewSet):
                             status=status.HTTP_404_NOT_FOUND)
         mem.user.delete()  # borra también su membresía (cascade)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path=r"users/(?P<user_id>[0-9]+)/unlock")
+    def unlock_user(self, request, pk=None, user_id=None):
+        """La empresa desbloquea a un usuario de su proveedor."""
+        m = self._require_company()
+        party = self.get_object()
+        mem = party.memberships.filter(user_id=user_id, tenant=m.tenant).first()
+        if not mem:
+            return Response({"error": "Usuario no encontrado para este proveedor."},
+                            status=status.HTTP_404_NOT_FOUND)
+        sec, _ = UserSecurity.objects.get_or_create(user_id=user_id)
+        sec.is_locked = False
+        sec.failed_attempts = 0
+        sec.save(update_fields=["is_locked", "failed_attempts", "updated_at"])
+        return Response({"ok": True})
 
 
 class ProductViewSet(TenantScopedViewSet):
@@ -364,6 +399,8 @@ def login_view(request):
     tenant_slug = (request.data.get("tenant_slug") or "").strip().lower()
     supplier_slug = (request.data.get("supplier_slug") or "").strip().lower()
 
+    # 1) Resolver el usuario objetivo (sin validar contraseña aún) para poder
+    #    contar intentos fallidos y aplicar el bloqueo.
     if supplier_slug:
         tenant = Tenant.objects.filter(slug=tenant_slug).first()
         party = (Party.objects.filter(tenant=tenant, slug=supplier_slug,
@@ -377,13 +414,45 @@ def login_view(request):
         if not mem:
             return Response({"error": "Empresa, proveedor o usuario incorrectos."},
                             status=status.HTTP_400_BAD_REQUEST)
-        user = authenticate(username=mem.user.username, password=password)
+        target = mem.user
     else:
-        user = authenticate(username=username, password=password)
+        target = User.objects.filter(username=username).first()
+
+    # 2) Si ya está bloqueado, no dejar entrar (ni con contraseña correcta).
+    sec = None
+    if target:
+        sec, _ = UserSecurity.objects.get_or_create(user=target)
+        if sec.is_locked:
+            return Response({"error": _locked_message(target)},
+                            status=status.HTTP_403_FORBIDDEN)
+
+    # 3) Validar contraseña.
+    user = authenticate(username=target.username, password=password) if target else None
 
     if not user:
+        # Contar el intento fallido y avisar/ bloquear.
+        if sec:
+            sec.failed_attempts += 1
+            if sec.failed_attempts >= MAX_LOGIN_ATTEMPTS:
+                sec.is_locked = True
+                sec.save(update_fields=["failed_attempts", "is_locked", "updated_at"])
+                return Response({"error": _locked_message(target)},
+                                status=status.HTTP_403_FORBIDDEN)
+            sec.save(update_fields=["failed_attempts", "updated_at"])
+            restantes = MAX_LOGIN_ATTEMPTS - sec.failed_attempts
+            msg = "Usuario o contraseña incorrectos."
+            if restantes <= 3:
+                s = "s" if restantes != 1 else ""
+                msg += (f" Te queda{'n' if restantes != 1 else ''} {restantes} "
+                        f"intento{s} antes de bloquear la cuenta.")
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "Usuario o contraseña incorrectos."},
                         status=status.HTTP_400_BAD_REQUEST)
+
+    # 4) Éxito: reiniciar el contador de intentos.
+    if sec and sec.failed_attempts:
+        sec.failed_attempts = 0
+        sec.save(update_fields=["failed_attempts", "updated_at"])
     if not user.is_superuser:
         m = user.memberships.select_related("tenant").first()
         lic = getattr(m.tenant, "license", None) if m else None

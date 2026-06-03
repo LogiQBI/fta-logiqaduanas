@@ -252,6 +252,9 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
   if (me.is_supplier) {
     return [
       { items: [{ key: "home", label: "Inicio", icon: Home }] },
+      { label: "Catálogo", items: [
+        { key: "mis-productos", label: "Productos", icon: Package },
+      ] },
       { label: "Mi información de origen", items: [
         { key: "mis-solicitudes", label: "Solicitudes", icon: Inbox, badge: badges.pendientes },
         { key: "mis-declaraciones", label: "Mis declaraciones", icon: FileText },
@@ -383,6 +386,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "certificados": return <CertificadosView />;
     case "proveedores": return <ProveedoresView me={me} />;
     case "solicitudes": return <SolicitudesEmpresaView />;
+    case "mis-productos": return <ProveedorProductosView />;
     case "mis-solicitudes": return <MisSolicitudesView />;
     case "mis-declaraciones": return <MisDeclaracionesView />;
     default: return <HomeView me={me} go={go} />;
@@ -493,7 +497,8 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
     { icon: ScrollText, color: "bg-emerald-50 text-emerald-600", title: "Tratados", desc: "Catálogo de TLC", k: "tratados" },
     { icon: BookOpen, color: "bg-amber-50 text-amber-600", title: "Reglas", desc: "Reglas de origen", k: "reglas" },
   ] : me.is_supplier ? [
-    { icon: Inbox, color: "bg-blue-50 text-blue-600", title: "Solicitudes", desc: "Información que te piden", k: "mis-solicitudes" },
+    { icon: Package, color: "bg-blue-50 text-blue-600", title: "Productos", desc: "Lo que tus clientes te compran", k: "mis-productos" },
+    { icon: Inbox, color: "bg-amber-50 text-amber-600", title: "Solicitudes", desc: "Información que te piden", k: "mis-solicitudes" },
     { icon: FileText, color: "bg-emerald-50 text-emerald-600", title: "Mis declaraciones", desc: "Lo que ya enviaste", k: "mis-declaraciones" },
   ] : [
     { icon: Package, color: "bg-blue-50 text-blue-600", title: "Productos", desc: "Califica tus productos", k: "productos" },
@@ -560,7 +565,7 @@ function EmpresasView() {
 }
 
 function UsuariosView() {
-  const { data, reload } = useList<{ id: number; username: string; membership: { tenant: string; role_display: string; party: string | null } | null }>(() => api.masterUsers());
+  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; membership: { tenant: string; role_display: string; party: string | null } | null }>(() => api.masterUsers());
   const tenants = useList<MasterTenant>(() => api.masterTenants());
   const [f, setF] = useState({ username: "", password: "", tenant: "" as number | "", role: "admin" });
   const [msg, setMsg] = useState("");
@@ -569,17 +574,29 @@ function UsuariosView() {
     try { await api.masterCreateUser(f); setF({ username: "", password: "", tenant: "", role: "admin" }); setMsg("Usuario creado."); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
+  async function unlock(id: number) {
+    setMsg(""); try { await api.masterUnlockUser(id); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
   return (
     <div>
       <PageTitle title="Usuarios" desc="Accesos de empresas y proveedores." />
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
-      <Table head={["Usuario", "Empresa", "Rol", "Proveedor"]}>
+      <Table head={["Usuario", "Empresa", "Rol", "Proveedor", "Estado", ""]}>
         {data.map((u) => (
           <tr key={u.id}>
             <td className="px-4 py-3 font-medium">{u.username}</td>
             <td className="px-4 py-3">{u.membership?.tenant ?? "—"}</td>
             <td className="px-4 py-3">{u.membership?.role_display ?? "Master"}</td>
             <td className="px-4 py-3">{u.membership?.party ?? "—"}</td>
+            <td className="px-4 py-3">
+              {u.is_locked
+                ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Bloqueado</span>
+                : <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Activo</span>}
+            </td>
+            <td className="px-4 py-3 text-right">
+              {u.is_locked && <Btn size="sm" onClick={() => unlock(u.id)}>Desbloquear</Btn>}
+            </td>
           </tr>
         ))}
       </Table>
@@ -1111,6 +1128,11 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
     try { await api.removeSupplierUser(party.id, u.id); if (temp?.username === u.username) setTemp(null); await refresh(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
+  async function unlock(u: SupplierUser) {
+    setErr(""); setBusy(true);
+    try { await api.unlockSupplierUser(party.id, u.id); await refresh(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
   return (
     <Modal title={`Usuarios de acceso — ${party.name}`} onClose={onClose}>
       <p className="mb-4 text-sm text-zinc-500">
@@ -1137,11 +1159,13 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
         {users.map((u) => (
           <div key={u.id} className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 last:border-0">
             <div className="flex items-center gap-2">
-              <KeyRound size={14} className="text-zinc-400" />
+              <KeyRound size={14} className={u.is_locked ? "text-red-500" : "text-zinc-400"} />
               <span className="text-sm font-medium">{u.username}</span>
+              {u.is_locked && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">bloqueado</span>}
               {u.must_change_password && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">contraseña temporal</span>}
             </div>
             <div className="flex items-center gap-1">
+              {u.is_locked && <Btn size="sm" onClick={() => unlock(u)} disabled={busy}>Desbloquear</Btn>}
               <Btn size="sm" variant="ghost" onClick={() => reset(u)} disabled={busy}>Restablecer contraseña</Btn>
               <button onClick={() => remove(u)} disabled={busy} title="Quitar"
                 className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
@@ -1191,6 +1215,33 @@ function SolicitudesEmpresaView() {
 }
 
 /* ============ PROVEEDOR ============ */
+function ProveedorProductosView() {
+  const { data, count, loading } = useList<Product>(() => api.products());
+  return (
+    <div>
+      <PageTitle title="Productos" desc="Lo que tus clientes te compran. Las altas las hace la empresa; aquí solo consultas." />
+      <Table head={["Núm. de parte", "Descripción", "Tipo", "HS", "País", "Precio", "Estatus"]}>
+        {data.map((p) => (
+          <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
+            <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
+            <td className="px-4 py-3">{p.description}</td>
+            <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.hs_code || "—"}</td>
+            <td className="px-4 py-3">{p.country_of_origin || "—"}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
+            <td className="px-4 py-3">
+              <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
+                p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
+                {p.is_active ? "Activo" : "Inactivo"}
+              </span>
+            </td>
+          </tr>
+        ))}
+        {!loading && count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Todavía no hay productos asignados a ti por tus clientes.</td></tr>}
+      </Table>
+    </div>
+  );
+}
 function MisSolicitudesView() {
   const { data, reload, count } = useList<Solicitation>(() => api.solicitations());
   const products = useList<Product>(() => api.products());

@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from apps.catalog.models import Party
-from apps.tenants.models import License, Membership, Tenant
+from apps.tenants.models import License, Membership, Tenant, UserSecurity
 
 
 class LicenseSerializer(serializers.ModelSerializer):
@@ -41,11 +41,15 @@ class UserAdminSerializer(serializers.ModelSerializer):
     party = serializers.PrimaryKeyRelatedField(
         queryset=Party.objects.all(), write_only=True, required=False, allow_null=True)
     membership = serializers.SerializerMethodField()
+    is_locked = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "is_superuser", "is_active",
-                  "password", "tenant", "role", "party", "membership"]
+                  "password", "tenant", "role", "party", "membership", "is_locked"]
+
+    def get_is_locked(self, obj):
+        return UserSecurity.objects.filter(user=obj, is_locked=True).exists()
 
     def get_membership(self, obj):
         m = obj.memberships.select_related("tenant", "party").first()

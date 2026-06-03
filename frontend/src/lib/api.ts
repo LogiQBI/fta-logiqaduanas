@@ -35,7 +35,7 @@ export type Product = {
   is_active: boolean;
 };
 export type Treaty = { id: number; code: string; name: string };
-export type SupplierUser = { id: number; username: string; must_change_password: boolean };
+export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {
   id: number; kind: string; kind_display?: string; name: string;
   code: string; slug: string; tax_id: string; country: string;
@@ -106,6 +106,8 @@ export const api = {
     }),
   removeSupplierUser: (partyId: number, userId: number) =>
     req(`/parties/${partyId}/users/${userId}/`, { method: "DELETE" }),
+  unlockSupplierUser: (partyId: number, userId: number) =>
+    req(`/parties/${partyId}/users/${userId}/unlock/`, { method: "POST" }),
   changePassword: (newPassword: string) =>
     req("/change-password/", {
       method: "POST", body: JSON.stringify({ new_password: newPassword }),
@@ -139,6 +141,8 @@ export const api = {
     req(`/master/tenants/${id}/license/`, { method: "PATCH", body: JSON.stringify(payload) }),
   masterCreateUser: (payload: Record<string, unknown>) =>
     req("/master/users/", { method: "POST", body: JSON.stringify(payload) }),
+  masterUnlockUser: (id: number) =>
+    req(`/master/users/${id}/unlock/`, { method: "POST" }),
 };
 
 export type MasterTenant = {

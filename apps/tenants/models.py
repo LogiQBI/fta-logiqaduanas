@@ -80,6 +80,23 @@ class TenantOwnedModel(TimeStampedModel):
         abstract = True
 
 
+class UserSecurity(TimeStampedModel):
+    """Control de bloqueo por intentos fallidos de inicio de sesión (por usuario)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="security")
+    failed_attempts = models.PositiveIntegerField("Intentos fallidos", default=0)
+    is_locked = models.BooleanField("Bloqueado", default=False)
+
+    class Meta:
+        verbose_name = "Seguridad de usuario"
+        verbose_name_plural = "Seguridad de usuarios"
+
+    def __str__(self):
+        estado = "bloqueado" if self.is_locked else "activo"
+        return f"{self.user} ({estado}, {self.failed_attempts} fallidos)"
+
+
 class Membership(TimeStampedModel):
     """Vincula un usuario con una empresa y su rol dentro de ella."""
 

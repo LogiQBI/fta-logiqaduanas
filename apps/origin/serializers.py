@@ -32,9 +32,13 @@ class PartySerializer(serializers.ModelSerializer):
         extra_kwargs = {"kind": {"required": False}}
 
     def get_access_users(self, obj):
+        from apps.tenants.models import UserSecurity
+        locked_ids = set(UserSecurity.objects.filter(
+            user__memberships__party=obj, is_locked=True).values_list("user_id", flat=True))
         return [
             {"id": m.user_id, "username": m.login_name or m.user.username,
-             "must_change_password": m.must_change_password}
+             "must_change_password": m.must_change_password,
+             "is_locked": m.user_id in locked_ids}
             for m in obj.memberships.select_related("user").all()
         ]
 

@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
-from apps.tenants.models import License, Tenant
+from apps.tenants.models import License, Tenant, UserSecurity
 from apps.tenants.serializers import TenantSerializer, UserAdminSerializer
 
 
@@ -61,4 +61,14 @@ class MasterUserViewSet(viewsets.ModelViewSet):
             return Response({"error": "Falta 'password'."}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(pwd)
         user.save(update_fields=["password"])
+        return Response({"ok": True})
+
+    @action(detail=True, methods=["post"])
+    def unlock(self, request, pk=None):
+        """LogiQ desbloquea a un usuario (de empresa o a otro administrador)."""
+        user = self.get_object()
+        sec, _ = UserSecurity.objects.get_or_create(user=user)
+        sec.is_locked = False
+        sec.failed_attempts = 0
+        sec.save(update_fields=["is_locked", "failed_attempts", "updated_at"])
         return Response({"ok": True})
