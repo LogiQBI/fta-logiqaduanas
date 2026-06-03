@@ -22,7 +22,7 @@ from rest_framework.response import Response
 
 from apps.catalog.models import (
     BOMComponent, HsChangeLog, Party, Product, SolicitationBOM, SolicitationBOMLine,
-    SolicitationRequest, SupplierDeclaration,
+    SolicitationLog, SolicitationRequest, SupplierDeclaration,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -49,6 +49,11 @@ def _unlock_authority(user):
 def _locked_message(user):
     return ("Tu cuenta está bloqueada por demasiados intentos fallidos. "
             f"Pide {_unlock_authority(user)} que la desbloquee.")
+
+
+def _log_sol(sr, action, detail="", user=None):
+    SolicitationLog.objects.create(tenant=sr.tenant, solicitation=sr,
+                                   action=action, detail=detail, user=user)
 
 
 def _temp_password(n=8):
@@ -467,6 +472,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         period_type = request.data.get("period_type", "")
         period_from = request.data.get("period_from") or None
         period_to = request.data.get("period_to") or None
+        due_date = request.data.get("due_date") or None
         bom_analysis = bool(request.data.get("bom_analysis"))
         created, sin_proveedor = [], []
         for p in products:
@@ -477,7 +483,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                 tenant=m.tenant, supplier_id=p.supplier_id, product=p, treaty=treaty,
                 status=SolicitationRequest.Status.SENT, sent_at=timezone.now(),
                 period_type=period_type, period_from=period_from, period_to=period_to,
-                bom_analysis=bom_analysis))
+                due_date=due_date, bom_analysis=bom_analysis))
         return Response({"creadas": len(created), "sin_proveedor": sin_proveedor},
                         status=status.HTTP_201_CREATED)
 
@@ -501,6 +507,12 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                 solicitation=sr, defaults={"tenant": sr.tenant})
             bom.rule_id = rule_id
             bom.notes = request.data.get("notes", "")
+            # Guardar invalida el cálculo previo: hay que recalcular antes de enviar.
+            bom.origin_status = ""
+            bom.criterion = ""
+            bom.rvc_value = None
+            bom.detail = {}
+            bom.computed_at = None
             bom.save()
             bom.lines.all().delete()
             for ln in lines:
@@ -513,9 +525,56 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                     quantity=ln.get("quantity") or 0,
                     country=(ln.get("country") or "").strip().upper()[:2],
                     has_origin_evidence=bool(ln.get("has_origin_evidence")))
-            sr.status = SolicitationRequest.Status.RESPONDED
-            sr.responded_at = timezone.now()
-            sr.save(update_fields=["status", "responded_at", "updated_at"])
+        # Guardar el BOM NO responde la solicitud; eso lo hace "enviar".
+        _log_sol(sr, "bom_saved", f"{len(lines)} componente(s)", request.user)
+        return Response(s.SolicitationRequestSerializer(sr).data)
+
+    @action(detail=True, methods=["post"], url_path="copy-previous")
+    def copy_previous(self, request, pk=None):
+        """Trae el BOM de la solicitud ANTERIOR del mismo producto+proveedor
+        (periodo pasado). Devuelve regla y líneas para rellenar el formulario."""
+        sr = self.get_object()
+        prev = (SolicitationBOM.objects
+                .filter(solicitation__product_id=sr.product_id,
+                        solicitation__supplier_id=sr.supplier_id)
+                .exclude(solicitation_id=sr.id)
+                .order_by("-created_at").first())
+        if not prev or not prev.lines.exists():
+            return Response({"found": False})
+        lines = [{
+            "part_number": l.part_number, "description": l.description,
+            "hs_code": l.hs_code, "unit_price": str(l.unit_price),
+            "quantity": str(l.quantity), "country": l.country,
+            "has_origin_evidence": l.has_origin_evidence,
+        } for l in prev.lines.all()]
+        src = prev.solicitation
+        src_period = f"{src.get_period_type_display()} {src.period_from} → {src.period_to}".strip()
+        _log_sol(sr, "copied_previous", f"de solicitud #{src.id} ({src_period})", request.user)
+        return Response({"found": True, "rule": prev.rule_id, "lines": lines,
+                         "source_period": src_period})
+
+    @action(detail=True, methods=["post"], url_path="send-bom")
+    def send_bom(self, request, pk=None):
+        """El proveedor ENVÍA al cliente: marca la solicitud como respondida.
+        Requiere BOM guardado y origen ya calculado."""
+        sr = self.get_object()
+        if not sr.bom_analysis:
+            return Response({"error": "Esta solicitud no es por BOM."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        bom = SolicitationBOM.objects.filter(solicitation=sr).first()
+        if not bom or not bom.lines.exists():
+            return Response({"error": "Primero guarda el BOM."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not bom.origin_status:
+            return Response({"error": "Primero calcula el origen antes de enviar."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        sr.status = SolicitationRequest.Status.RESPONDED
+        sr.responded_at = timezone.now()
+        sr.save(update_fields=["status", "responded_at", "updated_at"])
+        unchanged = bool(request.data.get("unchanged"))
+        _log_sol(sr, "sent_unchanged" if unchanged else "sent",
+                 "SIN cambios respecto al periodo anterior" if unchanged else "",
+                 request.user)
         return Response(s.SolicitationRequestSerializer(sr).data)
 
     @action(detail=True, methods=["post"], url_path="calculate-origin")
@@ -528,6 +587,8 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             return Response({"error": "Primero guarda el BOM con sus componentes."},
                             status=status.HTTP_400_BAD_REQUEST)
         result = calculate_bom_origin(bom)
+        _log_sol(sr, "origin_calculated",
+                 f"{result.get('status')} ({result.get('criterion') or '—'})", request.user)
         return Response(result)
 
     @action(detail=True, methods=["post"])

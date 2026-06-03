@@ -73,6 +73,10 @@ export type OriginRule = {
   id: number; hs_pattern: string; rule_type: string; description: string;
   treaty: number; treaty_code?: string; treaty_label?: string;
 };
+export type SolLog = {
+  action: string; action_label: string; detail: string;
+  user: string | null; created_at: string;
+};
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
   status: string; status_display: string; due_date: string | null;
@@ -81,7 +85,7 @@ export type Solicitation = {
   bom_analysis: boolean; submitted_bom: SubmittedBom | null;
   product_sku?: string; product_description?: string; product_hs?: string;
   product_unit_cost?: string; treaty_code?: string; supplier_name?: string;
-  treaty_members?: string[]; treaty_de_minimis?: string;
+  treaty_members?: string[]; treaty_de_minimis?: string; logs?: SolLog[];
 };
 
 export const api = {
@@ -177,6 +181,12 @@ export const api = {
     }),
   calculateOrigin: (solicitationId: number) =>
     req(`/solicitations/${solicitationId}/calculate-origin/`, { method: "POST" }),
+  sendBom: (solicitationId: number, unchanged = false) =>
+    req(`/solicitations/${solicitationId}/send-bom/`, {
+      method: "POST", body: JSON.stringify({ unchanged }),
+    }),
+  copyPrevious: (solicitationId: number) =>
+    req(`/solicitations/${solicitationId}/copy-previous/`, { method: "POST" }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

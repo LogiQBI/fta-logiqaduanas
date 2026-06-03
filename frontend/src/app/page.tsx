@@ -396,7 +396,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "proveedores": return <ProveedoresView me={me} />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-productos": return <ProveedorProductosView />;
-    case "mis-solicitudes": return <MisSolicitudesView />;
+    case "mis-solicitudes": return <MisSolicitudesView me={me} />;
     case "mis-declaraciones": return <MisDeclaracionesView />;
     default: return <HomeView me={me} go={go} />;
   }
@@ -1394,6 +1394,16 @@ function periodoTexto(s: Solicitation) {
     return `${s.period_display ?? ""} ${s.period_from} → ${s.period_to}`.trim();
   return "—";
 }
+// Alerta por fecha límite: vencida / por vencer (si aún no se respondió).
+function dueAlert(s: Solicitation): { label: string; cls: string } | null {
+  if (s.status === "responded" || !s.due_date) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(s.due_date + "T00:00:00");
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return { label: `Vencida · fuera de periodo (límite ${s.due_date})`, cls: "bg-red-100 text-red-700" };
+  if (days <= 3) return { label: `Por vencer · límite ${s.due_date} (${days} día${days === 1 ? "" : "s"})`, cls: "bg-amber-100 text-amber-700" };
+  return null;
+}
 function SolicitudesEmpresaView() {
   const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
   const [open, setOpen] = useState(false);
@@ -1406,21 +1416,28 @@ function SolicitudesEmpresaView() {
         <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
-      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Tipo", "Estado", ""]}>
-        {data.map((s) => (
+      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Tipo", "Límite", "Estado", ""]}>
+        {data.map((s) => {
+          const alert = dueAlert(s);
+          return (
           <tr key={s.id}>
             <td className="px-4 py-3 font-mono text-xs">{s.product_sku ?? `#${s.product}`}</td>
             <td className="px-4 py-3">{s.supplier_name ?? "—"}</td>
             <td className="px-4 py-3">{treatyLabel(s.treaty_code)}</td>
             <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
             <td className="px-4 py-3 text-xs">{s.bom_analysis ? "BOM" : "Declaración"}</td>
+            <td className="px-4 py-3 text-xs">
+              {s.due_date ?? "—"}
+              {alert && <span className={cx("mt-1 block rounded-full px-2 py-0.5 text-[11px] font-medium", alert.cls)}>{alert.label}</span>}
+            </td>
             <td className="px-4 py-3"><Pill k={s.status}>{s.status_display}</Pill></td>
             <td className="px-4 py-3 text-right">
               {s.submitted_bom && <Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn>}
             </td>
           </tr>
-        ))}
-        {!loading && count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
+          );
+        })}
+        {!loading && count === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
       </Table>
       {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
       {open && <SolicitudForm onClose={() => setOpen(false)}
@@ -1468,7 +1485,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
       </Table>
       {sinEvidencia > 0 && (
         <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          ⚠️ {sinEvidencia} componente(s) <strong>sin certificado/evidencia de origen</strong> — sujetos a auditorías internas.
+          ⚠️ {sinEvidencia} componente(s) <strong>sin documento de respaldo de origen</strong> — mayor riesgo en auditoría.
         </p>
       )}
       {b && <OriginReport bom={b} />}
@@ -1506,6 +1523,7 @@ function SolicitudForm({ onClose, onSaved }: {
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [periodType, setPeriodType] = useState("year");
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [mode, setMode] = useState<"proveedor" | "productos">("proveedor");
   const [supplierId, setSupplierId] = useState<number | "">("");
   const [picked, setPicked] = useState<number[]>([]);
@@ -1538,7 +1556,7 @@ function SolicitudForm({ onClose, onSaved }: {
       const r = await api.createSolicitudes({
         treaty: Number(treatyId), period_type: periodType,
         period_from: from, period_to: to, products: selectedIds,
-        bom_analysis: bomAnalysis,
+        due_date: dueDate || null, bom_analysis: bomAnalysis,
       });
       onSaved(r);
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
@@ -1564,6 +1582,10 @@ function SolicitudForm({ onClose, onSaved }: {
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
           </Field>
         </div>
+
+        <Field label="Fecha límite para responder (carga del proveedor)">
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
+        </Field>
 
         <div>
           <span className="mb-1 block text-xs font-semibold text-zinc-700">¿Qué incluir?</span>
@@ -1663,15 +1685,17 @@ function ProveedorProductosView() {
     </div>
   );
 }
-function MisSolicitudesView() {
+function MisSolicitudesView({ me }: { me: Me }) {
   const { data, reload, count } = useList<Solicitation>(() => api.solicitations());
   const products = useList<Product>(() => api.products());
   const treaties = useList<Treaty>(() => api.treaties());
   const prod = (id: number) => products.data.find((p) => p.id === id);
   const tcode = (id: number) => treaties.data.find((t) => t.id === id)?.code ?? `#${id}`;
+  const cliente = me.tenant?.name;
   return (
     <div>
-      <PageTitle title="Solicitudes de cliente" desc="Completa la información de origen que te piden tus clientes." />
+      <PageTitle title={`Solicitudes de cliente${cliente ? ` (${cliente})` : ""}`}
+        desc="Completa la información de origen que te piden tus clientes." />
       {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
       <div className="space-y-4">
         {data.map((s) => s.bom_analysis
@@ -1777,6 +1801,17 @@ function OriginReport({ bom }: { bom: SubmittedBom }) {
     </div>
   );
 }
+// Huella de los datos del BOM (para detectar si no cambió desde el periodo anterior).
+function bomSnapshot(lines: BomLine[], rule: number | ""): string {
+  return JSON.stringify({
+    rule: rule === "" ? null : rule,
+    lines: lines.filter((l) => l.part_number.trim()).map((l) => ({
+      pn: l.part_number.trim(), d: l.description.trim(), hs: l.hs_code,
+      up: String(l.unit_price || "0"), q: String(l.quantity || "0"),
+      c: l.country, e: l.has_origin_evidence,
+    })),
+  });
+}
 function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const done = s.status === "responded";
   const [rules, setRules] = useState<OriginRule[]>([]);
@@ -1784,6 +1819,10 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const [lines, setLines] = useState<BomLine[]>(
     s.submitted_bom?.lines?.length ? s.submitted_bom.lines : [emptyBomLine()]);
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [showLog, setShowLog] = useState(false);
+  // Huella de lo traído de un periodo anterior (para avisar si no cambió).
+  const [broughtSnap, setBroughtSnap] = useState<string | null>(null);
   useEffect(() => {
     api.rules(`?treaty=${s.treaty}&hs=${encodeURIComponent(s.product_hs ?? "")}`)
       .then((d: { results?: OriginRule[] } | OriginRule[]) =>
@@ -1839,23 +1878,79 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
+  async function enviar() {
+    setErr("");
+    // ¿Es idéntico a lo traído de un periodo anterior? -> advertir.
+    const unchanged = broughtSnap !== null && bomSnapshot(lines, ruleId) === broughtSnap;
+    if (unchanged && !confirm(
+      "La información no ha cambiado desde el último periodo. Verifica si los precios y " +
+      "orígenes de tu BOM no han cambiado. ¿Deseas continuar y enviar igual?")) return;
+    setSaving(true);
+    try { await api.sendBom(s.id, unchanged); onDone(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  async function traerPrevia() {
+    setErr(""); setMsg(""); setSaving(true);
+    try {
+      const r = await api.copyPrevious(s.id);
+      if (!r.found) { setMsg("No hay información de un periodo anterior para este producto."); return; }
+      const newLines: BomLine[] = r.lines;
+      setLines(newLines);
+      setRuleId(r.rule ?? "");
+      setBroughtSnap(bomSnapshot(newLines, r.rule ?? ""));
+      setMsg(`Información traída del periodo anterior (${r.source_period}). Revisa y guarda.`);
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
   const cell = "rounded-lg border border-zinc-300 px-2 py-1.5 text-sm w-full";
+  // Estados del flujo: BOM cargado -> calculado -> enviado.
+  const bomLoaded = !!s.submitted_bom;
+  const calculated = !!s.submitted_bom?.origin_status;
+  const sent = done;
+  const alert = dueAlert(s);
   return (
     <Card className="p-5">
-      {/* Encabezado (automático) */}
-      <div className="mb-3 flex items-start justify-between">
+      {/* Encabezado: tratado y periodo EN GRANDE */}
+      <div className="mb-2 flex items-start justify-between">
         <div>
-          <div className="font-medium text-zinc-900">{s.product_sku} — {s.product_description}</div>
-          <div className="text-xs text-zinc-500">
-            HS {s.product_hs || "—"} · Tratado {treatyLabel(s.treaty_code)} · Precio {s.product_unit_cost}
+          <div className="font-semibold text-zinc-900">{s.product_sku} — {s.product_description}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-blue-600 px-2.5 py-1 text-sm font-bold text-white">{treatyLabel(s.treaty_code)}</span>
+            {(s.period_from && s.period_to) && (
+              <span className="rounded-md bg-zinc-800 px-2.5 py-1 text-sm font-semibold text-white">
+                {s.period_display}: {s.period_from} → {s.period_to}
+              </span>
+            )}
           </div>
+          <div className="mt-1 text-xs text-zinc-500">HS {formatHs(s.product_hs ?? "") || "—"} · Precio {s.product_unit_cost}</div>
         </div>
         <Pill k={s.status}>{s.status_display}</Pill>
       </div>
+
+      {/* Fecha límite + alerta de vencimiento */}
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        {s.due_date && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Fecha límite: <strong>{s.due_date}</strong></span>}
+        {alert && <span className={cx("rounded-full px-2 py-0.5 font-medium", alert.cls)}>⏰ {alert.label}</span>}
+      </div>
+
+      {/* Estado del flujo (alertas) */}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Originario: <strong>pendiente de cálculo</strong></span>
         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">De Minimis (no originario): <strong>{deMinimis.toFixed(2)}%</strong>{s.treaty_de_minimis ? ` · límite ${s.treaty_de_minimis}%` : ""}</span>
-        {done && <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700">BOM enviado — puedes actualizarlo</span>}
+        {sent
+          ? <span className="rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700">✓ Enviado al cliente</span>
+          : calculated
+            ? <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700">Origen calculado — falta ENVIAR al cliente</span>
+            : bomLoaded
+              ? <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">⚠️ BOM cargado — falta CALCULAR ORIGEN</span>
+              : <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600">Captura el BOM y guárdalo</span>}
+      </div>
+
+      {/* Atajos: traer de periodo anterior + historial */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Btn size="sm" variant="ghost" onClick={traerPrevia} disabled={saving}>↩︎ Traer información de última solicitud</Btn>
+        {(s.logs?.length ?? 0) > 0 && (
+          <Btn size="sm" variant="ghost" onClick={() => setShowLog(true)}>Ver historial</Btn>
+        )}
+        {msg && <span className="text-xs text-emerald-700">{msg}</span>}
       </div>
 
       {/* Regla de origen (PSR) */}
@@ -1881,10 +1976,10 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
               <th className="px-1 py-1 font-medium">Cantidad</th>
               <th className="px-1 py-1 font-medium">Total</th>
               <th className="px-1 py-1 font-medium">País</th>
-              <th className="px-1 py-1 text-center font-medium">
-                <div>Evidencia</div>
-                <label className="flex items-center justify-center gap-1 font-normal text-zinc-400">
-                  <input type="checkbox" checked={allEvidence} onChange={(e) => setAllEvidence(e.target.checked)} /> todos
+              <th className="px-1 py-1 font-medium">
+                <div>¿Documento de origen?</div>
+                <label className="flex items-center gap-1 font-normal text-zinc-400">
+                  <input type="checkbox" checked={allEvidence} onChange={(e) => setAllEvidence(e.target.checked)} /> marcar todos
                 </label>
               </th>
               <th></th>
@@ -1900,8 +1995,13 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} className={cx(cell, "w-20")} /></td>
                 <td className="px-1 py-1 font-mono text-xs text-zinc-600">{lt(l).toFixed(2)}</td>
                 <td className="px-1 py-1"><CountryInput value={l.country} onChange={(v) => setLine(i, "country", v)} className={cx(cell, "w-20")} /></td>
-                <td className="px-1 py-1 text-center">
-                  <input type="checkbox" checked={l.has_origin_evidence} onChange={(e) => setLine(i, "has_origin_evidence", e.target.checked)} title="¿Tiene certificado/evidencia de origen?" />
+                <td className="px-1 py-1">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                    <input type="checkbox" checked={l.has_origin_evidence} onChange={(e) => setLine(i, "has_origin_evidence", e.target.checked)} />
+                    <span className={l.has_origin_evidence ? "font-medium text-green-700" : "font-medium text-amber-700"}>
+                      {l.has_origin_evidence ? "Sí, tengo documento" : "No tengo documento"}
+                    </span>
+                  </label>
                 </td>
                 <td className="px-1 py-1"><button onClick={() => delLine(i)} className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button></td>
               </tr>
@@ -1909,9 +2009,10 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        ⚠️ Marca la casilla <strong>Evidencia</strong> en cada componente que cuente con certificado o documento de origen.
-        Los componentes <strong>sin evidencia</strong> (resaltados) quedan sujetos a <strong>auditorías internas</strong>.
+      <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        La casilla <strong>“¿Documento de origen?”</strong> indica si tienes un <strong>certificado o documento</strong> que respalde
+        el origen de ese componente (factura, declaración, certificado, etc.). <strong>Todos</strong> los componentes pueden ser
+        revisados en una <strong>auditoría</strong>; los que marques <strong>“No tengo documento”</strong> (resaltados) son los de mayor riesgo y deberás conseguir el respaldo.
       </p>
       <div className="mt-2 flex items-center justify-between">
         <Btn size="sm" variant="ghost" onClick={addLine}><Plus size={14} className="-mt-0.5 mr-1 inline" />Agregar componente</Btn>
@@ -1919,11 +2020,29 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       </div>
 
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-      <div className="mt-4 flex gap-2">
-        <Btn variant="ghost" onClick={submit} disabled={saving}>{saving ? "…" : done ? "Actualizar BOM" : "Guardar BOM"}</Btn>
-        <Btn onClick={calcular} disabled={saving}>{saving ? "Calculando…" : "Calcular origen"}</Btn>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Btn variant="ghost" onClick={submit} disabled={saving}>{saving ? "…" : "1 · Guardar BOM"}</Btn>
+        <Btn variant="ghost" onClick={calcular} disabled={saving}>{saving ? "…" : "2 · Calcular origen"}</Btn>
+        <Btn onClick={enviar} disabled={saving || !calculated}>{saving ? "Enviando…" : sent ? "Reenviar al cliente" : "3 · Enviar al cliente"}</Btn>
+        {!calculated && <span className="text-xs text-zinc-400">Calcula el origen antes de enviar.</span>}
       </div>
       {s.submitted_bom && <OriginReport bom={s.submitted_bom} />}
+      {showLog && (
+        <Modal title={`Historial — ${s.product_sku}`} onClose={() => setShowLog(false)}>
+          {(s.logs?.length ?? 0) === 0 ? <p className="text-sm text-zinc-400">Sin eventos.</p> : (
+            <ul className="space-y-2 text-sm">
+              {s.logs!.map((l, i) => (
+                <li key={i} className="rounded-lg border border-zinc-200 p-2">
+                  <span className="font-medium">{l.action_label}</span>
+                  {l.detail ? <span className="text-zinc-500"> · {l.detail}</span> : null}
+                  <div className="text-xs text-zinc-400">{l.user ?? "—"} · {l.created_at?.slice(0, 16).replace("T", " ")}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={() => setShowLog(false)}>Cerrar</Btn></div>
+        </Modal>
+      )}
     </Card>
   );
 }

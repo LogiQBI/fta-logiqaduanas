@@ -136,6 +136,19 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
         source="treaty.de_minimis_pct", max_digits=5, decimal_places=2, read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     submitted_bom = serializers.SerializerMethodField()
+    logs = serializers.SerializerMethodField()
+
+    ACTION_LABELS = {
+        "bom_saved": "BOM guardado", "origin_calculated": "Origen calculado",
+        "copied_previous": "Información traída de periodo anterior",
+        "sent": "Enviada al cliente",
+        "sent_unchanged": "Enviada SIN cambios vs periodo anterior",
+    }
+
+    def get_logs(self, obj):
+        return [{"action": l.action, "action_label": self.ACTION_LABELS.get(l.action, l.action),
+                 "detail": l.detail, "user": l.user.username if l.user_id else None,
+                 "created_at": l.created_at} for l in obj.logs.all()[:30]]
 
     class Meta:
         model = SolicitationRequest

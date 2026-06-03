@@ -211,6 +211,26 @@ class SolicitationRequest(TenantOwnedModel):
         return f"/portal/{self.token}/"
 
 
+class SolicitationLog(TenantOwnedModel):
+    """Bitácora de eventos de una solicitud (guardar BOM, calcular, enviar,
+    traer info de periodo anterior, etc.)."""
+
+    solicitation = models.ForeignKey("catalog.SolicitationRequest",
+                                     on_delete=models.CASCADE, related_name="logs")
+    action = models.CharField("Acción", max_length=30)
+    detail = models.CharField("Detalle", max_length=255, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                             on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Evento de solicitud"
+        verbose_name_plural = "Eventos de solicitud"
+
+    def __str__(self):
+        return f"{self.solicitation_id}: {self.action}"
+
+
 class SolicitationBOM(TenantOwnedModel):
     """BOM (lista de materiales) que el proveedor sube como respuesta a una
     solicitud con análisis por BOM. El cálculo de origen se hace aparte."""
