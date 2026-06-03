@@ -21,7 +21,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
-    BOMComponent, Party, Product, SolicitationBOM, SolicitationBOMLine,
+    BOMComponent, HsChangeLog, Party, Product, SolicitationBOM, SolicitationBOMLine,
     SolicitationRequest, SupplierDeclaration,
 )
 from apps.catalog.services import generate_solicitations
@@ -283,6 +283,57 @@ class ProductViewSet(TenantScopedViewSet):
                           "certificado emitido. Quítalo de ahí primero."},
                 status=status.HTTP_409_CONFLICT)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="suggest-hs")
+    def suggest_hs(self, request, pk=None):
+        """El PROVEEDOR sugiere corregir la fracción del producto.
+        Body: {hs_suggested, note}. Queda pendiente de que la empresa resuelva."""
+        m = self.membership()
+        if not m or not m.is_supplier:
+            raise PermissionDenied("Solo el proveedor puede sugerir la fracción.")
+        product = self.get_object()  # ya acotado a productos de su Party
+        hs = "".join(c for c in (request.data.get("hs_suggested") or "") if c.isdigit())[:6]
+        if len(hs) < 6:
+            return Response({"error": "La fracción sugerida debe tener 6 dígitos."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        product.hs_suggested = hs
+        product.hs_suggestion_status = Product.HsSuggestion.PENDING
+        product.hs_suggestion_note = (request.data.get("note") or "")[:255]
+        product.hs_suggested_by = m.party
+        product.save(update_fields=["hs_suggested", "hs_suggestion_status",
+                                    "hs_suggestion_note", "hs_suggested_by", "updated_at"])
+        return Response(s.ProductSerializer(product).data)
+
+    @action(detail=True, methods=["post"], url_path="resolve-hs")
+    def resolve_hs(self, request, pk=None):
+        """La EMPRESA acepta o rechaza la fracción sugerida por el proveedor.
+        Body: {action: "accept"|"reject"}. Registra el cambio en la bitácora."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede aceptar/rechazar la fracción.")
+        product = self.get_object()
+        if product.hs_suggestion_status != Product.HsSuggestion.PENDING:
+            return Response({"error": "No hay una sugerencia pendiente."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        accion = request.data.get("action")
+        if accion not in ("accept", "reject"):
+            return Response({"error": "Acción inválida."}, status=status.HTTP_400_BAD_REQUEST)
+        HsChangeLog.objects.create(
+            tenant=m.tenant, product=product,
+            old_hs=product.hs_code, new_hs=product.hs_suggested,
+            suggested_by=product.hs_suggested_by.name if product.hs_suggested_by_id else "",
+            action="accepted" if accion == "accept" else "rejected",
+            note=product.hs_suggestion_note, decided_by=request.user)
+        if accion == "accept":
+            product.hs_code = product.hs_suggested
+        # En ambos casos se cierra la sugerencia.
+        product.hs_suggested = ""
+        product.hs_suggestion_status = ""
+        product.hs_suggestion_note = ""
+        product.hs_suggested_by = None
+        product.save(update_fields=["hs_code", "hs_suggested", "hs_suggestion_status",
+                                    "hs_suggestion_note", "hs_suggested_by", "updated_at"])
+        return Response(s.ProductSerializer(product).data)
 
     @action(detail=True, methods=["post"])
     def qualify(self, request, pk=None):

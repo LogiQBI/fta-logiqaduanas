@@ -652,6 +652,69 @@ function formatHs(p: string) {
   if (d.length > 6) out += "." + d.slice(6);
   return out;
 }
+// Input de fracción: solo 6 dígitos, se muestra con punto (8708.10).
+function HsInput({ value, onChange, className, placeholder }: {
+  value: string; onChange: (v: string) => void; className?: string; placeholder?: string;
+}) {
+  return (
+    <input value={formatHs(value)} placeholder={placeholder ?? "8708.10"}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 6))}
+      className={cx(className ?? inputCls, "font-mono")} />
+  );
+}
+// Modal: el proveedor sugiere corregir la fracción.
+function SuggestHsModal({ product, onClose, onSaved }: {
+  product: Product; onClose: () => void; onSaved: () => void;
+}) {
+  const [hs, setHs] = useState(""); const [note, setNote] = useState("");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function save() {
+    if (hs.length < 6) { setErr("La fracción debe tener 6 dígitos."); return; }
+    setErr(""); setSaving(true);
+    try { await api.suggestHs(product.id, hs, note); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Sugerir fracción — ${product.sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">
+        Fracción actual del cliente: <strong className="font-mono">{formatHs(product.hs_code) || "—"}</strong>.
+        Si crees que es incorrecta, sugiere la correcta. El cliente la aceptará o rechazará.
+      </p>
+      <Field label="Fracción sugerida (6 dígitos)"><HsInput value={hs} onChange={setHs} /></Field>
+      <div className="mt-3"><Field label="Motivo (opcional)">
+        <input value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} placeholder="¿Por qué?" />
+      </Field></div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Enviando…" : "Enviar sugerencia"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+// Modal: historial (bitácora) de cambios de fracción.
+function HsLogModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const logs = product.hs_logs ?? [];
+  return (
+    <Modal title={`Historial de fracción — ${product.sku}`} onClose={onClose}>
+      {logs.length === 0 ? <p className="text-sm text-zinc-400">Sin cambios registrados.</p> : (
+        <ul className="space-y-2 text-sm">
+          {logs.map((l, i) => (
+            <li key={i} className="rounded-lg border border-zinc-200 p-2">
+              <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
+                l.action === "accepted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                {l.action === "accepted" ? "Aceptada" : "Rechazada"}
+              </span>
+              <span className="ml-2 font-mono">{formatHs(l.old_hs) || "—"} → {formatHs(l.new_hs)}</span>
+              <div className="mt-1 text-xs text-zinc-500">Sugerida por {l.suggested_by || "—"} · {l.created_at?.slice(0, 10)}{l.note ? ` · ${l.note}` : ""}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
 function ReglasView() {
   const treaties = useList<Treaty>(() => api.treaties());
   const [treaty, setTreaty] = useState<number | "">("");
@@ -756,7 +819,7 @@ function ProductosView() {
               <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
               <td className="px-4 py-3">{p.description}</td>
               <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
-              <td className="px-4 py-3 font-mono text-xs">{p.hs_code}</td>
+              <td className="px-4 py-3 font-mono text-xs">{formatHs(p.hs_code)}</td>
               <td className="px-4 py-3">{q ? <Pill k={q.status}>{q.status_display}{q.rvc_value ? ` · ${q.rvc_value}%` : ""}</Pill> : <span className="text-zinc-400">—</span>}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className="mr-2 inline-block"><Btn size="sm" onClick={() => treatyId && run(p.id, () => api.qualify(p.id, treatyId))}>Calificar</Btn></span>
@@ -831,8 +894,8 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
             <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} placeholder="Nombre del producto" />
           </Field>
         </div>
-        <Field label="Fracción arancelaria (HS)">
-          <input value={f.hs_code} onChange={(e) => set("hs_code", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="8703.23" />
+        <Field label="Fracción arancelaria (HS, 6 dígitos)">
+          <HsInput value={f.hs_code} onChange={(v) => set("hs_code", v)} />
         </Field>
         <Field label="País de origen (ISO-2)">
           <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
@@ -861,42 +924,73 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
   );
 }
 /* ====== Insumos / Números de parte (lo que la empresa compra) ====== */
+const KIND_BADGE: Record<string, { label: string; cls: string }> = {
+  material: { label: "Insumo", cls: "bg-blue-100 text-blue-700" },
+  subassembly: { label: "Subproducto", cls: "bg-purple-100 text-purple-700" },
+  finished: { label: "Producto", cls: "bg-emerald-100 text-emerald-700" },
+};
+function KindBadge({ kind }: { kind: string }) {
+  const b = KIND_BADGE[kind] ?? { label: kind, cls: "bg-zinc-100 text-zinc-600" };
+  return <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", b.cls)}>{b.label}</span>;
+}
 function InsumosView() {
   const { data, reload, loading } = useList<Product>(() => api.products());
   const parties = useList<Party>(() => api.parties());
   const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [logFor, setLogFor] = useState<Product | null>(null);
   const [msg, setMsg] = useState("");
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
-  const insumos = data.filter((p) => p.kind === "material");
   async function del(p: Product) {
     if (!confirm(`¿Eliminar el número de parte “${p.sku}”?`)) return;
     setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
+  async function resolve(p: Product, action: "accept" | "reject") {
+    setMsg(""); try {
+      await api.resolveHs(p.id, action);
+      setMsg(action === "accept" ? "Fracción actualizada y registrada en bitácora." : "Sugerencia rechazada (registrada en bitácora).");
+      await reload();
+    } catch (e) { setMsg((e as Error).message); }
+  }
   return (
     <div>
-      <PageTitle title="Números de parte" desc="Los insumos que compras, ligados a su proveedor." />
+      <PageTitle title="Números de parte" desc="Tu catálogo de partes (insumos, subproductos y productos) ligadas a su proveedor." />
       <div className="mb-4 flex">
         <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo número de parte</Btn></div>
       </div>
-      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
       {suppliers.length === 0 && !loading && (
         <Card className="mb-4 p-4 text-sm text-amber-700">
           Primero da de alta al menos un proveedor en <strong>Catálogos → Proveedores</strong> para poder ligarle números de parte.
         </Card>
       )}
-      <Table head={["Núm. de parte", "Descripción", "Proveedor", "País", "Precio", "Estatus", ""]}>
-        {insumos.map((p) => (
+      <Table head={["Núm. de parte", "Tipo", "Descripción", "Proveedor", "HS", "Estatus", ""]}>
+        {data.map((p) => (
           <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
+            <td className="px-4 py-3"><KindBadge kind={p.kind} /></td>
             <td className="px-4 py-3">{p.description}</td>
             <td className="px-4 py-3">
               {p.supplier_name
                 ? <span>{p.supplier_name} {p.supplier_code ? <code className="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[11px] text-zinc-600">{p.supplier_code}</code> : null}</span>
                 : <span className="text-zinc-400">—</span>}
             </td>
-            <td className="px-4 py-3">{p.country_of_origin || "—"}</td>
-            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
+            <td className="px-4 py-3">
+              <span className="font-mono text-xs">{formatHs(p.hs_code) || "—"}</span>
+              {(p.hs_logs?.length ?? 0) > 0 && (
+                <button onClick={() => setLogFor(p)} className="ml-2 text-[11px] text-blue-600 hover:underline">historial</button>
+              )}
+              {p.hs_suggestion_status === "pending" && (
+                <div className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                  Proveedor sugiere <strong className="font-mono">{formatHs(p.hs_suggested ?? "")}</strong>
+                  {p.hs_suggestion_note ? ` — ${p.hs_suggestion_note}` : ""}
+                  <div className="mt-1 flex gap-1">
+                    <Btn size="sm" onClick={() => resolve(p, "accept")}>Aceptar</Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => resolve(p, "reject")}>Rechazar</Btn>
+                  </div>
+                </div>
+              )}
+            </td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
                 p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
@@ -911,12 +1005,13 @@ function InsumosView() {
             </td>
           </tr>
         ))}
-        {!loading && insumos.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes números de parte. Crea el primero con el botón de arriba.</td></tr>}
+        {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes números de parte. Crea el primero con el botón de arriba.</td></tr>}
       </Table>
       {editing && (
         <InsumoForm insumo={editing === "new" ? null : editing} suppliers={suppliers}
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
+      {logFor && <HsLogModal product={logFor} onClose={() => setLogFor(null)} />}
     </div>
   );
 }
@@ -925,6 +1020,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
 }) {
   const [f, setF] = useState({
     sku: insumo?.sku ?? "", description: insumo?.description ?? "",
+    kind: insumo?.kind ?? "material",
     supplier: (insumo?.supplier ?? "") as number | "",
     hs_code: insumo?.hs_code ?? "", unit_cost: insumo?.unit_cost ?? "0",
     currency: insumo?.currency ?? "USD", country_of_origin: insumo?.country_of_origin ?? "",
@@ -938,9 +1034,9 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     }
     setErr(""); setSaving(true);
     const payload = {
-      sku: f.sku.trim(), description: f.description.trim(), kind: "material",
+      sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
       supplier: f.supplier === "" ? null : Number(f.supplier),
-      hs_code: f.hs_code.trim(), unit_cost: f.unit_cost || "0",
+      hs_code: f.hs_code, unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
       is_active: f.is_active,
@@ -957,11 +1053,21 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
         <Field label="Número de parte">
           <input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="7782-A" autoFocus />
         </Field>
+        <Field label="Tipo">
+          <select value={f.kind} onChange={(e) => set("kind", e.target.value)} className={inputCls}>
+            <option value="material">Insumo</option>
+            <option value="subassembly">Subproducto</option>
+            <option value="finished">Producto</option>
+          </select>
+        </Field>
         <Field label="Estatus">
           <select value={f.is_active ? "1" : "0"} onChange={(e) => set("is_active", e.target.value === "1")} className={inputCls}>
             <option value="1">Activo</option>
             <option value="0">Inactivo</option>
           </select>
+        </Field>
+        <Field label="Fracción HS (6 dígitos)">
+          <HsInput value={f.hs_code} onChange={(v) => set("hs_code", v)} />
         </Field>
         <div className="col-span-2">
           <Field label="Descripción">
@@ -976,9 +1082,6 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
             </select>
           </Field>
         </div>
-        <Field label="Fracción HS (opcional)">
-          <input value={f.hs_code} onChange={(e) => set("hs_code", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="853690" />
-        </Field>
         <Field label="País de origen (ISO-2)">
           <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value)} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
         </Field>
@@ -1470,29 +1573,40 @@ function SolicitudForm({ onClose, onSaved }: {
 
 /* ============ PROVEEDOR ============ */
 function ProveedorProductosView() {
-  const { data, count, loading } = useList<Product>(() => api.products());
+  const { data, count, loading, reload } = useList<Product>(() => api.products());
+  const [suggest, setSuggest] = useState<Product | null>(null);
   return (
     <div>
-      <PageTitle title="Productos" desc="Lo que tus clientes te compran. Las altas las hace la empresa; aquí solo consultas." />
-      <Table head={["Núm. de parte", "Descripción", "Tipo", "HS", "País", "Precio", "Estatus"]}>
+      <PageTitle title="Productos" desc="Lo que tus clientes te compran. Las altas las hace la empresa; si una fracción es incorrecta, puedes sugerir la correcta." />
+      <Table head={["Núm. de parte", "Descripción", "Tipo", "HS", "País", "Estatus", ""]}>
         {data.map((p) => (
           <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
             <td className="px-4 py-3">{p.description}</td>
-            <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
-            <td className="px-4 py-3 font-mono text-xs">{p.hs_code || "—"}</td>
+            <td className="px-4 py-3"><KindBadge kind={p.kind} /></td>
+            <td className="px-4 py-3">
+              <span className="font-mono text-xs">{formatHs(p.hs_code) || "—"}</span>
+              {p.hs_suggestion_status === "pending" && (
+                <div className="mt-0.5 text-[11px] text-amber-700">Sugeriste <strong className="font-mono">{formatHs(p.hs_suggested ?? "")}</strong> · pendiente</div>
+              )}
+            </td>
             <td className="px-4 py-3">{p.country_of_origin || "—"}</td>
-            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
                 p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
                 {p.is_active ? "Activo" : "Inactivo"}
               </span>
             </td>
+            <td className="px-4 py-3 text-right">
+              {p.hs_suggestion_status !== "pending" &&
+                <Btn size="sm" variant="ghost" onClick={() => setSuggest(p)}>Sugerir fracción</Btn>}
+            </td>
           </tr>
         ))}
         {!loading && count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Todavía no hay productos asignados a ti por tus clientes.</td></tr>}
       </Table>
+      {suggest && <SuggestHsModal product={suggest}
+        onClose={() => setSuggest(null)} onSaved={async () => { setSuggest(null); await reload(); }} />}
     </div>
   );
 }

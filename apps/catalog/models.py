@@ -1,4 +1,5 @@
 """Datos maestros: proveedores/clientes, productos, BOM y declaraciones de proveedor."""
+from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
@@ -72,6 +73,19 @@ class Product(TenantOwnedModel):
         Party, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="supplied_products", limit_choices_to={"kind": Party.Kind.SUPPLIER},
     )
+    # Sugerencia de fracción del proveedor (la empresa la acepta o rechaza).
+    class HsSuggestion(models.TextChoices):
+        PENDING = "pending", "Pendiente"
+        ACCEPTED = "accepted", "Aceptada"
+        REJECTED = "rejected", "Rechazada"
+
+    hs_suggested = models.CharField("Fracción sugerida por proveedor", max_length=10, blank=True)
+    hs_suggestion_status = models.CharField(max_length=10, blank=True,
+                                            choices=HsSuggestion.choices)
+    hs_suggestion_note = models.CharField("Comentario de la sugerencia", max_length=255, blank=True)
+    hs_suggested_by = models.ForeignKey(
+        Party, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="hs_suggestions")
 
     class Meta:
         unique_together = [("tenant", "sku")]
@@ -81,6 +95,28 @@ class Product(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.sku} — {self.description}"
+
+
+class HsChangeLog(TenantOwnedModel):
+    """Bitácora de cambios de fracción arancelaria (sugerencias de proveedor
+    aceptadas o rechazadas por la empresa)."""
+
+    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE, related_name="hs_logs")
+    old_hs = models.CharField("Fracción anterior", max_length=10, blank=True)
+    new_hs = models.CharField("Fracción nueva", max_length=10, blank=True)
+    suggested_by = models.CharField("Sugerida por (proveedor)", max_length=255, blank=True)
+    action = models.CharField("Acción", max_length=10)  # accepted / rejected
+    note = models.CharField("Comentario", max_length=255, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Cambio de fracción"
+        verbose_name_plural = "Cambios de fracción"
+
+    def __str__(self):
+        return f"{self.product.sku}: {self.old_hs} -> {self.new_hs} ({self.action})"
 
 
 class BOMComponent(TenantOwnedModel):

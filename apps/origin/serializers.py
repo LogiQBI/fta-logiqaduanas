@@ -58,12 +58,20 @@ class ProductSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True, default=None)
     supplier_code = serializers.CharField(source="supplier.code", read_only=True, default=None)
+    hs_suggested_by_name = serializers.CharField(source="hs_suggested_by.name", read_only=True, default=None)
+    hs_logs = serializers.SerializerMethodField()
+
+    def get_hs_logs(self, obj):
+        return [{"old_hs": l.old_hs, "new_hs": l.new_hs, "action": l.action,
+                 "suggested_by": l.suggested_by, "note": l.note,
+                 "created_at": l.created_at} for l in obj.hs_logs.all()[:10]]
 
     class Meta:
         model = Product
         fields = "__all__"
-        # El tenant lo asigna el servidor (no lo manda ni lo elige el cliente).
-        read_only_fields = ["tenant"]
+        # El tenant y la sugerencia los gestiona el servidor (acciones dedicadas).
+        read_only_fields = ["tenant", "hs_suggested", "hs_suggestion_status",
+                            "hs_suggestion_note", "hs_suggested_by"]
 
 
 class BOMComponentSerializer(serializers.ModelSerializer):

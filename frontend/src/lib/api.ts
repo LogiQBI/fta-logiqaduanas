@@ -27,12 +27,19 @@ async function req(path: string, opts: RequestInit = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+export type HsLog = {
+  old_hs: string; new_hs: string; action: string;
+  suggested_by: string; note: string; created_at: string;
+};
 export type Product = {
   id: number; sku: string; description: string; kind: string;
   kind_display?: string; hs_code: string; unit_cost: string;
   currency: string; country_of_origin: string; supplier: number | null;
   supplier_name?: string | null; supplier_code?: string | null;
   is_active: boolean;
+  hs_suggested?: string; hs_suggestion_status?: string;
+  hs_suggestion_note?: string; hs_suggested_by_name?: string | null;
+  hs_logs?: HsLog[];
 };
 export type Treaty = { id: number; code: string; name: string };
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
@@ -104,6 +111,14 @@ export const api = {
     req(`/products/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteProduct: (id: number) =>
     req(`/products/${id}/`, { method: "DELETE" }),
+  suggestHs: (productId: number, hs_suggested: string, note: string) =>
+    req(`/products/${productId}/suggest-hs/`, {
+      method: "POST", body: JSON.stringify({ hs_suggested, note }),
+    }),
+  resolveHs: (productId: number, action: "accept" | "reject") =>
+    req(`/products/${productId}/resolve-hs/`, {
+      method: "POST", body: JSON.stringify({ action }),
+    }),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
   solicitations: () => req("/solicitations/"),
