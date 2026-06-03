@@ -137,11 +137,21 @@ class SolicitationRequest(TenantOwnedModel):
         RESPONDED = "responded", "Respondida"
         EXPIRED = "expired", "Vencida"
 
+    class Period(models.TextChoices):
+        MONTH = "month", "Mensual"
+        SEMESTER = "semester", "Semestral"
+        YEAR = "year", "Anual"
+        CUSTOM = "custom", "Personalizado"
+
     supplier = models.ForeignKey(Party, on_delete=models.CASCADE, related_name="solicitations",
                                  limit_choices_to={"kind": Party.Kind.SUPPLIER})
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="solicitations")
     treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE, related_name="solicitations")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    # Periodo de cobertura del origen solicitado.
+    period_type = models.CharField("Periodo", max_length=20, choices=Period.choices, blank=True)
+    period_from = models.DateField("Periodo desde", null=True, blank=True)
+    period_to = models.DateField("Periodo hasta", null=True, blank=True)
     token = models.CharField(max_length=64, unique=True, default=_new_token, editable=False)
     due_date = models.DateField("Fecha límite", null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)

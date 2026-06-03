@@ -255,8 +255,8 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
       { label: "Catálogo", items: [
         { key: "mis-productos", label: "Productos", icon: Package },
       ] },
-      { label: "Mi información de origen", items: [
-        { key: "mis-solicitudes", label: "Solicitudes", icon: Inbox, badge: badges.pendientes },
+      { label: "Origen", items: [
+        { key: "mis-solicitudes", label: "Solicitudes de cliente", icon: Inbox, badge: badges.pendientes },
         { key: "mis-declaraciones", label: "Mis declaraciones", icon: FileText },
       ] },
     ];
@@ -498,7 +498,7 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
     { icon: BookOpen, color: "bg-amber-50 text-amber-600", title: "Reglas", desc: "Reglas de origen", k: "reglas" },
   ] : me.is_supplier ? [
     { icon: Package, color: "bg-blue-50 text-blue-600", title: "Productos", desc: "Lo que tus clientes te compran", k: "mis-productos" },
-    { icon: Inbox, color: "bg-amber-50 text-amber-600", title: "Solicitudes", desc: "Información que te piden", k: "mis-solicitudes" },
+    { icon: Inbox, color: "bg-amber-50 text-amber-600", title: "Solicitudes de cliente", desc: "Información que te piden", k: "mis-solicitudes" },
     { icon: FileText, color: "bg-emerald-50 text-emerald-600", title: "Mis declaraciones", desc: "Lo que ya enviaste", k: "mis-declaraciones" },
   ] : [
     { icon: Package, color: "bg-blue-50 text-blue-600", title: "Productos", desc: "Califica tus productos", k: "productos" },
@@ -1190,27 +1190,169 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
     </Modal>
   );
 }
+function periodoTexto(s: Solicitation) {
+  if (s.period_from && s.period_to)
+    return `${s.period_display ?? ""} ${s.period_from} → ${s.period_to}`.trim();
+  return "—";
+}
 function SolicitudesEmpresaView() {
-  const { data, count } = useList<Solicitation>(() => api.solicitations());
-  const products = useList<Product>(() => api.products());
-  const treaties = useList<Treaty>(() => api.treaties());
-  const pn = (id: number) => products.data.find((p) => p.id === id)?.sku ?? `#${id}`;
-  const tn = (id: number) => treaties.data.find((t) => t.id === id)?.code ?? `#${id}`;
+  const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
+  const [open, setOpen] = useState(false);
+  const [msg, setMsg] = useState("");
   return (
     <div>
-      <PageTitle title="Solicitudes a proveedores" desc={`${count} solicitudes. Genera nuevas desde Productos → "Solicitar origen".`} />
-      <Table head={["Material", "Tratado", "Estado", "Límite"]}>
+      <PageTitle title="Solicitudes a proveedores" desc="Pide a tus proveedores la declaración de origen, por periodo." />
+      <div className="mb-4 flex">
+        <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
+      </div>
+      {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
+      <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Estado"]}>
         {data.map((s) => (
           <tr key={s.id}>
-            <td className="px-4 py-3 font-mono text-xs">{pn(s.product)}</td>
-            <td className="px-4 py-3">{tn(s.treaty)}</td>
+            <td className="px-4 py-3 font-mono text-xs">{s.product_sku ?? `#${s.product}`}</td>
+            <td className="px-4 py-3">{s.supplier_name ?? "—"}</td>
+            <td className="px-4 py-3">{s.treaty_code ?? "—"}</td>
+            <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
             <td className="px-4 py-3"><Pill k={s.status}>{s.status_display}</Pill></td>
-            <td className="px-4 py-3">{s.due_date ?? "—"}</td>
           </tr>
         ))}
-        {count === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía.</td></tr>}
+        {!loading && count === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Sin solicitudes todavía. Crea una con “Nueva solicitud”.</td></tr>}
       </Table>
+      {open && <SolicitudForm onClose={() => setOpen(false)}
+        onSaved={async (r) => {
+          setOpen(false);
+          setMsg(`${r.creadas} solicitud(es) creada(s)` +
+            (r.sin_proveedor?.length ? ` · ${r.sin_proveedor.length} sin proveedor (omitidas)` : ""));
+          await reload();
+        }} />}
     </div>
+  );
+}
+const PERIOD_OPTIONS = [
+  { value: "month", label: "Mensual (mes actual)" },
+  { value: "semester", label: "Semestral" },
+  { value: "year", label: "Anual" },
+  { value: "custom", label: "Personalizado" },
+];
+function periodDates(type: string): { from: string; to: string } {
+  const now = new Date(); const y = now.getFullYear(); const m = now.getMonth();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (type === "month") {
+    const last = new Date(y, m + 1, 0).getDate();
+    return { from: `${y}-${pad(m + 1)}-01`, to: `${y}-${pad(m + 1)}-${pad(last)}` };
+  }
+  if (type === "semester")
+    return m < 6 ? { from: `${y}-01-01`, to: `${y}-06-30` } : { from: `${y}-07-01`, to: `${y}-12-31` };
+  if (type === "year") return { from: `${y}-01-01`, to: `${y}-12-31` };
+  return { from: "", to: "" };
+}
+function SolicitudForm({ onClose, onSaved }: {
+  onClose: () => void; onSaved: (r: { creadas: number; sin_proveedor: string[] }) => void;
+}) {
+  const products = useList<Product>(() => api.products());
+  const parties = useList<Party>(() => api.parties());
+  const treaties = useList<Treaty>(() => api.treaties());
+  const [treatyId, setTreatyId] = useState<number | "">("");
+  const [periodType, setPeriodType] = useState("year");
+  const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [mode, setMode] = useState<"proveedor" | "productos">("proveedor");
+  const [supplierId, setSupplierId] = useState<number | "">("");
+  const [picked, setPicked] = useState<number[]>([]);
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (treatyId === "" && treaties.data.length) {
+      const tmec = treaties.data.find((t) => t.code === "TMEC");
+      setTreatyId(tmec ? tmec.id : treaties.data[0].id);
+    }
+  }, [treaties.data, treatyId]);
+  useEffect(() => {
+    if (periodType !== "custom") { const d = periodDates(periodType); setFrom(d.from); setTo(d.to); }
+  }, [periodType]);
+
+  const suppliers = parties.data.filter((p) => p.kind === "supplier");
+  const conProveedor = products.data.filter((p) => p.supplier);
+  const selectedIds = mode === "proveedor"
+    ? conProveedor.filter((p) => p.supplier === supplierId).map((p) => p.id)
+    : picked;
+  const toggle = (id: number) => setPicked((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+
+  async function save() {
+    if (!treatyId) { setErr("Elige el tratado."); return; }
+    if (!from || !to) { setErr("Indica el periodo (desde y hasta)."); return; }
+    if (selectedIds.length === 0) { setErr("Selecciona proveedor o productos."); return; }
+    setErr(""); setSaving(true);
+    try {
+      const r = await api.createSolicitudes({
+        treaty: Number(treatyId), period_type: periodType,
+        period_from: from, period_to: to, products: selectedIds,
+      });
+      onSaved(r);
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title="Nueva solicitud de origen" onClose={onClose}>
+      <div className="grid gap-3">
+        <Field label="Tratado (TLC) para el que pides el origen">
+          <select value={treatyId} onChange={(e) => setTreatyId(Number(e.target.value))} className={inputCls}>
+            {treaties.data.map((t) => <option key={t.id} value={t.id}>{t.code} — {t.name}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Periodo">
+            <select value={periodType} onChange={(e) => setPeriodType(e.target.value)} className={inputCls}>
+              {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Desde">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Hasta">
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
+          </Field>
+        </div>
+
+        <div>
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">¿Qué incluir?</span>
+          <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1">
+            {(["proveedor", "productos"] as const).map((mm) => (
+              <button key={mm} type="button" onClick={() => setMode(mm)}
+                className={cx("rounded-md py-1.5 text-sm font-medium", mode === mm ? "bg-white text-blue-700 shadow-sm" : "text-zinc-500")}>
+                {mm === "proveedor" ? "Por proveedor (todo)" : "Productos individuales"}
+              </button>
+            ))}
+          </div>
+          {mode === "proveedor" ? (
+            <div>
+              <select value={supplierId} onChange={(e) => setSupplierId(Number(e.target.value))} className={inputCls}>
+                <option value="">— Selecciona un proveedor —</option>
+                {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
+              </select>
+              {supplierId !== "" && (
+                <p className="mt-1 text-xs text-zinc-500">Se incluirán <strong>{selectedIds.length}</strong> número(s) de parte de este proveedor.</p>
+              )}
+            </div>
+          ) : (
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200">
+              {conProveedor.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">No hay productos con proveedor asignado.</div>}
+              {conProveedor.map((p) => (
+                <label key={p.id} className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 text-sm last:border-0">
+                  <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} />
+                  <span className="font-mono text-xs">{p.sku}</span>
+                  <span className="flex-1 truncate text-zinc-600">{p.description}</span>
+                  <span className="text-xs text-zinc-400">{p.supplier_name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Creando…" : `Crear solicitud${selectedIds.length > 1 ? "es" : ""}`}</Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -1250,7 +1392,7 @@ function MisSolicitudesView() {
   const tcode = (id: number) => treaties.data.find((t) => t.id === id)?.code ?? `#${id}`;
   return (
     <div>
-      <PageTitle title="Solicitudes" desc="Completa la información de origen que te piden." />
+      <PageTitle title="Solicitudes de cliente" desc="Completa la información de origen que te piden tus clientes." />
       {count === 0 && <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>}
       <div className="space-y-4">
         {data.map((s) => <SolCard key={s.id} s={s} product={prod(s.product)} tcode={tcode(s.treaty)} onDone={reload} />)}
@@ -1261,8 +1403,10 @@ function MisSolicitudesView() {
 function SolCard({ s, product, tcode, onDone }: {
   s: Solicitation; product?: Product; tcode: string; onDone: () => void;
 }) {
-  const [orig, setOrig] = useState(true); const [country, setCountry] = useState("");
-  const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [orig, setOrig] = useState(true);
+  const [country, setCountry] = useState(product?.country_of_origin ?? "");
+  const [from, setFrom] = useState(s.period_from ?? "");
+  const [to, setTo] = useState(s.period_to ?? "");
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
   const done = s.status === "responded";
   async function submit() {
@@ -1274,11 +1418,16 @@ function SolCard({ s, product, tcode, onDone }: {
     <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="font-medium text-zinc-900">{product ? `${product.sku} — ${product.description}` : `Material #${s.product}`}</div>
-          <div className="text-xs text-zinc-500">HS {product?.hs_code} · Tratado {tcode}</div>
+          <div className="font-medium text-zinc-900">{product ? `${product.sku} — ${product.description}` : (s.product_sku ?? `Material #${s.product}`)}</div>
+          <div className="text-xs text-zinc-500">HS {product?.hs_code ?? s.product_hs} · Tratado {tcode}</div>
         </div>
         <Pill k={s.status}>{s.status_display}</Pill>
       </div>
+      {(s.period_from && s.period_to) && (
+        <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+          Periodo solicitado: <strong>{s.period_display}</strong> · {s.period_from} → {s.period_to}
+        </div>
+      )}
       {done ? <p className="text-sm text-zinc-500">Ya enviaste tu declaración. ¡Gracias!</p> : (
         <div className="grid grid-cols-2 gap-3 text-sm">
           <label className="col-span-2 flex items-center gap-2">

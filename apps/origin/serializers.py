@@ -83,7 +83,13 @@ class CertificateSerializer(serializers.ModelSerializer):
 
 class SolicitationRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    period_display = serializers.CharField(source="get_period_type_display", read_only=True)
     portal_path = serializers.CharField(read_only=True)
+    product_sku = serializers.CharField(source="product.sku", read_only=True)
+    product_description = serializers.CharField(source="product.description", read_only=True)
+    product_hs = serializers.CharField(source="product.hs_code", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True)
 
     class Meta:
         model = SolicitationRequest

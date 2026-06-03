@@ -360,6 +360,38 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
     serializer_class = s.SolicitationRequestSerializer
     supplier_field = "supplier_id"  # el proveedor solo ve sus solicitudes
 
+    @action(detail=False, methods=["post"], url_path="batch")
+    def create_batch(self, request):
+        """La empresa crea solicitudes de origen para varios productos a la vez.
+        Body: {treaty, period_type, period_from, period_to, products: [ids]}.
+        El proveedor de cada solicitud sale del proveedor del producto."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede crear solicitudes.")
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        if not treaty:
+            return Response({"error": "Falta el tratado o no existe."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = request.data.get("products") or []
+        if not ids:
+            return Response({"error": "Selecciona al menos un producto."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        products = Product.objects.filter(tenant_id=m.tenant_id, id__in=ids)
+        period_type = request.data.get("period_type", "")
+        period_from = request.data.get("period_from") or None
+        period_to = request.data.get("period_to") or None
+        created, sin_proveedor = [], []
+        for p in products:
+            if not p.supplier_id:
+                sin_proveedor.append(p.sku)
+                continue
+            created.append(SolicitationRequest.objects.create(
+                tenant=m.tenant, supplier_id=p.supplier_id, product=p, treaty=treaty,
+                status=SolicitationRequest.Status.SENT, sent_at=timezone.now(),
+                period_type=period_type, period_from=period_from, period_to=period_to))
+        return Response({"creadas": len(created), "sin_proveedor": sin_proveedor},
+                        status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"])
     def respond(self, request, pk=None):
         """El proveedor logueado responde su solicitud con su declaración de origen.
@@ -369,14 +401,17 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             return Response({"error": "Esta solicitud ya fue respondida."},
                             status=status.HTTP_400_BAD_REQUEST)
         d = request.data
-        if not d.get("valid_from") or not d.get("valid_to"):
-            return Response({"error": "Faltan 'valid_from' y 'valid_to' (vigencia)."},
+        # Si el proveedor no indica vigencia, se usa el periodo que pidió la empresa.
+        valid_from = d.get("valid_from") or sr.period_from
+        valid_to = d.get("valid_to") or sr.period_to
+        if not valid_from or not valid_to:
+            return Response({"error": "Faltan las fechas de vigencia."},
                             status=status.HTTP_400_BAD_REQUEST)
         decl = SupplierDeclaration.objects.create(
             tenant=sr.tenant, supplier=sr.supplier, product=sr.product, treaty=sr.treaty,
             is_originating=bool(d.get("is_originating")),
             country_of_origin=d.get("country_of_origin", ""),
-            valid_from=d["valid_from"], valid_to=d["valid_to"],
+            valid_from=valid_from, valid_to=valid_to,
         )
         sr.declaration = decl
         sr.status = SolicitationRequest.Status.RESPONDED

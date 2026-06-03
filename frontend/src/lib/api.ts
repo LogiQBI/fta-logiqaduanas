@@ -54,6 +54,10 @@ export type Me = {
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
   status: string; status_display: string; due_date: string | null;
+  period_type: string; period_display?: string;
+  period_from: string | null; period_to: string | null;
+  product_sku?: string; product_description?: string; product_hs?: string;
+  treaty_code?: string; supplier_name?: string;
 };
 
 export const api = {
@@ -129,6 +133,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createSolicitudes: (payload: Record<string, unknown>) =>
+    req("/solicitations/batch/", { method: "POST", body: JSON.stringify(payload) }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),
