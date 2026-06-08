@@ -21,6 +21,9 @@ TREATY_LABELS = {"TMEC": "USMCA"}
 class OriginRuleSerializer(serializers.ModelSerializer):
     treaty_code = serializers.CharField(source="treaty.code", read_only=True)
     treaty_label = serializers.SerializerMethodField()
+    display_type = serializers.SerializerMethodField()
+    display_description = serializers.SerializerMethodField()
+    has_override = serializers.SerializerMethodField()
 
     class Meta:
         model = OriginRule
@@ -28,6 +31,20 @@ class OriginRuleSerializer(serializers.ModelSerializer):
 
     def get_treaty_label(self, obj):
         return TREATY_LABELS.get(obj.treaty.code, obj.treaty.code)
+
+    def _override(self, obj):
+        return (self.context.get("rule_overrides") or {}).get(obj.id)
+
+    def get_display_type(self, obj):
+        o = self._override(obj)
+        return o.display_type if (o and o.display_type) else obj.rule_type
+
+    def get_display_description(self, obj):
+        o = self._override(obj)
+        return o.display_description if (o and o.display_description) else obj.description
+
+    def get_has_override(self, obj):
+        return bool(self._override(obj))
 
 
 class PartySerializer(serializers.ModelSerializer):

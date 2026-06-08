@@ -217,6 +217,24 @@ class SolicitationRequest(TenantOwnedModel):
         return f"/portal/{self.token}/"
 
 
+class RuleDisplay(TenantOwnedModel):
+    """Override COSMÉTICO por empresa de cómo se muestra un PSR (ej. 'CTH' en vez
+    de 'CC'). NO cambia el cálculo de origen: el motor usa siempre la regla oficial."""
+
+    rule = models.ForeignKey("treaties.OriginRule", on_delete=models.CASCADE,
+                             related_name="displays")
+    display_type = models.CharField("Tipo/código a mostrar", max_length=60, blank=True)
+    display_description = models.CharField("Descripción a mostrar", max_length=255, blank=True)
+
+    class Meta:
+        unique_together = [("tenant", "rule")]
+        verbose_name = "Presentación de regla (empresa)"
+        verbose_name_plural = "Presentaciones de regla (empresa)"
+
+    def __str__(self):
+        return f"{self.tenant.slug}: {self.rule_id} -> {self.display_type}"
+
+
 class SolicitationLog(TenantOwnedModel):
     """Bitácora de eventos de una solicitud (guardar BOM, calcular, enviar,
     traer info de periodo anterior, etc.)."""

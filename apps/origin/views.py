@@ -21,8 +21,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
-    BOMComponent, HsChangeLog, Party, Product, SolicitationBOM, SolicitationBOMLine,
-    SolicitationLog, SolicitationRequest, SupplierDeclaration,
+    BOMComponent, HsChangeLog, Party, Product, RuleDisplay, SolicitationBOM,
+    SolicitationBOMLine, SolicitationLog, SolicitationRequest, SupplierDeclaration,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -123,10 +123,37 @@ class RulesPagination(PageNumberPagination):
     max_page_size = 5000
 
 
-class OriginRuleViewSet(viewsets.ReadOnlyModelViewSet):
+class OriginRuleViewSet(viewsets.ModelViewSet):
+    """Catálogo de PSR. Lectura para todos; crear/editar/borrar SOLO el master.
+    Cada empresa puede sobrescribir COMO SE MUESTRA un PSR (cosmético)."""
     queryset = OriginRule.objects.select_related("treaty").all()
     serializer_class = s.OriginRuleSerializer
     pagination_class = RulesPagination
+
+    def _membership(self):
+        return self.request.user.memberships.select_related("tenant").first()
+
+    def _require_master(self):
+        if not self.request.user.is_superuser:
+            raise PermissionDenied("Solo el administrador (LogiQ) edita el catálogo de reglas.")
+
+    def perform_create(self, serializer):
+        self._require_master(); serializer.save()
+
+    def perform_update(self, serializer):
+        self._require_master(); serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_master(); instance.delete()
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Override cosmético del tenant que consulta (para mostrar su etiqueta).
+        m = self._membership()
+        if m and not self.request.user.is_superuser:
+            ctx["rule_overrides"] = {
+                d.rule_id: d for d in RuleDisplay.objects.filter(tenant=m.tenant)}
+        return ctx
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -143,6 +170,29 @@ class OriginRuleViewSet(viewsets.ReadOnlyModelViewSet):
             ids = [r.id for r in qs if hsd.startswith(digits(r.hs_pattern))]
             qs = qs.filter(id__in=ids)
         return qs.order_by("hs_pattern")
+
+    @action(detail=True, methods=["post"], url_path="set-display")
+    def set_display(self, request, pk=None):
+        """La empresa fija cómo se muestra este PSR (cosmético). Body:
+        {display_type, display_description}. No cambia el cálculo."""
+        m = self._membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden personalizar la presentación.")
+        rule = self.get_object()
+        disp, _ = RuleDisplay.objects.get_or_create(tenant=m.tenant, rule=rule)
+        disp.display_type = (request.data.get("display_type") or "").strip()[:60]
+        disp.display_description = (request.data.get("display_description") or "").strip()[:255]
+        disp.save()
+        return Response(s.OriginRuleSerializer(rule, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="reset-display")
+    def reset_display(self, request, pk=None):
+        """La empresa restablece la presentación oficial (borra su override)."""
+        m = self._membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden personalizar la presentación.")
+        RuleDisplay.objects.filter(tenant=m.tenant, rule_id=pk).delete()
+        return Response(s.OriginRuleSerializer(self.get_object(), context=self.get_serializer_context()).data)
 
 
 class PartyViewSet(TenantScopedViewSet):

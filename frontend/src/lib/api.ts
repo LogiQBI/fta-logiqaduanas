@@ -73,6 +73,8 @@ export type SubmittedBom = {
 export type OriginRule = {
   id: number; hs_pattern: string; rule_type: string; description: string;
   treaty: number; treaty_code?: string; treaty_label?: string;
+  params?: Record<string, unknown>;
+  display_type?: string; display_description?: string; has_override?: boolean;
 };
 export type SolLog = {
   action: string; action_label: string; detail: string;
@@ -161,6 +163,18 @@ export const api = {
     }),
   certificates: () => req("/certificates/"),
   rules: (params = "") => req(`/origin-rules/${params}`),
+  createRule: (payload: Record<string, unknown>) =>
+    req("/origin-rules/", { method: "POST", body: JSON.stringify(payload) }),
+  updateRule: (id: number, payload: Record<string, unknown>) =>
+    req(`/origin-rules/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteRule: (id: number) =>
+    req(`/origin-rules/${id}/`, { method: "DELETE" }),
+  setRuleDisplay: (id: number, display_type: string, display_description: string) =>
+    req(`/origin-rules/${id}/set-display/`, {
+      method: "POST", body: JSON.stringify({ display_type, display_description }),
+    }),
+  resetRuleDisplay: (id: number) =>
+    req(`/origin-rules/${id}/reset-display/`, { method: "POST" }),
   qualify: (productId: number, treatyId: number) =>
     req(`/products/${productId}/qualify/`, {
       method: "POST",

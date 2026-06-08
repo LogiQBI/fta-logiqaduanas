@@ -388,7 +388,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "empresas": return <EmpresasView />;
     case "usuarios": return <UsuariosView />;
     case "tratados": return <TratadosView />;
-    case "reglas": return <ReglasView />;
+    case "reglas": return <ReglasView me={me} />;
     case "productos": return <ProductosView />;
     case "insumos": return <InsumosView />;
     case "calificaciones": return <CalificacionesView />;
@@ -714,10 +714,12 @@ function ruleTypeLabel(t?: string) {
 function cleanRuleDesc(d?: string) {
   return (d ?? "").replace(/\[AUTO-GN11[^\]]*\]\s*/g, "").trim();
 }
-// Texto completo y legible de una regla para los desplegables.
-function ruleOptionLabel(r: { hs_pattern: string; rule_type: string; description: string }) {
-  const desc = cleanRuleDesc(r.description);
-  return `${formatHs(r.hs_pattern)} · ${ruleTypeLabel(r.rule_type)}${desc ? " — " + desc : ""}`;
+// Texto completo y legible de una regla para los desplegables (usa el override
+// cosmético de la empresa si existe).
+function ruleOptionLabel(r: OriginRule) {
+  const type = r.display_type || r.rule_type;
+  const desc = cleanRuleDesc(r.display_description || r.description);
+  return `${formatHs(r.hs_pattern)} · ${ruleTypeLabel(type)}${desc ? " — " + desc : ""}`;
 }
 // Input de fracción: solo 6 dígitos, se muestra con punto (8708.10).
 function HsInput({ value, onChange, className, placeholder }: {
@@ -823,11 +825,22 @@ function HsLogModal({ product, onClose }: { product: Product; onClose: () => voi
     </Modal>
   );
 }
-function ReglasView() {
+const RULE_TYPES = [
+  { value: "CTC", label: "Cambio de clasificación arancelaria (CTC)" },
+  { value: "RVC", label: "Valor de contenido regional (VCR)" },
+  { value: "CTC_OR_RVC", label: "CTC o VCR" },
+  { value: "CTC_AND_RVC", label: "CTC y VCR" },
+  { value: "WO", label: "Totalmente obtenido" },
+];
+function ReglasView({ me }: { me: Me }) {
+  const esMaster = me.role === "master";
   const treaties = useList<Treaty>(() => api.treaties());
   const [treaty, setTreaty] = useState<number | "">("");
   const [hs, setHs] = useState("");
   const [pageSize, setPageSize] = useState("50");
+  const [editing, setEditing] = useState<OriginRule | "new" | null>(null);
+  const [display, setDisplay] = useState<OriginRule | null>(null);
+  const [msg, setMsg] = useState("");
   const buildParams = () => {
     const p = new URLSearchParams();
     p.set("page_size", pageSize === "all" ? "5000" : pageSize);
@@ -835,11 +848,17 @@ function ReglasView() {
     if (hs.trim()) p.set("q", hs.trim());
     return "?" + p.toString();
   };
-  const { data, count, loading } = useList<OriginRule>(
+  const { data, count, loading, reload } = useList<OriginRule>(
     () => api.rules(buildParams()), [treaty, hs, pageSize]);
+  async function del(r: OriginRule) {
+    if (!confirm(`¿Eliminar la regla ${formatHs(r.hs_pattern)}?`)) return;
+    setMsg(""); try { await api.deleteRule(r.id); await reload(); } catch (e) { setMsg((e as Error).message); }
+  }
   return (
     <div>
-      <PageTitle title="Reglas de origen" desc={`${count} reglas en total · mostrando ${data.length}.`} />
+      <PageTitle title="Reglas de origen"
+        desc={esMaster ? `${count} reglas oficiales · administra el catálogo.`
+          : `${count} reglas · puedes personalizar cómo aparecen (no cambia el cálculo).`} />
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</label>
@@ -858,24 +877,139 @@ function ReglasView() {
           <label className="mb-1 block text-xs font-semibold text-zinc-700">Mostrar</label>
           <select value={pageSize} onChange={(e) => setPageSize(e.target.value)}
             className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="all">Todo</option>
+            <option value="50">50</option><option value="100">100</option><option value="all">Todo</option>
           </select>
         </div>
+        {esMaster && <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva regla</Btn></div>}
       </div>
-      <Table head={["Tratado", "HS", "Tipo", "Descripción"]}>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["Tratado", "HS", "Tipo", "Descripción", ""]}>
         {data.map((r) => (
           <tr key={r.id}>
             <td className="px-4 py-3"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{r.treaty_label ?? r.treaty_code}</span></td>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{formatHs(r.hs_pattern)}</td>
-            <td className="px-4 py-3"><Pill>{ruleTypeLabel(r.rule_type)}</Pill></td>
-            <td className="px-4 py-3 text-zinc-600">{cleanRuleDesc(r.description)}</td>
+            <td className="px-4 py-3">
+              <Pill>{ruleTypeLabel(r.display_type || r.rule_type)}</Pill>
+              {r.has_override && <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">personalizado</span>}
+            </td>
+            <td className="px-4 py-3 text-zinc-600">{cleanRuleDesc(r.display_description || r.description)}</td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              {esMaster ? (
+                <>
+                  <button onClick={() => setEditing(r)} title="Editar" className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+                  <button onClick={() => del(r)} title="Eliminar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+                </>
+              ) : (
+                <Btn size="sm" variant="ghost" onClick={() => setDisplay(r)}>Cómo aparece</Btn>
+              )}
+            </td>
           </tr>
         ))}
-        {!loading && data.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Sin reglas para ese filtro.</td></tr>}
+        {!loading && data.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Sin reglas para ese filtro.</td></tr>}
       </Table>
+      {editing && <RuleForm rule={editing === "new" ? null : editing} treaties={treaties.data}
+        onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
+      {display && <RuleDisplayModal rule={display}
+        onClose={() => setDisplay(null)} onSaved={async () => { setDisplay(null); await reload(); }} />}
     </div>
+  );
+}
+// Admin: crear/editar una regla oficial.
+function RuleForm({ rule, treaties, onClose, onSaved }: {
+  rule: OriginRule | null; treaties: Treaty[]; onClose: () => void; onSaved: () => void;
+}) {
+  const p = (rule?.params ?? {}) as Record<string, unknown>;
+  const [f, setF] = useState({
+    treaty: (rule?.treaty ?? "") as number | "",
+    hs_pattern: rule?.hs_pattern ?? "", rule_type: rule?.rule_type ?? "CTC",
+    shift_level: String(p.shift_level ?? "CTH"),
+    rvc_threshold: String(p.rvc_threshold ?? ""), de_minimis: String(p.de_minimis ?? ""),
+    description: rule?.description ?? "",
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string | number) => setF({ ...f, [k]: v });
+  async function save() {
+    if (f.treaty === "" || !f.hs_pattern.trim()) { setErr("Tratado y fracción HS son obligatorios."); return; }
+    const params: Record<string, unknown> = {};
+    if (["CTC", "CTC_OR_RVC", "CTC_AND_RVC"].includes(f.rule_type)) params.shift_level = f.shift_level;
+    if (["RVC", "CTC_OR_RVC", "CTC_AND_RVC"].includes(f.rule_type) && f.rvc_threshold) params.rvc_threshold = Number(f.rvc_threshold);
+    if (f.de_minimis) params.de_minimis = Number(f.de_minimis);
+    const payload = { treaty: Number(f.treaty), hs_pattern: f.hs_pattern.replace(/\D/g, ""), rule_type: f.rule_type, params, description: f.description };
+    setErr(""); setSaving(true);
+    try { if (rule) await api.updateRule(rule.id, payload); else await api.createRule(payload); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  const ctc = ["CTC", "CTC_OR_RVC", "CTC_AND_RVC"].includes(f.rule_type);
+  const rvc = ["RVC", "CTC_OR_RVC", "CTC_AND_RVC"].includes(f.rule_type);
+  return (
+    <Modal title={rule ? "Editar regla de origen" : "Nueva regla de origen"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Tratado">
+          <select value={f.treaty} onChange={(e) => set("treaty", Number(e.target.value))} className={inputCls}>
+            <option value="">— Tratado —</option>
+            {treaties.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
+          </select>
+        </Field>
+        <Field label="Fracción HS (patrón)"><HsInput value={f.hs_pattern} onChange={(v) => set("hs_pattern", v)} /></Field>
+        <div className="col-span-2"><Field label="Tipo de regla">
+          <select value={f.rule_type} onChange={(e) => set("rule_type", e.target.value)} className={inputCls}>
+            {RULE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select></Field></div>
+        {ctc && <Field label="Nivel de salto">
+          <select value={f.shift_level} onChange={(e) => set("shift_level", e.target.value)} className={inputCls}>
+            <option value="CC">CC (cambio de capítulo)</option>
+            <option value="CTH">CTH (cambio de partida)</option>
+            <option value="CTSH">CTSH (cambio de subpartida)</option>
+          </select></Field>}
+        {rvc && <Field label="Umbral VCR (%)"><input type="number" value={f.rvc_threshold} onChange={(e) => set("rvc_threshold", e.target.value)} className={inputCls} placeholder="60" /></Field>}
+        <Field label="De minimis (%)"><input type="number" value={f.de_minimis} onChange={(e) => set("de_minimis", e.target.value)} className={inputCls} placeholder="10" /></Field>
+        <div className="col-span-2"><Field label="Descripción">
+          <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} /></Field></div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : rule ? "Guardar" : "Crear regla"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+// Empresa: personalizar cómo aparece una regla (cosmético).
+function RuleDisplayModal({ rule, onClose, onSaved }: {
+  rule: OriginRule; onClose: () => void; onSaved: () => void;
+}) {
+  const [t, setT] = useState(rule.has_override ? (rule.display_type ?? "") : "");
+  const [d, setD] = useState(rule.has_override ? (rule.display_description ?? "") : "");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function save() {
+    setErr(""); setSaving(true);
+    try { await api.setRuleDisplay(rule.id, t, d); onSaved(); } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  async function reset() {
+    setSaving(true);
+    try { await api.resetRuleDisplay(rule.id); onSaved(); } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Cómo aparece — ${formatHs(rule.hs_pattern)}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">
+        Personaliza cómo se muestra este PSR en tu empresa (ej. usar <strong>CTH</strong> en vez de <strong>CC</strong>).
+        Es <strong>solo cosmético</strong>: el cálculo de origen siempre usa la regla oficial.
+      </p>
+      <div className="mb-2 text-xs text-zinc-500">Oficial: <strong>{ruleTypeLabel(rule.rule_type)}</strong> — {cleanRuleDesc(rule.description)}</div>
+      <Field label="Tipo/código a mostrar (déjalo vacío para el oficial)">
+        <input value={t} onChange={(e) => setT(e.target.value)} className={inputCls} placeholder="ej. CTH" />
+      </Field>
+      <div className="mt-3"><Field label="Descripción a mostrar (opcional)">
+        <input value={d} onChange={(e) => setD(e.target.value)} className={inputCls} /></Field></div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-between">
+        <Btn variant="ghost" onClick={reset} disabled={saving}>Restablecer al oficial</Btn>
+        <div className="flex gap-2">
+          <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+          <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
