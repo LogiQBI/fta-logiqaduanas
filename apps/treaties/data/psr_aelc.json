@@ -1,0 +1,22 @@
+{
+  "agreement": "AELC",
+  "source_ref": "TLC México-AELC (EFTA), Anexo I, Art. 5 y Apéndice 2 (sice.oas.org/trade/mexefta).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (México-AELC/EFTA): cambio de partida (CTH) con topes de valor sobre precio franco fábrica, según la lista del Apéndice 2. De minimis 10% (excluye textiles cap. 50-63). Acumulación entre AELC y México.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

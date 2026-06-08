@@ -1,0 +1,22 @@
+{
+  "agreement": "ALIANZA_PACIFICO",
+  "source_ref": "Protocolo Adicional Alianza del Pacífico, Cap. 4 (Art. 4.2, 4.9) y Anexo 4.2 (actualizado SA 2022, DOF 31/07/2023).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (Alianza del Pacífico): predominantemente cambio de clasificación arancelaria (CC capítulo / CP partida / CSP subpartida) según el Anexo 4.2; VCR en casos puntuales. De minimis 10% del valor FOB. Acumulación entre las 4 Partes (condicionada a arancel 0%).",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

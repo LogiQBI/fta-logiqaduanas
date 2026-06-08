@@ -1,0 +1,27 @@
+{
+  "agreement": "COLOMBIA",
+  "source_ref": "TLC México-Colombia (G-3), Cap. VI (Arts. 6-03, 6-04, 6-06, 6-18), texto oficial SICE-OAS.",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "transaction_value",
+          "threshold": 50.0
+        }
+      ],
+      "de_minimis": 7.0,
+      "rule_text_es": "Regla general/residual (México-Colombia, G-3): cambio de clasificación (CTH) O valor de contenido regional (solo método de valor de transacción), tope final 50% (caps. 72-90) y 55% para el resto. De minimis 7%. Acumulación bilateral.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

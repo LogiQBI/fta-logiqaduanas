@@ -1,0 +1,27 @@
+{
+  "agreement": "ACE55",
+  "source_ref": "ACE 55 México-Mercosur (sector automotor), Art. 6 (DOF 29/11/2002) y 7º Protocolo Adicional Apéndice I (Arg-Méx): ICR 35% del 19/03/2022 al 18/03/2025. DATO VOLÁTIL: verificar protocolo vigente.",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "transaction_value",
+          "threshold": 35.0
+        }
+      ],
+      "de_minimis": 0.0,
+      "rule_text_es": "Regla general (ACE 55, automotriz): Índice de Contenido Regional (ICR). Valor reciente Argentina-México 35% (2022-2025); Brasil-México y vigencia posterior pueden diferir — VERIFICAR el protocolo vigente. Régimen específico automotor, no es cambio de clasificación general.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

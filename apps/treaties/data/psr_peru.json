@@ -1,0 +1,27 @@
+{
+  "agreement": "PERU",
+  "source_ref": "Acuerdo de Integración Comercial México-Perú, Cap. IV (Arts. 4.2, 4.4, 4.9) y Anexo 4.2 (SICE-OAS; DOF 30/01/2012).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "transaction_value",
+          "threshold": 50.0
+        }
+      ],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (México-Perú): cambio de clasificación O valor de contenido regional (solo valor de transacción), umbral fijado por cada PSR del Anexo 4.2 (comúnmente 50%). De minimis 10%. Acumulación bilateral. Carga el Anexo 4.2 para precisión por fracción.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

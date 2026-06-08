@@ -1,0 +1,31 @@
+{
+  "agreement": "CHILE",
+  "source_ref": "TLC México-Chile, Cap. 4 (Arts. 4-03, 4-04, 4-06), texto oficial SICE-OAS.",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "transaction_value",
+          "threshold": 50.0
+        },
+        {
+          "method": "net_cost",
+          "threshold": 40.0
+        }
+      ],
+      "de_minimis": 8.0,
+      "rule_text_es": "Regla general/residual (México-Chile): cambio de clasificación (CTH) O valor de contenido regional no inferior a 50% (valor de transacción) o 40% (costo neto). De minimis 8%. Acumulación bilateral. Las PSR del Anexo 4-03 pueden fijar otro porcentaje por fracción.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

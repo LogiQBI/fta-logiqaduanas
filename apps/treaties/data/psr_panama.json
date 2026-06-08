@@ -1,0 +1,22 @@
+{
+  "agreement": "PANAMA",
+  "source_ref": "TLC México-Panamá, Cap. 4 (Arts. 4.2, 4.4, 4.9) y Anexo 4.2 (SICE-OAS; DOF 29/06/2015).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (México-Panamá): cambio de clasificación arancelaria según el Anexo 4.2 (algunas fracciones con VCR). De minimis 10% del valor FOB (excluye textiles). Acumulación bilateral. Carga el Anexo 4.2 para PSR por fracción.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

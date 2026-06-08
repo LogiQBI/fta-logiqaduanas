@@ -1,0 +1,22 @@
+{
+  "agreement": "TLCUEM",
+  "source_ref": "Decisión 2/2000 Consejo Conjunto UE-México, Anexo III, Art. 5 y Apéndice II (sice.oas.org/trade/mex_eu). Régimen VIGENTE (el Acuerdo Modernizado 2026 aún no entra en vigor).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (Acuerdo Global México-UE, Dec. 2/2000): se determina por la lista del Apéndice II, predominando el cambio de partida arancelaria (CTH) con topes de valor de materiales no originarios sobre el precio franco fábrica. De minimis 10% (no aplica a textiles cap. 50-63). Carga las PSR del Apéndice II para precisión por fracción.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "agreement": "REINO_UNIDO",
+  "source_ref": "Acuerdo de Continuidad Comercial México-Reino Unido (DOF 01/06/2021), que incorpora el régimen de origen de la Decisión 2/2000 UE-México (Anexo III) con acumulación ampliada (Art. 3a).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (México-Reino Unido): hereda el régimen UE (Dec. 2/2000): cambio de partida (CTH) con topes de valor sobre precio franco fábrica. De minimis 10% (excluye textiles). Acumulación bilateral y ampliada con materiales de la UE.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

@@ -95,15 +95,23 @@ class Command(BaseCommand):
                     "ctc_except": psr.get("ctc_except", []),
                     "rvc_options": opts,
                     "extra": psr.get("extra", {}),
-                    "source_ref": source_ref,
+                    "source_ref": psr.get("source_ref", source_ref),
                     "rule_text_en": psr.get("rule_text_en", ""),
                     "hs_level": psr.get("hs_level"),
                 }
                 if default:
                     params["rvc_method"] = default["method"]
                     params["rvc_threshold"] = default["threshold"]
+                if psr.get("de_minimis") is not None:
+                    params["de_minimis"] = float(psr["de_minimis"])
                 desc = psr.get("rule_text_es", "")
-                for hs in _expand_hs(psr["hs_from"], psr["hs_to"], psr.get("hs_level", 6)):
+                # Regla GENERAL/residual del tratado: patrón vacío = aplica a todo
+                # (el motor usa la PSR más específica si existe; ésta es el respaldo).
+                if psr.get("general"):
+                    hs_list = [""]
+                else:
+                    hs_list = _expand_hs(psr["hs_from"], psr["hs_to"], psr.get("hs_level", 6))
+                for hs in hs_list:
                     _, created = OriginRule.objects.update_or_create(
                         treaty=treaty, hs_pattern=hs,
                         defaults={"rule_type": rule_type, "params": params,

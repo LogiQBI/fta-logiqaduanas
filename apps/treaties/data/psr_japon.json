@@ -1,0 +1,27 @@
+{
+  "agreement": "JAPON",
+  "source_ref": "Acuerdo de Asociación Económica México-Japón (AAE), Cap. 4 (Arts. 22, 23, 25) y Anexo 4, texto oficial SE.",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "transaction_value",
+          "threshold": 50.0
+        }
+      ],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (México-Japón): cambio de clasificación (CTH) O valor de contenido regional no inferior a 50% (solo método de valor de transacción, base L.A.B./FOB). De minimis 10%. Acumulación bilateral.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "agreement": "CPTPP",
+  "source_ref": "CPTPP, Capítulo 3 (Art. 3.5, 3.11) y Anexo 3-D (PSR). Texto oficial del depositario (MFAT NZ).",
+  "hs_version": 2022,
+  "psr": [
+    {
+      "general": true,
+      "hs_from": "000000",
+      "hs_to": "000000",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 40.0
+        }
+      ],
+      "de_minimis": 10.0,
+      "rule_text_es": "Regla general/residual (CPTPP/TIPAT): cambio de partida (CTH) O valor de contenido regional. El par típico del Anexo 3-D es 40% (build-down) / 30% (build-up). De minimis 10% del valor de la mercancía. Acumulación regional plena entre las 11 Partes. Carga el Anexo 3-D para PSR por fracción.",
+      "extra": {
+        "baseline": true
+      }
+    }
+  ]
+}
