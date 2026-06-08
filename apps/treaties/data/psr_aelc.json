@@ -17,6 +17,92 @@
       "extra": {
         "baseline": true
       }
+    },
+    {
+      "hs_from": "25",
+      "hs_to": "25",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto",
+      "rule_text_en": "Manufacture in which all the materials used are classified within a heading other than that of the product"
+    },
+    {
+      "hs_from": "26",
+      "hs_to": "26",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto",
+      "rule_text_en": "Manufacture in which all the material used are classified within a heading other than that of the product"
+    },
+    {
+      "hs_from": "27",
+      "hs_to": "27",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto",
+      "rule_text_en": "Manufacture in which all the materials used are classified within a heading other than that of the product"
+    },
+    {
+      "hs_from": "2520",
+      "hs_to": "2520",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50
+        }
+      ],
+      "rule_text_es": "Fabricacion en la que el valor de todos los materiales utilizados no exceda del 50% del precio franco fabrica del producto",
+      "rule_text_en": "Manufacture in which the value of all the materials used does not exceed 50% of the ex-works price of the product"
+    },
+    {
+      "hs_from": "61",
+      "hs_to": "61",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "6117"
+      ],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto, salvo los materiales de la partida 6117",
+      "rule_text_en": "Manufacture in which all the materials used are classified within a heading other than that of the product, except for materials of heading No 6117"
+    },
+    {
+      "hs_from": "62",
+      "hs_to": "62",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "6217"
+      ],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto, salvo los materiales de la partida 6217",
+      "rule_text_en": "Manufacture in which all the materials used are classified within a heading other than that of the product, except for materials of heading No 6217"
+    },
+    {
+      "hs_from": "63",
+      "hs_to": "63",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricacion en la que todos los materiales utilizados se clasifican en una partida distinta a la del producto",
+      "rule_text_en": "Manufacture in which all the materials used are classified within a heading other than that of the product"
     }
   ]
 }

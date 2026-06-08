@@ -49,19 +49,27 @@ class OriginRule(TimeStampedModel):
 
     treaty = models.ForeignKey(Treaty, on_delete=models.CASCADE, related_name="rules")
     hs_pattern = models.CharField(
-        "Patrón HS", max_length=10,
-        help_text="Prefijo HS al que aplica. Ej: '87', '8703', '870321'")
+        "Patrón HS", max_length=20,
+        help_text="Prefijo HS o rango 'desde-hasta' al que aplica. Ej: '87', '8703', '870321', '850110-850164'")
     rule_type = models.CharField(max_length=20, choices=RuleType.choices)
     params = models.JSONField(
         "Parámetros del motor", default=dict, blank=True,
         help_text='Ej: {"shift_level": "CTH", "rvc_method": "transaction", '
                   '"rvc_threshold": 60, "de_minimis": 10}')
     description = models.TextField("Texto de la regla", blank=True)
+    # Cobertura por RANGO SA (alternativa a hs_pattern por prefijo). Si hs_from
+    # está presente, el motor aplica la regla cuando el código del bien (a
+    # hs_level dígitos) cae en [hs_from, hs_to]. Evita expandir rangos a miles
+    # de filas. Si hs_from está vacío, se usa el prefijo hs_pattern (compat).
+    hs_from = models.CharField("HS desde", max_length=12, blank=True)
+    hs_to = models.CharField("HS hasta", max_length=12, blank=True)
+    hs_level = models.PositiveSmallIntegerField("Nivel HS (2/4/6/8)", null=True, blank=True)
     valid_from = models.DateField("Vigente desde", null=True, blank=True)
     valid_to = models.DateField("Vigente hasta", null=True, blank=True)
 
     class Meta:
         unique_together = [("treaty", "hs_pattern")]
+        indexes = [models.Index(fields=["treaty", "hs_pattern"])]
         ordering = ["treaty", "hs_pattern"]
         verbose_name = "Regla de origen"
         verbose_name_plural = "Reglas de origen"

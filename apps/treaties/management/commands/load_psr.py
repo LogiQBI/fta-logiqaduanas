@@ -50,12 +50,18 @@ def _expand_hs(hs_from: str, hs_to: str, level: int, max_expand=500):
     """Convierte un rango SA en los prefijos a `level` dígitos que el motor usa.
     Ej.: 010000-059999 nivel 2 -> ['01','02','03','04','05']."""
     n = LEVEL_DIGITS.get(level, 6)
-    a, b = int(hs_from[:n]), int(hs_to[:n])
+    df = "".join(c for c in str(hs_from) if c.isdigit())[:n]
+    dt = "".join(c for c in str(hs_to) if c.isdigit())[:n]
+    if not df:
+        return []
+    if not dt:
+        dt = df
+    a, b = int(df), int(dt)
     if b < a:
         a, b = b, a
     if (b - a) > max_expand:
         # Rango demasiado amplio: cae al prefijo común para no explotar el catálogo.
-        return [hs_from[:n]]
+        return [df]
     return [str(i).zfill(n) for i in range(a, b + 1)]
 
 
@@ -72,7 +78,10 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("No se encontraron archivos psr_*.json."))
             return
 
-        total_creadas = total_actualizadas = total_omitidas = 0
+        def _digits(v, n):
+            return "".join(c for c in str(v or "") if c.isdigit())[:n]
+
+        total = 0
         for path in paths:
             data = json.loads(path.read_text(encoding="utf-8"))
             code = data["agreement"]
@@ -82,27 +91,34 @@ class Command(BaseCommand):
                     f"  {path.name}: tratado '{code}' no existe en el catálogo, se omite."))
                 continue
             source_ref = data.get("source_ref", "")
+            seen = set()
+            objs = []
             for psr in data["psr"]:
                 rule_type = RULE_TYPE_MAP.get(psr["rule_type"], "CTC")
                 shift = CTC_LEVEL_MAP.get(psr.get("ctc_level") or "", "CTH")
-                # Opciones de VCR mapeadas a métodos del motor (se omiten métodos
-                # no computables como build_up/focused_value).
                 opts = []
                 for o in psr.get("rvc_options", []):
                     m = RVC_METHOD_MAP.get(o.get("method"))
-                    if m:
-                        opts.append({"method": m, "threshold": float(o["threshold"])})
-                # Método y umbral por defecto: prioriza valor de transacción.
+                    thr = o.get("threshold")
+                    if not m or thr in (None, ""):
+                        continue
+                    try:
+                        opts.append({"method": m, "threshold": float(thr)})
+                    except (TypeError, ValueError):
+                        continue
                 default = next((o for o in opts if o["method"] == "transaction"),
                                opts[0] if opts else None)
+                ctc_except = []
+                for x in (psr.get("ctc_except") or []):
+                    dd = "".join(c for c in str(x) if c.isdigit())
+                    if len(dd) >= 4:
+                        ctc_except.append(dd)
+                level = int(psr.get("hs_level") or 6)
                 params = {
-                    "shift_level": shift,
-                    "ctc_except": psr.get("ctc_except", []),
-                    "rvc_options": opts,
+                    "shift_level": shift, "ctc_except": ctc_except, "rvc_options": opts,
                     "extra": psr.get("extra", {}),
                     "source_ref": psr.get("source_ref", source_ref),
-                    "rule_text_en": psr.get("rule_text_en", ""),
-                    "hs_level": psr.get("hs_level"),
+                    "rule_text_en": psr.get("rule_text_en", ""), "hs_level": level,
                 }
                 if default:
                     params["rvc_method"] = default["method"]
@@ -110,20 +126,35 @@ class Command(BaseCommand):
                 if psr.get("de_minimis") is not None:
                     params["de_minimis"] = float(psr["de_minimis"])
                 desc = psr.get("rule_text_es", "")
-                # Regla GENERAL/residual del tratado: patrón vacío = aplica a todo
-                # (el motor usa la PSR más específica si existe; ésta es el respaldo).
+                # Cobertura: general (patrón vacío) o por RANGO (sin expandir).
                 if psr.get("general"):
-                    hs_list = [""]
+                    hs_pattern, hf, ht, lvl = "", "", "", None
                 else:
-                    hs_list = _expand_hs(psr["hs_from"], psr["hs_to"], psr.get("hs_level", 6))
-                for hs in hs_list:
-                    _, created = OriginRule.objects.update_or_create(
-                        treaty=treaty, hs_pattern=hs,
-                        defaults={"rule_type": rule_type, "params": params,
-                                  "description": desc})
-                    total_creadas += int(created)
-                    total_actualizadas += int(not created)
-            self.stdout.write(f"  {path.name}: {len(data['psr'])} PSR -> {code}")
+                    hf = _digits(psr.get("hs_from"), level)
+                    ht = _digits(psr.get("hs_to") or psr.get("hs_from"), level) or hf
+                    if not hf:
+                        continue
+                    lvl = level
+                    hs_pattern = hf if hf == ht else f"{hf}-{ht}"
+                if hs_pattern in seen:
+                    continue  # evita choque de unique (treaty, hs_pattern)
+                seen.add(hs_pattern)
+                objs.append(OriginRule(
+                    treaty=treaty, hs_pattern=hs_pattern, rule_type=rule_type,
+                    params=params, description=desc, hs_from=hf, hs_to=ht, hs_level=lvl))
+            # T-MEC convive con las reglas GN11 (CSV): no borrar, upsert. Los demás
+            # tratados son 100% de anexo: borrar e insertar en bloque (rápido, limpio).
+            if code == "TMEC":
+                for o in objs:
+                    OriginRule.objects.update_or_create(
+                        treaty=treaty, hs_pattern=o.hs_pattern,
+                        defaults={"rule_type": o.rule_type, "params": o.params,
+                                  "description": o.description, "hs_from": o.hs_from,
+                                  "hs_to": o.hs_to, "hs_level": o.hs_level})
+            else:
+                OriginRule.objects.filter(treaty=treaty).delete()
+                OriginRule.objects.bulk_create(objs, batch_size=1000)
+            total += len(objs)
+            self.stdout.write(f"  {path.name}: {len(objs)} reglas -> {code}")
 
-        self.stdout.write(self.style.SUCCESS(
-            f"\nPSR cargadas: {total_creadas} nuevas, {total_actualizadas} actualizadas."))
+        self.stdout.write(self.style.SUCCESS(f"\nPSR cargadas: {total} reglas en total."))

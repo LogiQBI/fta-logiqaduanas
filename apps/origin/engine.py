@@ -29,15 +29,44 @@ def _date_ok(rule, as_of):
     return True
 
 
+def _only_digits(s):
+    return "".join(c for c in (s or "") if c.isdigit())
+
+
 def find_rule(treaty, hs_code, as_of=None):
-    """Elige la regla cuyo patrón HS coincide y es el MÁS específico (más largo)."""
-    candidates = [
-        r for r in treaty.rules.all()
-        if hs_code.startswith(r.hs_pattern) and _date_ok(r, as_of)
-    ]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda r: len(r.hs_pattern))
+    """Elige la regla aplicable MÁS ESPECÍFICA para una fracción.
+
+    Soporta dos formas de cobertura:
+      - Por RANGO (hs_from/hs_to a hs_level dígitos): aplica si el código del bien,
+        truncado a hs_level, cae dentro de [hs_from, hs_to].
+      - Por PREFIJO (hs_pattern): aplica si el código empieza con el patrón
+        (patrón vacío = regla general/residual).
+    La especificidad es el número de dígitos que casan (mayor = más específico)."""
+    d = _only_digits(hs_code)
+    best = None
+    best_spec = -1
+    for r in treaty.rules.all():
+        if not _date_ok(r, as_of):
+            continue
+        if r.hs_from and r.hs_level:
+            L = r.hs_level
+            if len(d) < L:
+                continue
+            lo = _only_digits(r.hs_from)[:L].zfill(L)
+            hi = _only_digits(r.hs_to or r.hs_from)[:L].zfill(L)
+            if lo <= d[:L] <= hi:
+                spec = L
+            else:
+                continue
+        else:
+            pat = _only_digits(r.hs_pattern)
+            if not d.startswith(pat):
+                continue
+            spec = len(pat)
+        if spec > best_spec:
+            best_spec = spec
+            best = r
+    return best
 
 
 def is_originating(product, treaty, as_of=None, _visited=None):

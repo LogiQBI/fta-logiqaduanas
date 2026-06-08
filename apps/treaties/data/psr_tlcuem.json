@@ -17,6 +17,2503 @@
       "extra": {
         "baseline": true
       }
+    },
+    {
+      "hs_from": "01",
+      "hs_to": "01",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Todos los animales del capítulo 01 utilizados deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "02",
+      "hs_to": "02",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales de los capítulos 01 y 02 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "03",
+      "hs_to": "03",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 03 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "04",
+      "hs_to": "04",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 04 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "05",
+      "hs_to": "05",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 05 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "07",
+      "hs_to": "07",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 07 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "09",
+      "hs_to": "09",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 09 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "10",
+      "hs_to": "10",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 10 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "12",
+      "hs_to": "12",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 12 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "14",
+      "hs_to": "14",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 14 deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "15",
+      "hs_to": "15",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "17",
+      "hs_to": "17",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "1701",
+      "hs_to": "1701",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 70.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de los materiales del capítulo 17 utilizados no exceda del 30 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "1703",
+      "hs_to": "1703",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 70.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de los materiales del capítulo 17 utilizados no exceda del 30 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "1704",
+      "hs_to": "1704",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 70.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales del capítulo 17 utilizados no exceda del 30 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "18",
+      "hs_to": "18",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 70.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales del capítulo 17 utilizados no exceda del 30 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "2001",
+      "hs_to": "2001",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "2005",
+      "hs_to": "2005",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "21",
+      "hs_to": "21",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "23",
+      "hs_to": "23",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "2301",
+      "hs_to": "2301",
+      "hs_level": 4,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales de los capítulos 02 y 03 utilizados deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "24",
+      "hs_to": "24",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales del capítulo 24 utilizados deben ser obtenidos en su totalidad",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "25",
+      "hs_to": "25",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "26",
+      "hs_to": "26",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "27",
+      "hs_to": "27",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3507",
+      "hs_to": "3507",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3803",
+      "hs_to": "3803",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3805",
+      "hs_to": "3805",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3807",
+      "hs_to": "3807",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3808",
+      "hs_to": "3808",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3809",
+      "hs_to": "3809",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3810",
+      "hs_to": "3810",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3812",
+      "hs_to": "3812",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3813",
+      "hs_to": "3813",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3814",
+      "hs_to": "3814",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3818",
+      "hs_to": "3818",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3819",
+      "hs_to": "3819",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3820",
+      "hs_to": "3820",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3006",
+      "hs_to": "3006",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "3926",
+      "hs_to": "3926",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "40",
+      "hs_to": "40",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "4002",
+      "hs_to": "4002",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "41",
+      "hs_to": "41",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "4107",
+      "hs_to": "4107",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "43",
+      "hs_to": "43",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "44",
+      "hs_to": "44",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "45",
+      "hs_to": "45",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "46",
+      "hs_to": "46",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "47",
+      "hs_to": "47",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "48",
+      "hs_to": "48",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "4817",
+      "hs_to": "4817",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "4819",
+      "hs_to": "4819",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "4820",
+      "hs_to": "4820",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "49",
+      "hs_to": "49",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "50",
+      "hs_to": "50",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "51",
+      "hs_to": "51",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "52",
+      "hs_to": "52",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "53",
+      "hs_to": "53",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "5805",
+      "hs_to": "5805",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "5810",
+      "hs_to": "5810",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "63",
+      "hs_to": "63",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "6406",
+      "hs_to": "6406",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "65",
+      "hs_to": "65",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "66",
+      "hs_to": "66",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "6601",
+      "hs_to": "6601",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "67",
+      "hs_to": "67",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "68",
+      "hs_to": "68",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "69",
+      "hs_to": "69",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "70",
+      "hs_to": "70",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "71",
+      "hs_to": "71",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "72",
+      "hs_to": "72",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "73",
+      "hs_to": "73",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7321",
+      "hs_to": "7321",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "74",
+      "hs_to": "74",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7401",
+      "hs_to": "7401",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7402",
+      "hs_to": "7402",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7404",
+      "hs_to": "7404",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7405",
+      "hs_to": "7405",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "75",
+      "hs_to": "75",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7503",
+      "hs_to": "7503",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "76",
+      "hs_to": "76",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7602",
+      "hs_to": "7602",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "78",
+      "hs_to": "78",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7802",
+      "hs_to": "7802",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "79",
+      "hs_to": "79",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "7902",
+      "hs_to": "7902",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "80",
+      "hs_to": "80",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8007",
+      "hs_to": "8007",
+      "hs_level": 4,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "82",
+      "hs_to": "82",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8207",
+      "hs_to": "8207",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8208",
+      "hs_to": "8208",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "83",
+      "hs_to": "83",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8301",
+      "hs_to": "8301",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "84",
+      "hs_to": "84",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8402",
+      "hs_to": "8402",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8409",
+      "hs_to": "8409",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8408",
+      "hs_to": "8408",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8411",
+      "hs_to": "8411",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8412",
+      "hs_to": "8412",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8413",
+      "hs_to": "8413",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8414",
+      "hs_to": "8414",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8415",
+      "hs_to": "8415",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "73",
+      "hs_to": "73",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 65.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 35 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8423",
+      "hs_to": "8423",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8429",
+      "hs_to": "8429",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8431",
+      "hs_to": "8431",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8447",
+      "hs_to": "8447",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8448",
+      "hs_to": "8448",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8466",
+      "hs_to": "8466",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8472",
+      "hs_to": "8472",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8480",
+      "hs_to": "8480",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8481",
+      "hs_to": "8481",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8482",
+      "hs_to": "8482",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8483",
+      "hs_to": "8483",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "8482"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, excepto de la partida 8482 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8484",
+      "hs_to": "8484",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8485",
+      "hs_to": "8485",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "85",
+      "hs_to": "85",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8504",
+      "hs_to": "8504",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8508",
+      "hs_to": "8508",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "6804",
+        "8202",
+        "8207",
+        "8208",
+        "8466",
+        "8467",
+        "8501",
+        "8548"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, a excepción de los materiales de las partidas 6804, 8202, 8207, 8208, 8466, 8467, 8501 y 8548 Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8509",
+      "hs_to": "8509",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "8501"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, con excepción de los materiales de la partida 8501 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8545",
+      "hs_to": "8545",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "9032"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, con excepción de los materiales de la partida 9032 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8516",
+      "hs_to": "8516",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "7321",
+        "7322",
+        "7417",
+        "7615",
+        "8548"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, con excepción de los materiales de la partida 7321, 7322, 7417, 7615 y 8548 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8518",
+      "hs_to": "8518",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8522",
+      "hs_to": "8522",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8523",
+      "hs_to": "8523",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8527",
+      "hs_to": "8527",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "8518",
+        "8529"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, excepto de las partidas 8518 y 8529 Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8529",
+      "hs_to": "8529",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8541",
+      "hs_to": "8541",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8544",
+      "hs_to": "8544",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8545",
+      "hs_to": "8545",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8546",
+      "hs_to": "8546",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8547",
+      "hs_to": "8547",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8548",
+      "hs_to": "8548",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "86",
+      "hs_to": "86",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8608",
+      "hs_to": "8608",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8709",
+      "hs_to": "8709",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8710",
+      "hs_to": "8710",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8715",
+      "hs_to": "8715",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8716",
+      "hs_to": "8716",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "88",
+      "hs_to": "88",
+      "hs_level": 2,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "8805",
+      "hs_to": "8805",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 70.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 30 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "90",
+      "hs_to": "90",
+      "hs_level": 2,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9001",
+      "hs_to": "9001",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9002",
+      "hs_to": "9002",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9004",
+      "hs_to": "9004",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9005",
+      "hs_to": "9005",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9006",
+      "hs_to": "9006",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "9002",
+        "9033"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, con excepción de los materiales de las partidas 9002 y 9033 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9007",
+      "hs_to": "9007",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9009",
+      "hs_to": "9009",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9011",
+      "hs_to": "9011",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9014",
+      "hs_to": "9014",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9015",
+      "hs_to": "9015",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9016",
+      "hs_to": "9016",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9017",
+      "hs_to": "9017",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9022",
+      "hs_to": "9022",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [
+        "9033"
+      ],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto, con excepción de los materiales de la partida 9033 Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9024",
+      "hs_to": "9024",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9025",
+      "hs_to": "9025",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9026",
+      "hs_to": "9026",
+      "hs_level": 4,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9027",
+      "hs_to": "9027",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9029",
+      "hs_to": "9029",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9030",
+      "hs_to": "9030",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9031",
+      "hs_to": "9031",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9032",
+      "hs_to": "9032",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9033",
+      "hs_to": "9033",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "91",
+      "hs_to": "91",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "92",
+      "hs_to": "92",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 60.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 40 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "93",
+      "hs_to": "93",
+      "hs_level": 2,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9405",
+      "hs_to": "9405",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9406",
+      "hs_to": "9406",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "96",
+      "hs_to": "96",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9603",
+      "hs_to": "9603",
+      "hs_level": 4,
+      "rule_type": "rvc",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "9612",
+      "hs_to": "9612",
+      "hs_level": 4,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {
+          "method": "build_down",
+          "threshold": 50.0
+        }
+      ],
+      "rule_text_es": "Fabricación en la que: — todos los materiales utilizados se clasifican en una partida diferente a la del producto; — el valor de todos los materiales utilizados no exceda del 50 % del precio franco fábrica del producto",
+      "rule_text_en": ""
+    },
+    {
+      "hs_from": "97",
+      "hs_to": "97",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Fabricación en la que todos los materiales utilizados se clasifican en una partida diferente a la del producto",
+      "rule_text_en": ""
     }
   ]
 }
