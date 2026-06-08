@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
-  Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes,
+  Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator,
 } from "lucide-react";
 import {
-  api, BomLine, clearToken, getToken, MasterTenant, Me, OriginRule, Party,
-  Product, Qualification, Solicitation, SubmittedBom, SupplierProfile,
-  SupplierUser, Treaty,
+  api, BomComponent, BomLine, BomOriginComponent, clearToken, getToken,
+  MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product, Qualification,
+  Solicitation, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
@@ -279,6 +279,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
     ] },
     { label: "Origen", items: [
       { key: "productos", label: "Productos", icon: Boxes },
+      { key: "calculo-origen", label: "Cálculo de origen", icon: Calculator },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Certificados", icon: BadgeCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
@@ -396,6 +397,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "tratados": return <TratadosView />;
     case "reglas": return <ReglasView me={me} />;
     case "productos": return <ProductosView />;
+    case "calculo-origen": return <CalculoOrigenView />;
     case "insumos": return <InsumosView />;
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosView />;
@@ -1031,6 +1033,7 @@ function ProductosView() {
   const [treatyId, setTreatyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [bomFor, setBomFor] = useState<Product | null>(null);
   useEffect(() => {
     if (!treatyId && treaties.data.length) {
       const tmec = treaties.data.find((t) => t.code === "TMEC");
@@ -1075,6 +1078,7 @@ function ProductosView() {
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className="mr-2 inline-block"><Btn size="sm" onClick={() => treatyId && run(p.id, () => api.qualify(p.id, treatyId))}>Calificar</Btn></span>
                 <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => treatyId && run(p.id, async () => { await api.solicit(p.id, treatyId); return { status_display: "Solicitudes enviadas", rvc_value: null } as unknown as Qualification; })}>Solicitar origen</Btn></span>
+                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
                 <button onClick={() => setEditing(p)} title="Editar"
                   className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
                 <button onClick={() => del(p)} title="Eliminar"
@@ -1089,6 +1093,266 @@ function ProductosView() {
         <ProductForm product={editing === "new" ? null : editing} suppliers={suppliers}
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
+      {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
+    </div>
+  );
+}
+
+// Editor de la lista de materiales (BOM) de un producto de la empresa.
+function BomEditorModal({ product, allProducts, onClose }: {
+  product: Product; allProducts: Product[]; onClose: () => void;
+}) {
+  const { data, reload, loading } = useList<BomComponent>(() => api.bomComponents(product.id));
+  const [compId, setCompId] = useState<number | "">("");
+  const [qty, setQty] = useState("1");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  // Insumos disponibles: cualquier producto del catálogo distinto del padre y
+  // que no esté ya en el BOM.
+  const usados = new Set(data.map((c) => c.component));
+  const opciones = allProducts.filter((p) => p.id !== product.id && !usados.has(p.id));
+  async function add() {
+    if (!compId) { setErr("Elige un insumo."); return; }
+    setErr(""); setSaving(true);
+    try {
+      await api.addBomComponent({ parent: product.id, component: compId, quantity: qty || "1" });
+      setCompId(""); setQty("1"); await reload();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  async function quitar(c: BomComponent) {
+    if (!confirm(`¿Quitar “${c.component_sku}” del BOM?`)) return;
+    try { await api.deleteBomComponent(c.id); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  return (
+    <Modal title={`Lista de materiales — ${product.sku}`} onClose={onClose} wide>
+      <p className="mb-3 text-sm text-zinc-500">Agrega los insumos (números de parte) que componen este producto y sus cantidades. El origen de cada insumo se define en “Cálculo de origen”.</p>
+      <div className="mb-4 flex flex-wrap items-end gap-2">
+        <div className="min-w-[16rem] flex-1">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Insumo</span>
+          <select value={compId} onChange={(e) => setCompId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+            <option value="">Elige un insumo…</option>
+            {opciones.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}{p.supplier_name ? ` (${p.supplier_name})` : ""}</option>)}
+          </select>
+        </div>
+        <div className="w-28">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Cantidad</span>
+          <input className={inputCls} type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </div>
+        <Btn onClick={add} disabled={saving}><Plus size={15} className="-mt-0.5 mr-1 inline" />Agregar</Btn>
+      </div>
+      {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+      <Table head={["Núm. de parte", "Descripción", "HS", "Proveedor", "Costo unit.", "Cantidad", ""]}>
+        {data.map((c) => (
+          <tr key={c.id}>
+            <td className="px-4 py-3 font-mono text-xs">{c.component_sku}</td>
+            <td className="px-4 py-3">{c.component_description}</td>
+            <td className="px-4 py-3 font-mono text-xs">{c.component_hs ? formatHs(c.component_hs) : "—"}</td>
+            <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
+            <td className="px-4 py-3 text-xs">{c.component_unit_cost}</td>
+            <td className="px-4 py-3 text-xs">{c.quantity}</td>
+            <td className="px-4 py-3 text-right">
+              <button onClick={() => quitar(c)} title="Quitar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
+          </tr>
+        ))}
+        {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin insumos en el BOM. Agrega el primero arriba.</td></tr>}
+      </Table>
+    </Modal>
+  );
+}
+
+// Reporte del resultado del cálculo de origen del producto de la empresa.
+function OriginResultReport({ result }: { result: OriginCalcResult }) {
+  const d = (result.detail ?? {}) as {
+    error?: string; rule?: string; automotive_regime?: string;
+    bom?: { sku: string; originating: boolean; origin_source: string; line_value: string; country: string }[];
+    tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; except_codes?: string[]; components: { sku: string; shifted: boolean; in_exception?: boolean }[] };
+    rvc?: { method: string; threshold: string; rvc: string; vnm: string; transaction_value: string };
+  };
+  const ok = result.status === "QUALIFIES";
+  const insf = result.status === "INSUFFICIENT";
+  return (
+    <div className="mt-4 rounded-lg border border-zinc-200 p-3">
+      <div className="flex items-center gap-2">
+        <span className={cx("rounded-full px-2.5 py-0.5 text-sm font-semibold",
+          ok ? "bg-green-100 text-green-700" : insf ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
+          {ok ? "Originario: SÍ" : insf ? "Datos insuficientes" : "Originario: NO"}
+        </span>
+        {result.criterion && <span className="text-xs text-zinc-500">Criterio: <strong>{result.criterion}</strong></span>}
+        {result.rvc_value != null && <span className="text-xs text-zinc-500">VCR: <strong>{result.rvc_value}%</strong></span>}
+      </div>
+      {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
+      {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
+      {d.automotive_regime && (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          🚗 <strong>Régimen automotriz.</strong> {d.automotive_regime}
+        </div>
+      )}
+      {d.bom && d.bom.length > 0 && (
+        <div className="mt-2 text-xs">
+          <div className="font-semibold text-zinc-700">Insumos</div>
+          <ul className="mt-1 space-y-0.5">
+            {d.bom.map((l, i) => (
+              <li key={i} className={l.originating ? "text-green-700" : "text-red-700"}>
+                {l.originating ? "✓" : "✗"} {l.sku} — {l.originating ? "originario" : "no originario"} ({l.country || "—"}) · {l.origin_source} · valor {l.line_value}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {d.tariff_shift && (
+        <div className="mt-2 text-xs">
+          <div className="font-semibold text-zinc-700">Salto arancelario ({d.tariff_shift.shift_level})</div>
+          <div className="text-zinc-500">Valor que no salta: {d.tariff_shift.violating_value} ({d.tariff_shift.violating_pct}%) · de minimis permitido {d.tariff_shift.de_minimis}%
+            {d.tariff_shift.except_codes && d.tariff_shift.except_codes.length > 0 && <> · excepto desde {d.tariff_shift.except_codes.map(formatHs).join(", ")}</>}</div>
+        </div>
+      )}
+      {d.rvc && (
+        <div className="mt-2 text-xs">
+          <div className="font-semibold text-zinc-700">Valor de Contenido Regional (VCR)</div>
+          <div className="text-zinc-500">VCR {d.rvc.rvc}% vs umbral {d.rvc.threshold}% · método {d.rvc.method === "net_cost" ? "Costo neto" : "Valor de transacción"} · valor no originario {d.rvc.vnm} sobre base {d.rvc.transaction_value}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Cálculo de origen del producto de la EMPRESA a partir de su BOM, con toggle
+// por insumo (declaración del proveedor / periodo, o captura manual).
+function CalculoOrigenView() {
+  const productsL = useList<Product>(() => api.products());
+  const treatiesL = useList<Treaty>(() => api.treaties());
+  const [productId, setProductId] = useState<number | "">("");
+  const [treatyId, setTreatyId] = useState<number | "">("");
+  const [comps, setComps] = useState<BomOriginComponent[]>([]);
+  const [loadingBom, setLoadingBom] = useState(false);
+  const [result, setResult] = useState<OriginCalcResult | null>(null);
+  const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
+  const productos = productsL.data.filter((p) => p.kind !== "material");
+
+  useEffect(() => {
+    if (treatyId === "" && treatiesL.data.length) {
+      const tmec = treatiesL.data.find((t) => t.code === "TMEC");
+      setTreatyId(tmec ? tmec.id : treatiesL.data[0].id);
+    }
+  }, [treatiesL.data, treatyId]);
+
+  const loadBom = useCallback(async () => {
+    if (!productId || !treatyId) { setComps([]); return; }
+    setLoadingBom(true); setResult(null);
+    try { const r = await api.productBomOrigin(Number(productId), Number(treatyId)); setComps(r.components); }
+    catch (e) { setMsg((e as Error).message); }
+    finally { setLoadingBom(false); }
+  }, [productId, treatyId]);
+  useEffect(() => { loadBom(); }, [loadBom]);
+
+  async function patch(c: BomOriginComponent, payload: Record<string, unknown>) {
+    setMsg("");
+    try { await api.updateBomComponent(c.id, payload); await loadBom(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function calcular() {
+    if (!productId || !treatyId) return;
+    setCalc(true); setMsg("");
+    try { setResult(await api.calcBomOrigin(Number(productId), Number(treatyId))); }
+    catch (e) { setMsg((e as Error).message); }
+    finally { setCalc(false); }
+  }
+
+  return (
+    <div>
+      <PageTitle title="Cálculo de origen" desc="Calcula el origen de tus productos a partir de su BOM. Por cada insumo elige si tomas el origen que declaró el proveedor o lo capturas tú." />
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="min-w-[18rem]">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Producto</span>
+          <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+            <option value="">Elige un producto…</option>
+            {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
+          </select>
+        </div>
+        <div className="min-w-[16rem]">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</span>
+          <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+            {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
+          </select>
+        </div>
+        <Btn onClick={calcular} disabled={!productId || !treatyId || comps.length === 0 || calc}>
+          {calc ? "Calculando…" : "Calcular origen"}
+        </Btn>
+      </div>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+
+      {!productId && <p className="text-sm text-zinc-400">Elige un producto para ver su lista de materiales.</p>}
+      {productId && !loadingBom && comps.length === 0 && (
+        <p className="text-sm text-zinc-400">Este producto no tiene BOM. Agrégalo en “Productos” → botón “BOM”.</p>
+      )}
+      {comps.length > 0 && (
+        <Card className="overflow-x-auto p-0">
+          <table className="w-full text-sm">
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
+              <tr>
+                <th className="px-4 py-2.5">Insumo</th>
+                <th className="px-4 py-2.5">Proveedor</th>
+                <th className="px-4 py-2.5">Valor</th>
+                <th className="px-4 py-2.5">Fuente de origen</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {comps.map((c) => {
+                const supplierMode = c.origin_mode === "supplier";
+                const valor = (Number(c.component_unit_cost || 0) * Number(c.quantity || 0)).toFixed(2);
+                return (
+                  <tr key={c.id} className="align-top">
+                    <td className="px-4 py-3">
+                      <div className="font-mono text-xs">{c.component_sku}</div>
+                      <div className="text-xs text-zinc-500">{c.component_description}</div>
+                      <div className="text-[11px] text-zinc-400">HS {c.component_hs ? formatHs(c.component_hs) : "—"} · cant. {c.quantity}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs">{valor}</td>
+                    <td className="px-4 py-3">
+                      <label className="flex items-center gap-2 text-xs font-medium text-zinc-700">
+                        <input type="checkbox" checked={supplierMode}
+                          onChange={(e) => patch(c, { origin_mode: e.target.checked ? "supplier" : "manual" })} />
+                        Usar origen declarado por el proveedor
+                      </label>
+                      {supplierMode ? (
+                        <div className="mt-2">
+                          {c.declarations.length === 0 ? (
+                            <span className="text-[11px] text-amber-600">⚠️ Este proveedor aún no entrega declaración para este tratado.</span>
+                          ) : (
+                            <select value={c.origin_as_of ?? ""} onChange={(e) => patch(c, { origin_as_of: e.target.value || null })}
+                              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                              <option value="">Más reciente</option>
+                              {c.declarations.map((d, i) => (
+                                <option key={i} value={d.valid_from ?? ""}>
+                                  {d.valid_from} → {d.valid_to} · {d.is_originating ? "Originario" : "No originario"} ({d.country || "—"})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select value={c.manual_is_originating ? "1" : "0"} onChange={(e) => patch(c, { manual_is_originating: e.target.value === "1" })}
+                            className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                            <option value="1">Originario</option>
+                            <option value="0">No originario</option>
+                          </select>
+                          <input value={c.manual_country ?? ""} maxLength={2} placeholder="País"
+                            onChange={(e) => patch(c, { manual_country: e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2) })}
+                            className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-xs uppercase" />
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+      {result && <OriginResultReport result={result} />}
     </div>
   );
 }

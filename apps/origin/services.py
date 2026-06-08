@@ -115,6 +115,131 @@ def _save_bom_result(bom, rule, result):
     return result
 
 
+def _resolve_component_origin(bc, treaty, default_as_of):
+    """Resuelve el origen de UN insumo del BOM de la empresa según su toggle.
+
+    - origin_mode MANUAL: usa lo que capturó la empresa.
+    - origin_mode SUPPLIER: usa la declaración del proveedor (la del periodo
+      `origin_as_of`, o la del periodo global pedido, o la MÁS RECIENTE). Si no
+      hay declaración, cae a país miembro y, en último caso, a no originario.
+    """
+    from apps.catalog.models import SupplierDeclaration
+
+    comp = bc.component
+    value = (comp.unit_cost or Decimal("0")) * (bc.quantity or Decimal("0"))
+    members = treaty.member_countries or []
+
+    if bc.origin_mode == "manual":
+        return {"originating": bool(bc.manual_is_originating),
+                "country": (bc.manual_country or "").upper(),
+                "value": value, "source": "Captura manual de la empresa"}
+
+    as_of = bc.origin_as_of or default_as_of
+    qs = SupplierDeclaration.objects.filter(product=comp, treaty=treaty)
+    if comp.supplier_id:
+        qs = qs.filter(supplier_id=comp.supplier_id)
+    decl = None
+    if as_of:
+        decl = qs.filter(valid_from__lte=as_of, valid_to__gte=as_of).order_by("-valid_from").first()
+    if decl is None:
+        decl = qs.order_by("-valid_from", "-created_at").first()
+    if decl:
+        return {"originating": decl.is_originating,
+                "country": (decl.country_of_origin or "").upper(),
+                "value": value,
+                "source": f"Declaración del proveedor {decl.valid_from} → {decl.valid_to}"}
+    if comp.country_of_origin and comp.country_of_origin.upper() in members:
+        return {"originating": True, "country": comp.country_of_origin.upper(),
+                "value": value, "source": "País miembro (sin declaración)"}
+    return {"originating": False, "country": (comp.country_of_origin or "").upper(),
+            "value": value, "source": "Sin declaración de origen"}
+
+
+def calculate_product_origin(product, treaty, as_of=None, user=None):
+    """Calcula el origen del producto terminado de la EMPRESA a partir de SU BOM
+    (BOMComponent), resolviendo el origen de cada insumo según su toggle.
+    Guarda/actualiza la Qualification y devuelve el resultado con su traza."""
+    components = list(product.bom_components.select_related("component").all())
+    if not components:
+        return _save_qual(product, treaty, None, {
+            "status": "INSUFFICIENT", "criterion": "", "rvc_value": None,
+            "detail": {"error": "El producto no tiene lista de materiales (BOM)."}}, user)
+    rule = engine.find_rule(treaty, product.hs_code or "")
+    if rule is None:
+        return _save_qual(product, treaty, None, {
+            "status": "INSUFFICIENT", "criterion": "", "rvc_value": None,
+            "detail": {"error": f"No hay regla de origen para HS "
+                                f"{product.hs_code} en {treaty.code}."}}, user)
+
+    total = Decimal("0")
+    vnm = Decimal("0")
+    lines = []
+    for bc in components:
+        info = _resolve_component_origin(bc, treaty, as_of)
+        val = info["value"]
+        total += val
+        if not info["originating"]:
+            vnm += val
+        lines.append({
+            "sku": bc.component.sku, "description": bc.component.description,
+            "hs_code": bc.component.hs_code or "", "quantity": str(bc.quantity),
+            "unit_cost": str(bc.component.unit_cost), "line_value": str(val),
+            "originating": info["originating"], "country": info["country"],
+            "origin_source": info["source"],
+        })
+
+    transaction_value = product.unit_cost if product.unit_cost else total
+    rt = rule.rule_type
+    params = dict(rule.params or {})
+    params.setdefault("rvc_method", "transaction")
+    shift_level = params.get("shift_level", "CTH")
+    de_minimis = params.get("de_minimis", treaty.de_minimis_pct)
+    if (params.get("extra") or {}).get("de_minimis_excluded"):
+        de_minimis = 0
+    except_codes = params.get("ctc_except", [])
+    fake_product = SimpleNamespace(hs_code=product.hs_code or "")
+    detail = {"rule": str(rule), "rule_type": rt, "bom": lines, "total_value": str(total)}
+
+    ctc_pass = rvc_pass = None
+    rvc_value = None
+    if rt in ("CTC", "CTC_OR_RVC", "CTC_AND_RVC"):
+        ctc_pass, ctc_detail = engine._check_tariff_shift(
+            fake_product, lines, shift_level, de_minimis, total, except_codes=except_codes)
+        detail["tariff_shift"] = ctc_detail
+    if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
+        rvc_pass, rvc_value, rvc_detail = engine._check_rvc(treaty, params, transaction_value, vnm)
+        detail["rvc"] = rvc_detail
+    note = engine.automotive_note(params)
+    if note:
+        detail["automotive_regime"] = note
+
+    if rt == "WO":
+        passed, criterion = (bool(lines) and all(l["originating"] for l in lines)), "WO"
+    elif rt == "CTC":
+        passed, criterion = bool(ctc_pass), "CTC"
+    elif rt == "RVC":
+        passed, criterion = bool(rvc_pass), "RVC"
+    elif rt == "CTC_OR_RVC":
+        passed = bool(ctc_pass) or bool(rvc_pass)
+        criterion = "CTC" if ctc_pass else ("RVC" if rvc_pass else "CTC_OR_RVC")
+    else:  # CTC_AND_RVC
+        passed = bool(ctc_pass) and bool(rvc_pass)
+        criterion = "CTC_AND_RVC"
+
+    return _save_qual(product, treaty, rule, {
+        "status": "QUALIFIES" if passed else "DOES_NOT",
+        "criterion": criterion, "rvc_value": rvc_value, "detail": detail}, user)
+
+
+def _save_qual(product, treaty, rule, result, user):
+    Qualification.objects.update_or_create(
+        tenant=product.tenant, product=product, treaty=treaty,
+        defaults={"status": result["status"], "criterion": result["criterion"],
+                  "rvc_value": result["rvc_value"], "rule_id": rule.pk if rule else None,
+                  "detail": result["detail"], "computed_by": user})
+    return result
+
+
 def qualify_and_save(product, treaty, user=None, as_of=None):
     """Ejecuta el motor y guarda/actualiza la Qualification del producto×tratado."""
     result = engine.qualify(product, treaty, as_of=as_of)

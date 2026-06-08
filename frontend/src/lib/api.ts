@@ -42,6 +42,23 @@ export type Product = {
   hs_logs?: HsLog[];
 };
 export type Treaty = { id: number; code: string; name: string };
+export type BomComponent = {
+  id: number; parent: number; component: number; quantity: string;
+  origin_mode: "supplier" | "manual"; origin_as_of: string | null;
+  manual_is_originating: boolean; manual_country: string;
+  component_sku?: string; component_description?: string; component_hs?: string;
+  component_unit_cost?: string; component_supplier_name?: string | null;
+};
+export type ComponentDeclaration = {
+  valid_from: string | null; valid_to: string | null;
+  is_originating: boolean; country: string;
+};
+export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[] };
+export type BomOriginResponse = { product: Product; components: BomOriginComponent[] };
+export type OriginCalcResult = {
+  status: string; criterion: string; rvc_value: string | number | null;
+  detail: Record<string, unknown>;
+};
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {
   id: number; kind: string; kind_display?: string; name: string;
@@ -151,6 +168,19 @@ export const api = {
     }),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
+  bomComponents: (parentId: number) => req(`/bom-components/?parent=${parentId}`),
+  addBomComponent: (payload: Record<string, unknown>) =>
+    req("/bom-components/", { method: "POST", body: JSON.stringify(payload) }),
+  updateBomComponent: (id: number, payload: Record<string, unknown>) =>
+    req(`/bom-components/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBomComponent: (id: number) =>
+    req(`/bom-components/${id}/`, { method: "DELETE" }),
+  productBomOrigin: (id: number, treaty: number): Promise<BomOriginResponse> =>
+    req(`/products/${id}/bom-origin/?treaty=${treaty}`),
+  calcBomOrigin: (id: number, treaty: number, as_of?: string | null): Promise<OriginCalcResult> =>
+    req(`/products/${id}/calc-bom-origin/`, {
+      method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null }),
+    }),
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
   parties: () => req("/parties/"),

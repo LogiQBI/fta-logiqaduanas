@@ -92,9 +92,21 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class BOMComponentSerializer(serializers.ModelSerializer):
+    component_sku = serializers.CharField(source="component.sku", read_only=True)
+    component_description = serializers.CharField(source="component.description", read_only=True)
+    component_hs = serializers.CharField(source="component.hs_code", read_only=True)
+    component_unit_cost = serializers.DecimalField(
+        source="component.unit_cost", max_digits=14, decimal_places=4, read_only=True)
+    component_supplier_name = serializers.CharField(
+        source="component.supplier.name", read_only=True, default=None)
+
     class Meta:
         model = BOMComponent
-        fields = "__all__"
+        fields = ["id", "parent", "component", "quantity", "origin_mode",
+                  "origin_as_of", "manual_is_originating", "manual_country",
+                  "component_sku", "component_description", "component_hs",
+                  "component_unit_cost", "component_supplier_name"]
+        read_only_fields = ["tenant"]
 
 
 class SupplierDeclarationSerializer(serializers.ModelSerializer):

@@ -29,7 +29,8 @@ from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin.models import Certificate, Qualification
 from apps.origin.services import (
-    calculate_bom_origin, certificate_elements, issue_certificate, qualify_and_save,
+    calculate_bom_origin, calculate_product_origin, certificate_elements,
+    issue_certificate, qualify_and_save,
 )
 from apps.tenants.models import Membership, Tenant, UserSecurity
 from apps.treaties.models import OriginRule, Treaty
@@ -438,11 +439,76 @@ class ProductViewSet(TenantScopedViewSet):
             "solicitudes": s.SolicitationRequestSerializer(created, many=True).data,
         })
 
+    @action(detail=True, methods=["get"], url_path="bom-origin")
+    def bom_origin(self, request, pk=None):
+        """Devuelve el BOM del producto y, por cada insumo, las declaraciones de
+        proveedor disponibles para el tratado (para el toggle de la empresa)."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede ver el cálculo de origen.")
+        product = self.get_object()
+        treaty_id = request.query_params.get("treaty")
+        comps = []
+        for bc in product.bom_components.select_related("component", "component__supplier").all():
+            decls = []
+            if treaty_id:
+                qs = SupplierDeclaration.objects.filter(
+                    product=bc.component, treaty_id=treaty_id).order_by("-valid_from")
+                decls = [{"valid_from": d.valid_from, "valid_to": d.valid_to,
+                          "is_originating": d.is_originating,
+                          "country": d.country_of_origin} for d in qs]
+            comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls})
+        return Response({"product": s.ProductSerializer(product).data, "components": comps})
+
+    @action(detail=True, methods=["post"], url_path="calc-bom-origin")
+    def calc_bom_origin(self, request, pk=None):
+        """Calcula el origen del producto a partir de SU BOM, para un tratado.
+        Body: {treaty, as_of?}. Guarda la Qualification y devuelve la traza."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede calcular el origen.")
+        product = self.get_object()
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        if not treaty:
+            return Response({"error": "Falta el tratado o no existe."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from django.utils.dateparse import parse_date
+        raw = request.data.get("as_of")
+        as_of = parse_date(raw) if raw else None
+        result = calculate_product_origin(product, treaty, as_of=as_of, user=request.user)
+        return Response(result)
+
 
 class BOMComponentViewSet(TenantScopedViewSet):
+    """Lista de materiales (BOM) de los productos de la EMPRESA. Solo la empresa
+    la gestiona; los proveedores no la ven (supplier_field = None)."""
     queryset = BOMComponent.objects.all()
     serializer_class = s.BOMComponentSerializer
-    # supplier_field = None -> los proveedores no ven el BOM de la empresa
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("component", "component__supplier")
+        parent = self.request.query_params.get("parent")
+        if parent:
+            qs = qs.filter(parent_id=parent)
+        return qs.order_by("id")
+
+    def _require_company(self):
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede gestionar la lista de materiales.")
+        return m
+
+    def perform_create(self, serializer):
+        m = self._require_company()
+        serializer.save(tenant=m.tenant)
+
+    def perform_update(self, serializer):
+        self._require_company()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_company()
+        instance.delete()
 
 
 class SupplierDeclarationViewSet(TenantScopedViewSet):

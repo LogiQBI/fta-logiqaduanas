@@ -149,11 +149,31 @@ class HsChangeLog(TenantOwnedModel):
 
 class BOMComponent(TenantOwnedModel):
     """Línea de lista de materiales: un producto padre se compone de componentes.
-    Como el componente es a su vez un Product, el BOM puede ser multinivel."""
+    Como el componente es a su vez un Product, el BOM puede ser multinivel.
+
+    Para el cálculo de origen de la EMPRESA, cada componente define DE DÓNDE sale
+    su información de origen (toggle):
+      - SUPPLIER: de la declaración que el proveedor entregó (la más reciente o la
+        de un periodo concreto vía `origin_as_of`).
+      - MANUAL: la empresa la captura a mano (`manual_is_originating`/`manual_country`).
+    """
+
+    class OriginMode(models.TextChoices):
+        SUPPLIER = "supplier", "Declaración del proveedor"
+        MANUAL = "manual", "Captura manual de la empresa"
 
     parent = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="bom_components")
     component = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="used_in")
     quantity = models.DecimalField("Cantidad", max_digits=14, decimal_places=4, default=1)
+
+    origin_mode = models.CharField("Fuente de origen", max_length=20,
+                                   choices=OriginMode.choices, default=OriginMode.SUPPLIER)
+    # Si está vacío y el modo es SUPPLIER, se toma la declaración MÁS RECIENTE.
+    # Si tiene fecha, se toma la declaración vigente en ese periodo.
+    origin_as_of = models.DateField("Periodo (fecha) de la declaración", null=True, blank=True)
+    # Captura manual (cuando origin_mode = MANUAL).
+    manual_is_originating = models.BooleanField("¿Originario? (manual)", default=False)
+    manual_country = models.CharField("País de origen (manual, ISO-2)", max_length=2, blank=True)
 
     class Meta:
         verbose_name = "Componente de BOM"
