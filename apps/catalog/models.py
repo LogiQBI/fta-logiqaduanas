@@ -50,6 +50,34 @@ class Party(TenantOwnedModel):
         return f"{self.name} ({self.get_kind_display()})"
 
 
+class SupplierProfile(TenantOwnedModel):
+    """Datos de la empresa del PROVEEDOR (los captura él mismo) + firma en PNG.
+    Se usan para generar el certificado de origen. Uno por proveedor (Party)."""
+
+    party = models.OneToOneField(Party, on_delete=models.CASCADE, related_name="profile")
+    legal_name = models.CharField("Razón social", max_length=255, blank=True)
+    tax_id = models.CharField("RFC / Tax ID", max_length=30, blank=True)
+    address = models.CharField("Domicilio", max_length=255, blank=True)
+    city = models.CharField("Ciudad", max_length=120, blank=True)
+    state = models.CharField("Estado / Provincia", max_length=120, blank=True)
+    postal_code = models.CharField("Código postal", max_length=20, blank=True)
+    country = models.CharField("País (ISO-2)", max_length=2, blank=True)
+    contact_name = models.CharField("Nombre de contacto", max_length=255, blank=True)
+    contact_email = models.EmailField("Correo de contacto", blank=True)
+    contact_phone = models.CharField("Teléfono de contacto", max_length=30, blank=True)
+    signatory_name = models.CharField("Nombre de quien firma", max_length=255, blank=True)
+    signatory_title = models.CharField("Cargo de quien firma", max_length=120, blank=True)
+    # PNG en base64 (data URL). Railway tiene almacenamiento efímero -> en BD.
+    signature_png = models.TextField("Firma (PNG en base64)", blank=True)
+
+    class Meta:
+        verbose_name = "Datos del proveedor"
+        verbose_name_plural = "Datos del proveedor"
+
+    def __str__(self):
+        return f"Datos de {self.party.name}"
+
+
 class Product(TenantOwnedModel):
     """Parte, material o producto terminado. Un producto puede tener BOM (subniveles)."""
 
@@ -177,6 +205,8 @@ class SolicitationRequest(TenantOwnedModel):
         PENDING = "pending", "Pendiente de enviar"
         SENT = "sent", "Enviada al proveedor"
         RESPONDED = "responded", "Respondida"
+        ACCEPTED = "accepted", "Aceptada por cliente"
+        REJECTED = "rejected", "Rechazada por cliente"
         EXPIRED = "expired", "Vencida"
 
     class Period(models.TextChoices):
@@ -197,6 +227,7 @@ class SolicitationRequest(TenantOwnedModel):
     # Si está activo, el proveedor debe subir el BOM (lista de materiales) en vez
     # de solo declarar origen. El cálculo de origen se hace en otro módulo.
     bom_analysis = models.BooleanField("Análisis por BOM", default=False)
+    rejection_reason = models.TextField("Motivo de rechazo", blank=True)
     token = models.CharField(max_length=64, unique=True, default=_new_token, editable=False)
     due_date = models.DateField("Fecha límite", null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)

@@ -18,4 +18,5 @@ urlpatterns = [
     path("login/", views.login_view, name="api-login"),
     path("me/", views.me, name="api-me"),
     path("change-password/", views.change_password, name="api-change-password"),
+    path("supplier-profile/", views.supplier_profile_view, name="supplier-profile"),
 ] + router.urls

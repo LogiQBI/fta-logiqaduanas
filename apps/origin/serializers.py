@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.catalog.models import (
     BOMComponent, Party, Product, SolicitationBOM, SolicitationBOMLine,
-    SolicitationRequest, SupplierDeclaration,
+    SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
 from apps.origin.models import Certificate, Qualification
 from apps.treaties.models import OriginRule, Treaty
@@ -103,6 +103,26 @@ class SupplierDeclarationSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class SupplierProfileSerializer(serializers.ModelSerializer):
+    party_name = serializers.CharField(source="party.name", read_only=True)
+    party_code = serializers.CharField(source="party.code", read_only=True)
+
+    class Meta:
+        model = SupplierProfile
+        fields = ["id", "party", "party_name", "party_code", "legal_name", "tax_id",
+                  "address", "city", "state", "postal_code", "country",
+                  "contact_name", "contact_email", "contact_phone",
+                  "signatory_name", "signatory_title", "signature_png"]
+        read_only_fields = ["party"]
+
+    def validate_signature_png(self, value):
+        # Evita firmas gigantes en BD (~3 MB de base64).
+        if value and len(value) > 3_000_000:
+            raise serializers.ValidationError(
+                "La imagen de la firma es muy grande. Usa un PNG más pequeño.")
+        return value
+
+
 class QualificationSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -152,14 +172,37 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
     treaty_de_minimis = serializers.DecimalField(
         source="treaty.de_minimis_pct", max_digits=5, decimal_places=2, read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    supplier_country = serializers.CharField(source="supplier.country", read_only=True)
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
     submitted_bom = serializers.SerializerMethodField()
     logs = serializers.SerializerMethodField()
     suggested_rule = serializers.SerializerMethodField()
     origin_hint = serializers.SerializerMethodField()
     declared_originating = serializers.SerializerMethodField()
+    declaration_detail = serializers.SerializerMethodField()
+    supplier_profile = serializers.SerializerMethodField()
 
     def get_declared_originating(self, obj):
         return obj.declaration.is_originating if obj.declaration_id else None
+
+    def get_declaration_detail(self, obj):
+        d = obj.declaration if obj.declaration_id else None
+        if not d:
+            return None
+        return {
+            "is_originating": d.is_originating, "country_of_origin": d.country_of_origin,
+            "rule_description": d.rule.description if d.rule_id else None,
+            "rule_type": d.rule.rule_type if d.rule_id else None,
+            "value_originating": str(d.value_originating),
+            "value_non_originating": str(d.value_non_originating),
+            "valid_from": d.valid_from, "valid_to": d.valid_to,
+        }
+
+    def get_supplier_profile(self, obj):
+        prof = getattr(obj.supplier, "profile", None)
+        if not prof:
+            return None
+        return SupplierProfileSerializer(prof).data
 
     def _psr(self, obj):
         if not hasattr(obj, "_psr_cache"):
@@ -199,6 +242,8 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
         "copied_previous": "Información traída de periodo anterior",
         "sent": "Enviada al cliente",
         "sent_unchanged": "Enviada SIN cambios vs periodo anterior",
+        "accepted": "Aceptada por el cliente",
+        "rejected": "Rechazada por el cliente",
     }
 
     def get_logs(self, obj):

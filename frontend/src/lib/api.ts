@@ -80,6 +80,19 @@ export type SolLog = {
   action: string; action_label: string; detail: string;
   user: string | null; created_at: string;
 };
+export type SupplierProfile = {
+  id?: number; party?: number; party_name?: string; party_code?: string;
+  legal_name: string; tax_id: string; address: string; city: string;
+  state: string; postal_code: string; country: string;
+  contact_name: string; contact_email: string; contact_phone: string;
+  signatory_name: string; signatory_title: string; signature_png: string;
+};
+export type DeclarationDetail = {
+  is_originating: boolean; country_of_origin: string;
+  rule_description: string | null; rule_type: string | null;
+  value_originating: string; value_non_originating: string;
+  valid_from: string | null; valid_to: string | null;
+};
 export type Solicitation = {
   id: number; product: number; supplier: number; treaty: number;
   status: string; status_display: string; due_date: string | null;
@@ -88,9 +101,13 @@ export type Solicitation = {
   bom_analysis: boolean; submitted_bom: SubmittedBom | null;
   product_sku?: string; product_description?: string; product_hs?: string;
   product_unit_cost?: string; treaty_code?: string; supplier_name?: string;
+  supplier_country?: string; tenant_name?: string;
   treaty_members?: string[]; treaty_de_minimis?: string; logs?: SolLog[];
   suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
   origin_hint?: string; declared_originating?: boolean | null;
+  declaration_detail?: DeclarationDetail | null;
+  supplier_profile?: SupplierProfile | null;
+  rejection_reason?: string;
 };
 
 export const api = {
@@ -204,6 +221,13 @@ export const api = {
     }),
   copyPrevious: (solicitationId: number) =>
     req(`/solicitations/${solicitationId}/copy-previous/`, { method: "POST" }),
+  acceptSolicitud: (id: number) =>
+    req(`/solicitations/${id}/accept/`, { method: "POST" }),
+  rejectSolicitud: (id: number, reason: string) =>
+    req(`/solicitations/${id}/reject/`, { method: "POST", body: JSON.stringify({ reason }) }),
+  supplierProfile: (): Promise<SupplierProfile> => req("/supplier-profile/"),
+  updateSupplierProfile: (payload: Partial<SupplierProfile>) =>
+    req("/supplier-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

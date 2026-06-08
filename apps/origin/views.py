@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from apps.catalog.models import (
     BOMComponent, HsChangeLog, Party, Product, RuleDisplay, SolicitationBOM,
     SolicitationBOMLine, SolicitationLog, SolicitationRequest, SupplierDeclaration,
+    SupplierProfile,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -635,13 +636,53 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         if not bom.origin_status:
             return Response({"error": "Primero calcula el origen antes de enviar."},
                             status=status.HTTP_400_BAD_REQUEST)
+        if sr.status == SolicitationRequest.Status.ACCEPTED:
+            return Response({"error": "Esta solicitud ya fue aceptada por el cliente."},
+                            status=status.HTTP_400_BAD_REQUEST)
         sr.status = SolicitationRequest.Status.RESPONDED
         sr.responded_at = timezone.now()
-        sr.save(update_fields=["status", "responded_at", "updated_at"])
+        sr.rejection_reason = ""  # al reenviar se limpia el rechazo previo
+        sr.save(update_fields=["status", "responded_at", "rejection_reason", "updated_at"])
         unchanged = bool(request.data.get("unchanged"))
         _log_sol(sr, "sent_unchanged" if unchanged else "sent",
                  "SIN cambios respecto al periodo anterior" if unchanged else "",
                  request.user)
+        return Response(s.SolicitationRequestSerializer(sr).data)
+
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        """La EMPRESA acepta la declaración respondida por el proveedor."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede aceptar o rechazar.")
+        sr = self.get_object()
+        if sr.status != SolicitationRequest.Status.RESPONDED:
+            return Response({"error": "Solo puedes aceptar solicitudes respondidas."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        sr.status = SolicitationRequest.Status.ACCEPTED
+        sr.rejection_reason = ""
+        sr.save(update_fields=["status", "rejection_reason", "updated_at"])
+        _log_sol(sr, "accepted", "", request.user)
+        return Response(s.SolicitationRequestSerializer(sr).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        """La EMPRESA rechaza la declaración indicando el motivo (texto libre)."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede aceptar o rechazar.")
+        sr = self.get_object()
+        if sr.status != SolicitationRequest.Status.RESPONDED:
+            return Response({"error": "Solo puedes rechazar solicitudes respondidas."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"error": "Indica el motivo del rechazo."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        sr.status = SolicitationRequest.Status.REJECTED
+        sr.rejection_reason = reason
+        sr.save(update_fields=["status", "rejection_reason", "updated_at"])
+        _log_sol(sr, "rejected", reason[:200], request.user)
         return Response(s.SolicitationRequestSerializer(sr).data)
 
     @action(detail=True, methods=["post"], url_path="calculate-origin")
@@ -667,7 +708,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             return Response({"error": "Esta solicitud requiere análisis por BOM. "
                              "Sube el BOM en vez de declarar manualmente."},
                             status=status.HTTP_400_BAD_REQUEST)
-        if sr.status == SolicitationRequest.Status.RESPONDED:
+        if sr.status in (SolicitationRequest.Status.RESPONDED, SolicitationRequest.Status.ACCEPTED):
             return Response({"error": "Esta solicitud ya fue respondida."},
                             status=status.HTTP_400_BAD_REQUEST)
         d = request.data
@@ -702,7 +743,8 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         sr.declaration = decl
         sr.status = SolicitationRequest.Status.RESPONDED
         sr.responded_at = timezone.now()
-        sr.save(update_fields=["declaration", "status", "responded_at", "updated_at"])
+        sr.rejection_reason = ""
+        sr.save(update_fields=["declaration", "status", "responded_at", "rejection_reason", "updated_at"])
         return Response(s.SolicitationRequestSerializer(sr).data)
 
 
@@ -784,6 +826,24 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key})
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def supplier_profile_view(request):
+    """El PROVEEDOR consulta y edita los datos de su empresa y su firma (PNG),
+    que se usan para generar el certificado de origen."""
+    m = request.user.memberships.select_related("party", "tenant").first()
+    if not m or not m.is_supplier or not m.party_id:
+        raise PermissionDenied("Solo el proveedor puede gestionar los datos de su empresa.")
+    prof, _ = SupplierProfile.objects.get_or_create(
+        party=m.party, defaults={"tenant": m.tenant})
+    if request.method == "GET":
+        return Response(s.SupplierProfileSerializer(prof).data)
+    ser = s.SupplierProfileSerializer(prof, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
 
 
 @api_view(["POST"])

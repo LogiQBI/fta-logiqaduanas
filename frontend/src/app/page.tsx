@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import {
   api, BomLine, clearToken, getToken, MasterTenant, Me, OriginRule, Party,
-  Product, Qualification, Solicitation, SubmittedBom, SupplierUser, Treaty,
+  Product, Qualification, Solicitation, SubmittedBom, SupplierProfile,
+  SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
@@ -257,11 +258,15 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
   if (me.is_supplier) {
     return [
       { items: [{ key: "home", label: "Inicio", icon: Home }] },
+      { label: "Mi empresa", items: [
+        { key: "datos-empresa", label: "Datos de la empresa", icon: Building2 },
+      ] },
       { label: "Catálogo", items: [
         { key: "mis-productos", label: "Productos", icon: Package },
       ] },
       { label: "Origen", items: [
         { key: "mis-solicitudes", label: "Solicitudes de cliente", icon: Inbox, badge: badges.pendientes },
+        { key: "aceptadas", label: "Declaraciones aceptadas", icon: BadgeCheck },
         { key: "mis-declaraciones", label: "Mis declaraciones", icon: FileText },
       ] },
     ];
@@ -277,6 +282,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Certificados", icon: BadgeCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
+      { key: "aceptadas", label: "Declaraciones aceptadas", icon: BadgeCheck },
     ] },
     { label: "Referencia", items: [
       { key: "tratados", label: "Tratados (TLC)", icon: ScrollText },
@@ -396,6 +402,8 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "proveedores": return <ProveedoresView me={me} />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-productos": return <ProveedorProductosView />;
+    case "datos-empresa": return <DatosEmpresaView />;
+    case "aceptadas": return <DeclaracionesAceptadasView me={me} />;
     case "mis-solicitudes": return <MisSolicitudesView me={me} />;
     case "mis-declaraciones": return <MisDeclaracionesView />;
     default: return <HomeView me={me} go={go} />;
@@ -478,6 +486,7 @@ const STATUS_PILL: Record<string, string> = {
   active: "bg-green-100 text-green-700", suspended: "bg-red-100 text-red-700",
   expired: "bg-zinc-200 text-zinc-600", responded: "bg-green-100 text-green-700",
   pending: "bg-amber-100 text-amber-700", sent: "bg-blue-100 text-blue-700",
+  accepted: "bg-green-100 text-green-700", rejected: "bg-red-100 text-red-700",
 };
 function Pill({ k, children }: { k?: string; children: React.ReactNode }) {
   return <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_PILL[k ?? ""] ?? "bg-zinc-100 text-zinc-600")}>{children}</span>;
@@ -1616,12 +1625,254 @@ function OrigenCelda({ s }: { s: Solicitation }) {
     </div>
   );
 }
+// Abre una ventana imprimible con el certificado de origen del tratado.
+// Se imprime / guarda como PDF desde el navegador (sin librerías de servidor).
+function generarCertificado(s: Solicitation) {
+  const esc = (v?: string | null) =>
+    (v ?? "").replace(/[&<>"]/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const prof = s.supplier_profile;
+  const bom = s.submitted_bom;
+  const dd = s.declaration_detail;
+  const originario = bom ? bom.origin_status === "QUALIFIES"
+    : (dd ? dd.is_originating : (s.declared_originating ?? false));
+  const treaty = treatyLabel(s.treaty_code);
+  const psr = bom?.rule_hs
+    ? `${formatHs(bom.rule_hs)}${bom.rule_type ? " · " + ruleTypeLabel(bom.rule_type) : ""}`
+    : (dd?.rule_description ? cleanRuleDesc(dd.rule_description) : "—");
+  const criterio = bom?.criterion
+    ? `${bom.criterion}${bom.rvc_value != null ? ` · VCR ${bom.rvc_value}%` : ""}`
+    : (dd ? "Declaración de origen del proveedor" : "—");
+  const periodo = (s.period_from && s.period_to)
+    ? `${s.period_from} a ${s.period_to}` : "No especificado";
+  const proveedorNombre = prof?.legal_name || s.supplier_name || "—";
+  const dirProv = prof
+    ? [prof.address, [prof.postal_code, prof.city, prof.state].filter(Boolean).join(" "),
+       prof.country || s.supplier_country].filter(Boolean).join(", ")
+    : (s.supplier_country || "");
+  const hoy = new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
+  const firmaImg = prof?.signature_png
+    ? `<img src="${prof.signature_png}" alt="Firma" style="max-height:70px;max-width:260px"/>`
+    : `<span style="color:#b91c1c;font-size:12px">Firma pendiente — el proveedor debe cargarla en “Datos de la empresa”.</span>`;
+  const row = (k: string, v: string) =>
+    `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Certificación de Origen ${esc(treaty)} — ${esc(s.product_sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:13px}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:18px}
+  .brand{font-size:20px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:12px}
+  h1{font-size:16px;color:${NAVY};margin:0 0 2px} .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
+  .ok{background:#dcfce7;color:#15803d} .no{background:#fee2e2;color:#b91c1c}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px} td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:top}
+  td.k{background:#f8fafc;font-weight:bold;width:34%;color:#374151} td.v{width:66%}
+  .section{font-size:13px;font-weight:bold;color:${NAVY};margin:18px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+  .sign{display:flex;gap:40px;margin-top:36px} .sign div{flex:1;border-top:1px solid #9ca3af;padding-top:6px;font-size:12px}
+  .legal{margin-top:24px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
+  @media print{.noprint{display:none} body{padding:16px}}
+</style></head><body>
+  <div class="head">
+    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
+    <div style="text-align:right"><h1>Certificación de Origen</h1><div class="sub">Tratado: <b>${esc(treaty)}</b></div>
+      <div class="sub">Emitido: ${esc(hoy)}</div></div>
+  </div>
+
+  <div class="section">Resultado de origen</div>
+  <p><span class="badge ${originario ? "ok" : "no"}">${originario ? "PRODUCTO ORIGINARIO" : "PRODUCTO NO ORIGINARIO"}</span></p>
+
+  <div class="section">1. Mercancía</div>
+  <table>
+    ${row("Núm. de parte / SKU", esc(s.product_sku))}
+    ${row("Descripción", esc(s.product_description))}
+    ${row("Clasificación arancelaria (HS)", esc(s.product_hs ? formatHs(s.product_hs) : "—"))}
+    ${row("Regla aplicada (PSR)", esc(psr))}
+    ${row("Criterio de origen", esc(criterio))}
+  </table>
+
+  <div class="section">2. Productor / Exportador (Proveedor)</div>
+  <table>
+    ${row("Razón social", esc(proveedorNombre))}
+    ${row("RFC / Tax ID", esc(prof?.tax_id || "—"))}
+    ${row("Domicilio", esc(dirProv || "—"))}
+    ${row("Contacto", esc([prof?.contact_name, prof?.contact_email, prof?.contact_phone].filter(Boolean).join(" · ") || "—"))}
+  </table>
+
+  <div class="section">3. Importador (Cliente)</div>
+  <table>
+    ${row("Empresa", esc(s.tenant_name || "—"))}
+  </table>
+
+  <div class="section">4. Periodo que cubre (blanket period)</div>
+  <table>${row("Vigencia", esc(periodo))}</table>
+
+  <div class="section">5. Firma autorizada</div>
+  <div class="sign">
+    <div>${firmaImg}<br><b>${esc(prof?.signatory_name || prof?.contact_name || "—")}</b><br>
+      ${esc(prof?.signatory_title || "")}<br>${esc(proveedorNombre)}<br>Fecha: ${esc(hoy)}</div>
+  </div>
+
+  <div class="legal">
+    Esta certificación de origen se emite con base en la información declarada por el proveedor para el tratado ${esc(treaty)}.
+    El cálculo de origen es orientativo y debe ser validado por una persona con conocimientos técnicos en reglas de origen.
+    Documento generado por LogiQ Aduanas | FTA.
+  </div>
+
+  <div class="noprint" style="margin-top:24px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+  </div>
+</body></html>`;
+  const win = window.open("", "_blank", "width=900,height=1000");
+  if (!win) { alert("Permite las ventanas emergentes para generar el certificado."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+function DeclaracionesAceptadasView({ me }: { me: Me }) {
+  const { data, loading } = useList<Solicitation>(() => api.solicitations());
+  const [verBom, setVerBom] = useState<Solicitation | null>(null);
+  const esEmpresa = me.role !== "master" && !me.is_supplier;
+  const aceptadas = data.filter((s) => s.status === "accepted");
+  return (
+    <div>
+      <PageTitle title="Declaraciones aceptadas"
+        desc={esEmpresa ? "Declaraciones de origen aceptadas por ti. Genera el certificado de origen del tratado."
+          : "Tus declaraciones aceptadas por tus clientes. Genera el certificado de origen del tratado."} />
+      <Table head={["Núm. de parte", "Descripción", esEmpresa ? "Proveedor" : "Tipo", "Tratado", "Periodo", "Origen / PSR", ""]}>
+        {aceptadas.map((s) => (
+          <tr key={s.id}>
+            <td className="px-4 py-3 font-mono text-xs">{s.product_sku}</td>
+            <td className="px-4 py-3">{s.product_description}</td>
+            <td className="px-4 py-3 text-xs">{esEmpresa ? s.supplier_name : (s.bom_analysis ? "BOM" : "Declaración")}</td>
+            <td className="px-4 py-3">{treatyLabel(s.treaty_code)}</td>
+            <td className="px-4 py-3 text-xs text-zinc-600">{periodoTexto(s)}</td>
+            <td className="px-4 py-3"><OrigenCelda s={s} /></td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              {s.submitted_bom && <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn></span>}
+              <Btn size="sm" onClick={() => generarCertificado(s)}>Certificado</Btn>
+            </td>
+          </tr>
+        ))}
+        {!loading && aceptadas.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no hay declaraciones aceptadas.</td></tr>}
+      </Table>
+      <p className="mt-3 text-xs text-zinc-500">📄 El certificado se abre en una ventana nueva; usa “Imprimir / Guardar PDF” para descargarlo.
+        {esEmpresa ? " La firma proviene de los datos que cargó el proveedor." : " Carga tu firma en “Datos de la empresa” para que aparezca en el certificado."}</p>
+      {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
+    </div>
+  );
+}
+const EMPTY_PROFILE: SupplierProfile = {
+  legal_name: "", tax_id: "", address: "", city: "", state: "", postal_code: "",
+  country: "", contact_name: "", contact_email: "", contact_phone: "",
+  signatory_name: "", signatory_title: "", signature_png: "",
+};
+function DatosEmpresaView() {
+  const [form, setForm] = useState<SupplierProfile>(EMPTY_PROFILE);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  useEffect(() => {
+    api.supplierProfile().then((p) => setForm({ ...EMPTY_PROFILE, ...p }))
+      .catch((e) => setErr((e as Error).message)).finally(() => setLoading(false));
+  }, []);
+  const set = (k: keyof SupplierProfile, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  function onSignatureFile(file: File | undefined) {
+    setErr("");
+    if (!file) return;
+    if (!/png|jpe?g/i.test(file.type)) { setErr("La firma debe ser una imagen PNG o JPG."); return; }
+    if (file.size > 1_500_000) { setErr("La imagen es muy grande (máx. 1.5 MB). Usa una más ligera."); return; }
+    const reader = new FileReader();
+    reader.onload = () => set("signature_png", String(reader.result || ""));
+    reader.readAsDataURL(file);
+  }
+  async function save() {
+    setSaving(true); setMsg(""); setErr("");
+    try { await api.updateSupplierProfile(form); setMsg("Datos guardados."); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setSaving(false); }
+  }
+  if (loading) return <div className="p-6 text-sm text-zinc-400">Cargando…</div>;
+  return (
+    <div className="max-w-3xl">
+      <PageTitle title="Datos de la empresa"
+        desc="Información de contacto y firma de tu empresa. Se usan para generar el certificado de origen." />
+      <Card className="mb-4 p-5">
+        <div className="mb-3 text-sm font-semibold text-zinc-800">Información de la empresa</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Razón social"><input className={inputCls} value={form.legal_name} onChange={(e) => set("legal_name", e.target.value)} /></Field>
+          <Field label="RFC / Tax ID"><input className={inputCls} value={form.tax_id} onChange={(e) => set("tax_id", e.target.value)} /></Field>
+          <Field label="Domicilio"><input className={inputCls} value={form.address} onChange={(e) => set("address", e.target.value)} /></Field>
+          <Field label="Ciudad"><input className={inputCls} value={form.city} onChange={(e) => set("city", e.target.value)} /></Field>
+          <Field label="Estado / Provincia"><input className={inputCls} value={form.state} onChange={(e) => set("state", e.target.value)} /></Field>
+          <Field label="Código postal"><input className={inputCls} value={form.postal_code} onChange={(e) => set("postal_code", e.target.value)} /></Field>
+          <Field label="País"><CountryInput value={form.country} onChange={(v) => set("country", v)} /></Field>
+        </div>
+      </Card>
+      <Card className="mb-4 p-5">
+        <div className="mb-3 text-sm font-semibold text-zinc-800">Contacto</div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Nombre de contacto"><input className={inputCls} value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} /></Field>
+          <Field label="Correo de contacto"><input className={inputCls} type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} /></Field>
+          <Field label="Teléfono de contacto"><input className={inputCls} value={form.contact_phone} onChange={(e) => set("contact_phone", e.target.value)} /></Field>
+        </div>
+      </Card>
+      <Card className="mb-4 p-5">
+        <div className="mb-1 text-sm font-semibold text-zinc-800">Firma para los certificados</div>
+        <p className="mb-3 text-xs text-zinc-500">Sube una imagen PNG/JPG de tu firma (fondo transparente recomendado). Aparecerá en el certificado de origen.</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Nombre de quien firma"><input className={inputCls} value={form.signatory_name} onChange={(e) => set("signatory_name", e.target.value)} /></Field>
+          <Field label="Cargo de quien firma"><input className={inputCls} value={form.signatory_title} onChange={(e) => set("signatory_title", e.target.value)} /></Field>
+        </div>
+        <div className="mt-4">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Imagen de la firma</span>
+          {form.signature_png ? (
+            <div className="flex items-center gap-4">
+              <img src={form.signature_png} alt="Firma" className="max-h-20 rounded-lg border border-zinc-200 bg-white p-2" />
+              <Btn variant="ghost" size="sm" onClick={() => set("signature_png", "")}>Quitar firma</Btn>
+            </div>
+          ) : (
+            <input type="file" accept="image/png,image/jpeg"
+              onChange={(e) => onSignatureFile(e.target.files?.[0])}
+              className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+          )}
+        </div>
+      </Card>
+      {msg && <p className="mb-2 text-sm text-emerald-700">{msg}</p>}
+      {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+      <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar datos"}</Btn>
+    </div>
+  );
+}
+function RechazoModal({ s, onClose, onSaved }: { s: Solicitation; onClose: () => void; onSaved: () => void }) {
+  const [reason, setReason] = useState(""); const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function save() {
+    if (!reason.trim()) { setErr("Indica el motivo del rechazo."); return; }
+    setErr(""); setSaving(true);
+    try { await api.rejectSolicitud(s.id, reason.trim()); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Rechazar — ${s.product_sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">Explica el motivo del rechazo para que el proveedor pueda corregir y reenviar.</p>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} autoFocus
+        className={cx(inputCls, "h-28")} placeholder="Ej. Falta evidencia del componente X; el VCR no alcanza el umbral…" />
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn variant="danger" onClick={save} disabled={saving}>{saving ? "Rechazando…" : "Rechazar"}</Btn>
+      </div>
+    </Modal>
+  );
+}
 function SolicitudesEmpresaView() {
   const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
   const [open, setOpen] = useState(false);
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
+  const [rejecting, setRejecting] = useState<Solicitation | null>(null);
   const [periodo, setPeriodo] = useState("");
   const [msg, setMsg] = useState("");
+  async function aceptar(s: Solicitation) {
+    setMsg(""); try { await api.acceptSolicitud(s.id); setMsg("Declaración aceptada."); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
   // Periodos distintos presentes (para el filtro).
   const periodos = Array.from(new Set(data.map((s) => periodoTexto(s)).filter((p) => p !== "—")));
   const visibles = periodo ? data.filter((s) => periodoTexto(s) === periodo) : data;
@@ -1653,9 +1904,17 @@ function SolicitudesEmpresaView() {
               {s.due_date ?? "—"}
               {alert && <span className={cx("mt-1 block rounded-full px-2 py-0.5 text-[11px] font-medium", alert.cls)}>{alert.label}</span>}
             </td>
-            <td className="px-4 py-3"><Pill k={s.status}>{s.status_display}</Pill></td>
-            <td className="px-4 py-3 text-right">
-              {s.submitted_bom && <Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn>}
+            <td className="px-4 py-3">
+              <Pill k={s.status}>{s.status_display}</Pill>
+              {s.status === "rejected" && s.rejection_reason &&
+                <div className="mt-1 text-[11px] text-red-600">Motivo: {s.rejection_reason}</div>}
+            </td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              {s.submitted_bom && <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn></span>}
+              {s.status === "responded" && <>
+                <span className="mr-1 inline-block"><Btn size="sm" onClick={() => aceptar(s)}>Aceptar</Btn></span>
+                <Btn size="sm" variant="danger" onClick={() => setRejecting(s)}>Rechazar</Btn>
+              </>}
             </td>
           </tr>
           );
@@ -1663,6 +1922,8 @@ function SolicitudesEmpresaView() {
         {!loading && visibles.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">{count === 0 ? "Sin solicitudes todavía. Crea una con “Nueva solicitud”." : "Sin solicitudes para ese periodo."}</td></tr>}
       </Table>
       {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
+      {rejecting && <RechazoModal s={rejecting} onClose={() => setRejecting(null)}
+        onSaved={async () => { setRejecting(null); setMsg("Declaración rechazada."); await reload(); }} />}
       {open && <SolicitudForm onClose={() => setOpen(false)}
         onSaved={async (r) => {
           setOpen(false);
@@ -1941,7 +2202,21 @@ function SolAccordion({ s, defaultOpen, compact, children }: {
           <ChevronDown size={18} className={cx("text-zinc-400 transition-transform", open && "rotate-180")} />
         </div>
       </button>
-      {open && <div className="border-t border-zinc-100 p-5">{children}</div>}
+      {open && (
+        <div className="border-t border-zinc-100 p-5">
+          {s.status === "rejected" && s.rejection_reason && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              ❌ <strong>Rechazado por el cliente.</strong> Corrige y vuelve a enviar. Motivo: {s.rejection_reason}
+            </div>
+          )}
+          {s.status === "accepted" && (
+            <div className="mb-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+              ✓ <strong>Aceptada por el cliente.</strong> Disponible en “Declaraciones aceptadas”.
+            </div>
+          )}
+          {children}
+        </div>
+      )}
     </Card>
   );
 }
