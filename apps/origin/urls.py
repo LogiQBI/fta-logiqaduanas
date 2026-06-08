@@ -20,4 +20,6 @@ urlpatterns = [
     path("change-password/", views.change_password, name="api-change-password"),
     path("supplier-profile/", views.supplier_profile_view, name="supplier-profile"),
     path("company-profile/", views.company_profile_view, name="company-profile"),
+    path("bulk/template/", views.bulk_template, name="bulk-template"),
+    path("bulk/import/", views.bulk_import, name="bulk-import"),
 ] + router.urls

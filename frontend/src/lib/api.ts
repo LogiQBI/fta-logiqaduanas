@@ -27,6 +27,40 @@ async function req(path: string, opts: RequestInit = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+// Descarga un archivo (xlsx) autenticado y dispara la descarga en el navegador.
+async function downloadFile(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Token ${token}` } : {},
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
+// Sube un archivo (multipart) y devuelve el JSON de respuesta.
+async function uploadFile(path: string, file: File) {
+  const token = getToken();
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Token ${token}` } : {},
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+export type BulkResult = { creados: number; actualizados: number; errores: { fila: number; error: string }[] };
+
 export type HsLog = {
   old_hs: string; new_hs: string; action: string;
   suggested_by: string; note: string; created_at: string;
@@ -269,6 +303,10 @@ export const api = {
   companyProfile: (): Promise<CompanyProfile> => req("/company-profile/"),
   updateCompanyProfile: (payload: Partial<CompanyProfile>) =>
     req("/company-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
+  bulkTemplate: (type: string) => downloadFile(`/bulk/template/?type=${type}`, `plantilla_${type}.xlsx`),
+  bulkImport: (type: string, file: File): Promise<BulkResult> => uploadFile(`/bulk/import/?type=${type}`, file),
+  solicitudBomTemplate: () => downloadFile(`/bulk/template/?type=bom_response`, "plantilla_respuesta_bom.xlsx"),
+  importSolicitudBom: (id: number, file: File) => uploadFile(`/solicitations/${id}/import-bom/`, file),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

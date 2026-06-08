@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
-  Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator,
+  Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator, Upload,
 } from "lucide-react";
 import {
-  api, BomComponent, BomLine, BomOriginComponent, clearToken, getToken,
-  MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product, Qualification,
-  Solicitation, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
+  api, BomComponent, BomLine, BomOriginComponent, BulkResult, clearToken,
+  getToken, MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product,
+  Qualification, Solicitation, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
@@ -1203,6 +1203,69 @@ function BomEditorModal({ product, allProducts, onClose }: {
   );
 }
 
+// Modal reutilizable de carga masiva por Excel (.xlsx).
+function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn }: {
+  title: string; hint?: string; onClose: () => void; onDone: () => void;
+  templateFn: () => Promise<void>; importFn: (file: File) => Promise<unknown>;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState<BulkResult | null>(null);
+  const [ok, setOk] = useState(false);
+  async function descargar() {
+    setErr(""); try { await templateFn(); } catch (e) { setErr((e as Error).message); }
+  }
+  async function importar() {
+    if (!file) { setErr("Elige un archivo .xlsx."); return; }
+    setBusy(true); setErr(""); setResult(null); setOk(false);
+    try {
+      const r = await importFn(file);
+      if (r && typeof (r as BulkResult).creados === "number") setResult(r as BulkResult);
+      else setOk(true);
+      onDone();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={title} onClose={onClose} wide>
+      {hint && <p className="mb-3 text-sm text-zinc-500">{hint}</p>}
+      <ol className="space-y-3 text-sm">
+        <li className="flex items-center gap-3">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">1</span>
+          <span>Descarga la plantilla, llénala en Excel y guárdala.</span>
+          <Btn size="sm" variant="ghost" onClick={descargar}>Descargar plantilla</Btn>
+        </li>
+        <li className="flex items-center gap-3">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">2</span>
+          <span>Elige el archivo:</span>
+          <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+        </li>
+        <li className="flex items-center gap-3">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">3</span>
+          <Btn size="sm" onClick={importar} disabled={busy || !file}>{busy ? "Importando…" : "Importar"}</Btn>
+        </li>
+      </ol>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {ok && <p className="mt-3 text-sm text-emerald-700">✓ Cargado correctamente.</p>}
+      {result && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-3 text-sm">
+          <div className="text-emerald-700">✓ {result.creados} creados · {result.actualizados} actualizados</div>
+          {result.errores.length > 0 && (
+            <div className="mt-2">
+              <div className="font-semibold text-red-700">{result.errores.length} fila(s) con error:</div>
+              <ul className="mt-1 max-h-40 overflow-auto text-xs text-red-600">
+                {result.errores.map((e, i) => <li key={i}>Fila {e.fila}: {e.error}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
+
 // Reporte del resultado del cálculo de origen del producto de la empresa.
 function OriginResultReport({ result }: { result: OriginCalcResult }) {
   const d = (result.detail ?? {}) as {
@@ -1501,6 +1564,7 @@ function InsumosView() {
   const parties = useList<Party>(() => api.parties());
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [logFor, setLogFor] = useState<Product | null>(null);
+  const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   const [msg, setMsg] = useState("");
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
   async function del(p: Product) {
@@ -1518,8 +1582,12 @@ function InsumosView() {
   return (
     <div>
       <PageTitle title="Números de parte" desc="Tu catálogo de partes (insumos, subproductos y productos) ligadas a su proveedor." />
-      <div className="mb-4 flex">
-        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo número de parte</Btn></div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <div className="ml-auto flex gap-2">
+          <Btn variant="ghost" onClick={() => setBulk("bom")}><Upload size={15} className="-mt-0.5 mr-1 inline" />BOM masivo</Btn>
+          <Btn variant="ghost" onClick={() => setBulk("products")}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
+          <Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo número de parte</Btn>
+        </div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
       {suppliers.length === 0 && !loading && (
@@ -1577,6 +1645,16 @@ function InsumosView() {
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
       {logFor && <HsLogModal product={logFor} onClose={() => setLogFor(null)} />}
+      {bulk === "products" && (
+        <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
+          hint="Da de alta o actualiza muchos insumos/productos a la vez. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga al proveedor (opcional)."
+          templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} />
+      )}
+      {bulk === "bom" && (
+        <CargaMasivaModal title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
+          hint="Arma las listas de materiales en lote: cada fila liga un producto (padre) con un insumo (componente) por SKU. El país de origen es opcional (lo deja en manual)."
+          templateFn={() => api.bulkTemplate("bom")} importFn={(f) => api.bulkImport("bom", f)} />
+      )}
     </div>
   );
 }
@@ -1687,6 +1765,7 @@ function ProveedoresView({ me }: { me: Me }) {
   const { data, reload, loading } = useList<Party>(() => api.parties("supplier"));
   const [editing, setEditing] = useState<Party | "new" | null>(null);
   const [access, setAccess] = useState<Party | null>(null);
+  const [bulk, setBulk] = useState(false);
   const [msg, setMsg] = useState("");
   async function del(p: Party) {
     if (!confirm(`¿Eliminar el proveedor “${p.name}”?`)) return;
@@ -1697,7 +1776,10 @@ function ProveedoresView({ me }: { me: Me }) {
     <div>
       <PageTitle title="Proveedores" desc="Tu padrón de proveedores. Asígnales un código y crea su acceso." />
       <div className="mb-4 flex">
-        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo proveedor</Btn></div>
+        <div className="ml-auto flex gap-2">
+          <Btn variant="ghost" onClick={() => setBulk(true)}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
+          <Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo proveedor</Btn>
+        </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <Table head={["Código", "Proveedor", "País", "RFC / Tax ID", "Acceso", ""]}>
@@ -1734,6 +1816,11 @@ function ProveedoresView({ me }: { me: Me }) {
       {access && (
         <UsersModal party={access} tenantSlug={me.tenant?.slug ?? ""}
           onClose={() => setAccess(null)} onChanged={reload} />
+      )}
+      {bulk && (
+        <CargaMasivaModal title="Carga masiva de proveedores" onClose={() => setBulk(false)} onDone={reload}
+          hint="Da de alta o actualiza muchos proveedores a la vez. Se busca por código (o por nombre) para actualizar el existente."
+          templateFn={() => api.bulkTemplate("suppliers")} importFn={(f) => api.bulkImport("suppliers", f)} />
       )}
     </div>
   );
@@ -1892,6 +1979,7 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
 function ClientesView() {
   const { data, reload, loading } = useList<Party>(() => api.parties("customer"));
   const [editing, setEditing] = useState<Party | "new" | null>(null);
+  const [bulk, setBulk] = useState(false);
   const [msg, setMsg] = useState("");
   async function del(p: Party) {
     if (!confirm(`¿Eliminar el cliente “${p.name}”?`)) return;
@@ -1902,7 +1990,10 @@ function ClientesView() {
     <div>
       <PageTitle title="Clientes" desc="Tu padrón de clientes (importadores) a quienes emites certificados de origen." />
       <div className="mb-4 flex">
-        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo cliente</Btn></div>
+        <div className="ml-auto flex gap-2">
+          <Btn variant="ghost" onClick={() => setBulk(true)}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
+          <Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo cliente</Btn>
+        </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <Table head={["Cliente", "País", "RFC / Tax ID", "Contacto", ""]}>
@@ -1922,6 +2013,11 @@ function ClientesView() {
       </Table>
       {editing && <ClienteForm party={editing === "new" ? null : editing}
         onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
+      {bulk && (
+        <CargaMasivaModal title="Carga masiva de clientes" onClose={() => setBulk(false)} onDone={reload}
+          hint="Da de alta o actualiza muchos clientes (importadores) a la vez."
+          templateFn={() => api.bulkTemplate("customers")} importFn={(f) => api.bulkImport("customers", f)} />
+      )}
     </div>
   );
 }
@@ -3125,6 +3221,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
   const [saving, setSaving] = useState(false); const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [showLog, setShowLog] = useState(false);
+  const [layout, setLayout] = useState(false);
   // Huella de lo traído de un periodo anterior (para avisar si no cambió).
   const [broughtSnap, setBroughtSnap] = useState<string | null>(null);
   useEffect(() => {
@@ -3229,11 +3326,17 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       {/* Atajos: traer de periodo anterior + historial */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Btn size="sm" variant="ghost" onClick={traerPrevia} disabled={saving}>↩︎ Traer información de última solicitud</Btn>
+        <Btn size="sm" variant="ghost" onClick={() => setLayout(true)} disabled={saving}><Upload size={14} className="-mt-0.5 mr-1 inline" />Responder por Excel</Btn>
         {(s.logs?.length ?? 0) > 0 && (
           <Btn size="sm" variant="ghost" onClick={() => setShowLog(true)}>Ver historial</Btn>
         )}
         {msg && <span className="text-xs text-emerald-700">{msg}</span>}
       </div>
+      {layout && (
+        <CargaMasivaModal title="Responder por layout (Excel)" onClose={() => setLayout(false)} onDone={onDone}
+          hint="Para solicitudes grandes: descarga la plantilla, captura todos los componentes y súbela. Reemplaza el detalle del BOM; luego revisa, calcula el origen y envía."
+          templateFn={() => api.solicitudBomTemplate()} importFn={(f) => api.importSolicitudBom(s.id, f)} />
+      )}
 
       {/* Sugerencia del sistema (orientación) */}
       {s.origin_hint && (

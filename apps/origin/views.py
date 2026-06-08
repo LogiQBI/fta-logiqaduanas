@@ -655,6 +655,59 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         _log_sol(sr, "bom_saved", f"{len(lines)} componente(s)", request.user)
         return Response(s.SolicitationRequestSerializer(sr).data)
 
+    @action(detail=True, methods=["post"], url_path="import-bom")
+    def import_bom(self, request, pk=None):
+        """El proveedor responde una solicitud por BOM subiendo un layout .xlsx
+        (para solicitudes grandes). Reemplaza las líneas del BOM. No envía: el
+        proveedor revisa, calcula y envía como en el flujo manual."""
+        from apps.origin import bulk
+        sr = self.get_object()  # acotada al proveedor logueado
+        if not sr.bom_analysis:
+            return Response({"error": "Esta solicitud no pide análisis por BOM."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if sr.status == SolicitationRequest.Status.ACCEPTED:
+            return Response({"error": "Esta solicitud ya fue aceptada por el cliente."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"error": "Adjunta el archivo .xlsx."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            rows = bulk.read_rows(f, bulk.BOM_RESPONSE_COLUMNS)
+        except Exception:
+            return Response({"error": "No se pudo leer el archivo. Usa la plantilla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not rows:
+            return Response({"error": "El archivo no tiene componentes."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        def _truthy(v):
+            return str(v or "").strip().lower() in ("si", "sí", "yes", "y", "1", "true", "x")
+
+        with transaction.atomic():
+            bom, _ = SolicitationBOM.objects.get_or_create(
+                solicitation=sr, defaults={"tenant": sr.tenant})
+            # Subir el BOM invalida el cálculo previo (hay que recalcular).
+            bom.origin_status = ""; bom.criterion = ""; bom.rvc_value = None
+            bom.detail = {}; bom.computed_at = None
+            bom.save()
+            bom.lines.all().delete()
+            n = 0
+            for r in rows:
+                part = str(r.get("num_parte") or "").strip()
+                if not part:
+                    continue
+                SolicitationBOMLine.objects.create(
+                    tenant=sr.tenant, bom=bom, part_number=part,
+                    description=str(r.get("descripcion") or "").strip(),
+                    hs_code="".join(c for c in str(r.get("hs_code") or "") if c.isdigit())[:10],
+                    unit_price=r.get("precio_unitario") or 0,
+                    quantity=r.get("cantidad") or 0,
+                    country="".join(c for c in str(r.get("pais") or "") if c.isalpha()).upper()[:2],
+                    has_origin_evidence=_truthy(r.get("evidencia")))
+                n += 1
+        _log_sol(sr, "bom_saved", f"{n} componente(s) por layout", request.user)
+        return Response(s.SolicitationRequestSerializer(sr).data)
+
     @action(detail=True, methods=["post"], url_path="copy-previous")
     def copy_previous(self, request, pk=None):
         """Trae la información del periodo ANTERIOR del mismo producto+proveedor.
@@ -899,6 +952,55 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def bulk_template(request):
+    """Descarga una plantilla .xlsx para carga masiva. ?type=products|suppliers|
+    customers|bom|bom_response."""
+    from django.http import HttpResponse
+    from apps.origin import bulk
+    t = request.query_params.get("type", "")
+    if t == "bom_response":
+        cols, sheet, fname = bulk.BOM_RESPONSE_COLUMNS, "Respuesta BOM", "plantilla_respuesta_bom.xlsx"
+    elif t in bulk.SPECS:
+        cols, sheet, fname = bulk.SPECS[t]["columns"], bulk.SPECS[t]["sheet"], f"plantilla_{t}.xlsx"
+    else:
+        return Response({"error": "Tipo de plantilla inválido."}, status=status.HTTP_400_BAD_REQUEST)
+    content = bulk.make_template(cols, sheet)
+    resp = HttpResponse(content, content_type=(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+    resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_import(request):
+    """Importa un .xlsx para carga masiva (solo empresa). ?type=products|suppliers|
+    customers|bom. Devuelve {creados, actualizados, errores}."""
+    from apps.origin import bulk
+    m = request.user.memberships.select_related("tenant").first()
+    if not m or m.is_supplier:
+        raise PermissionDenied("Solo la empresa puede hacer carga masiva de catálogos.")
+    t = request.query_params.get("type", "")
+    if t not in bulk.SPECS:
+        return Response({"error": "Tipo de carga inválido."}, status=status.HTTP_400_BAD_REQUEST)
+    f = request.FILES.get("file")
+    if not f:
+        return Response({"error": "Adjunta el archivo .xlsx."}, status=status.HTTP_400_BAD_REQUEST)
+    spec = bulk.SPECS[t]
+    try:
+        rows = bulk.read_rows(f, spec["columns"])
+    except Exception:
+        return Response({"error": "No se pudo leer el archivo. ¿Es un .xlsx válido "
+                         "con los encabezados de la plantilla?"}, status=status.HTTP_400_BAD_REQUEST)
+    if not rows:
+        return Response({"error": "El archivo no tiene filas con datos."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    result = spec["importer"](m.tenant, rows, request.user)
+    return Response(result)
 
 
 @api_view(["GET", "PATCH"])
