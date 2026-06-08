@@ -34,12 +34,14 @@ RULE_TYPE_MAP = {
 # Salto arancelario soportado por el motor (CTI 8 díg. se aproxima a subpartida).
 CTC_LEVEL_MAP = {"CC": "CC", "CTH": "CTH", "CTSH": "CTSH", "CTI": "CTSH"}
 # Método VCR de la biblioteca -> método que entiende el motor.
+# El motor calcula (Valor - VNM)/Valor = build-down (equivalente a transacción
+# sobre el valor del bien) y costo neto. build_up y focused_value usan fórmulas
+# distintas (VOM/Valor, valor enfocado) que NO calculamos igual: se descartan
+# para no dar un umbral incorrecto; se conserva el build-down/net_cost del PSR.
 RVC_METHOD_MAP = {
     "transaction_value": "transaction",
+    "build_down": "transaction",
     "net_cost": "net_cost",
-    "build_down": "transaction",   # misma fórmula sobre el valor del bien
-    "build_up": "transaction",
-    "focused_value": "net_cost",
 }
 LEVEL_DIGITS = {2: 2, 4: 4, 6: 6, 8: 8}
 
@@ -83,10 +85,13 @@ class Command(BaseCommand):
             for psr in data["psr"]:
                 rule_type = RULE_TYPE_MAP.get(psr["rule_type"], "CTC")
                 shift = CTC_LEVEL_MAP.get(psr.get("ctc_level") or "", "CTH")
-                # Opciones de VCR mapeadas a métodos del motor.
-                opts = [{"method": RVC_METHOD_MAP.get(o["method"], "transaction"),
-                         "threshold": float(o["threshold"])}
-                        for o in psr.get("rvc_options", [])]
+                # Opciones de VCR mapeadas a métodos del motor (se omiten métodos
+                # no computables como build_up/focused_value).
+                opts = []
+                for o in psr.get("rvc_options", []):
+                    m = RVC_METHOD_MAP.get(o.get("method"))
+                    if m:
+                        opts.append({"method": m, "threshold": float(o["threshold"])})
                 # Método y umbral por defecto: prioriza valor de transacción.
                 default = next((o for o in opts if o["method"] == "transaction"),
                                opts[0] if opts else None)
