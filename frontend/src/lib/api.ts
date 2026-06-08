@@ -104,6 +104,13 @@ export type SupplierProfile = {
   contact_name: string; contact_email: string; contact_phone: string;
   signatory_name: string; signatory_title: string; signature_png: string;
 };
+export type CompanyProfile = {
+  id?: number; tenant?: number; tenant_name?: string;
+  legal_name: string; tax_id: string; address: string; city: string;
+  state: string; postal_code: string; country: string;
+  contact_name: string; contact_email: string; contact_phone: string;
+  signatory_name: string; signatory_title: string; signature_png: string;
+};
 export type DeclarationDetail = {
   is_originating: boolean; country_of_origin: string;
   rule_description: string | null; rule_type: string | null;
@@ -183,7 +190,7 @@ export const api = {
     }),
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
-  parties: () => req("/parties/"),
+  parties: (kind?: string) => req(kind ? `/parties/?kind=${kind}` : "/parties/"),
   createParty: (payload: Record<string, unknown>) =>
     req("/parties/", { method: "POST", body: JSON.stringify(payload) }),
   updateParty: (id: number, payload: Record<string, unknown>) =>
@@ -258,6 +265,9 @@ export const api = {
   supplierProfile: (): Promise<SupplierProfile> => req("/supplier-profile/"),
   updateSupplierProfile: (payload: Partial<SupplierProfile>) =>
     req("/supplier-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
+  companyProfile: (): Promise<CompanyProfile> => req("/company-profile/"),
+  updateCompanyProfile: (payload: Partial<CompanyProfile>) =>
+    req("/company-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

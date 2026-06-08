@@ -273,15 +273,19 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
   }
   return [
     { items: [{ key: "home", label: "Inicio", icon: Home }] },
+    { label: "Mi empresa", items: [
+      { key: "datos-empresa", label: "Datos de la empresa", icon: Building2 },
+    ] },
     { label: "Catálogos", items: [
       { key: "proveedores", label: "Proveedores", icon: Truck },
+      { key: "clientes", label: "Clientes", icon: Users },
       { key: "insumos", label: "Números de parte", icon: Package },
     ] },
     { label: "Origen", items: [
       { key: "productos", label: "Productos", icon: Boxes },
       { key: "calculo-origen", label: "Cálculo de origen", icon: Calculator },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
-      { key: "certificados", label: "Certificados", icon: BadgeCheck },
+      { key: "certificados", label: "Emitir certificados", icon: BadgeCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
       { key: "aceptadas", label: "Declaraciones aceptadas", icon: BadgeCheck },
     ] },
@@ -400,11 +404,12 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "calculo-origen": return <CalculoOrigenView />;
     case "insumos": return <InsumosView />;
     case "calificaciones": return <CalificacionesView />;
-    case "certificados": return <CertificadosView />;
+    case "certificados": return <CertificadosEmitirView />;
     case "proveedores": return <ProveedoresView me={me} />;
+    case "clientes": return <ClientesView />;
+    case "datos-empresa": return me.is_supplier ? <DatosEmpresaView /> : <DatosEmpresaCompanyView />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-productos": return <ProveedorProductosView />;
-    case "datos-empresa": return <DatosEmpresaView />;
     case "aceptadas": return <DeclaracionesAceptadasView me={me} />;
     case "mis-solicitudes": return <MisSolicitudesView me={me} />;
     case "mis-declaraciones": return <MisDeclaracionesView />;
@@ -1635,26 +1640,8 @@ function CalificacionesView() {
     </div>
   );
 }
-function CertificadosView() {
-  const { data, count } = useList<{ id: number; folio: string; certifier_type: string; issued_at: string }>(() => api.certificates());
-  return (
-    <div>
-      <PageTitle title="Certificados de origen" desc={`${count} certificados emitidos.`} />
-      <Table head={["Folio", "Certificador", "Emitido"]}>
-        {data.map((c) => (
-          <tr key={c.id}>
-            <td className="px-4 py-3 font-mono text-xs">{c.folio}</td>
-            <td className="px-4 py-3">{c.certifier_type}</td>
-            <td className="px-4 py-3">{c.issued_at?.slice(0, 10)}</td>
-          </tr>
-        ))}
-        {count === 0 && <tr><td colSpan={3} className="px-4 py-8 text-center text-zinc-400">Aún no emites certificados.</td></tr>}
-      </Table>
-    </div>
-  );
-}
 function ProveedoresView({ me }: { me: Me }) {
-  const { data, reload, loading } = useList<Party>(() => api.parties());
+  const { data, reload, loading } = useList<Party>(() => api.parties("supplier"));
   const [editing, setEditing] = useState<Party | "new" | null>(null);
   const [access, setAccess] = useState<Party | null>(null);
   const [msg, setMsg] = useState("");
@@ -1858,6 +1845,257 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
     </Modal>
   );
 }
+// Catálogo de CLIENTES (Party kind=customer) — a quienes se emiten certificados.
+function ClientesView() {
+  const { data, reload, loading } = useList<Party>(() => api.parties("customer"));
+  const [editing, setEditing] = useState<Party | "new" | null>(null);
+  const [msg, setMsg] = useState("");
+  async function del(p: Party) {
+    if (!confirm(`¿Eliminar el cliente “${p.name}”?`)) return;
+    setMsg(""); try { await api.deleteParty(p.id); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  return (
+    <div>
+      <PageTitle title="Clientes" desc="Tu padrón de clientes (importadores) a quienes emites certificados de origen." />
+      <div className="mb-4 flex">
+        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo cliente</Btn></div>
+      </div>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["Cliente", "País", "RFC / Tax ID", "Contacto", ""]}>
+        {data.map((p) => (
+          <tr key={p.id}>
+            <td className="px-4 py-3"><div className="font-medium">{p.name}</div></td>
+            <td className="px-4 py-3">{p.country || "—"}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.tax_id || "—"}</td>
+            <td className="px-4 py-3 text-xs text-zinc-500">{[p.email, p.phone].filter(Boolean).join(" · ") || "—"}</td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <button onClick={() => setEditing(p)} title="Editar" className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+              <button onClick={() => del(p)} title="Eliminar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
+          </tr>
+        ))}
+        {!loading && data.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Aún no tienes clientes. Crea el primero con “Nuevo cliente”.</td></tr>}
+      </Table>
+      {editing && <ClienteForm party={editing === "new" ? null : editing}
+        onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
+    </div>
+  );
+}
+function ClienteForm({ party, onClose, onSaved }: {
+  party: Party | null; onClose: () => void; onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    name: party?.name ?? "", country: party?.country ?? "", tax_id: party?.tax_id ?? "",
+    email: party?.email ?? "", phone: party?.phone ?? "",
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v });
+  async function save() {
+    if (!f.name.trim()) { setErr("El nombre del cliente es obligatorio."); return; }
+    setErr(""); setSaving(true);
+    const payload = {
+      kind: "customer", name: f.name.trim(), country: f.country.trim().toUpperCase(),
+      tax_id: f.tax_id.trim(), email: f.email.trim(), phone: f.phone.trim(),
+    };
+    try {
+      if (party) await api.updateParty(party.id, payload);
+      else await api.createParty(payload);
+      onSaved();
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={party ? "Editar cliente" : "Nuevo cliente"} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <Field label="Nombre / Razón social"><input value={f.name} onChange={(e) => set("name", e.target.value)} className={inputCls} placeholder="Importadora USA Inc" autoFocus /></Field>
+        </div>
+        <Field label="País (ISO-2)"><input value={f.country} onChange={(e) => set("country", e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))} className={cx(inputCls, "uppercase")} placeholder="US" maxLength={2} /></Field>
+        <Field label="RFC / Tax ID"><input value={f.tax_id} onChange={(e) => set("tax_id", e.target.value)} className={inputCls} /></Field>
+        <Field label="Teléfono"><input value={f.phone} onChange={(e) => set("phone", e.target.value)} className={inputCls} /></Field>
+        <Field label="Email"><input value={f.email} onChange={(e) => set("email", e.target.value)} className={inputCls} placeholder="compras@cliente.com" /></Field>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : party ? "Guardar cambios" : "Crear cliente"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// Genera el certificado de origen imprimible que EMITE la EMPRESA a un cliente.
+function generarCertificadoEmpresa(a: {
+  product: Product; treatyCode?: string; client: Party; profile: ProfileShape;
+  qual?: Qualification; blanketFrom?: string; blanketTo?: string;
+}) {
+  const esc = (v?: string | null) =>
+    (v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const { product: p, client, profile: pr, qual } = a;
+  const treaty = treatyLabel(a.treatyCode);
+  const originario = qual?.status === "QUALIFIES";
+  const criterio = qual
+    ? `${qual.criterion || qual.status_display}${qual.rvc_value ? ` · VCR ${qual.rvc_value}%` : ""}`
+    : "Pendiente de cálculo de origen";
+  const periodo = (a.blanketFrom && a.blanketTo) ? `${a.blanketFrom} a ${a.blanketTo}` : "No especificado";
+  const empresa = pr.legal_name || "—";
+  const dirEmp = [pr.address, [pr.postal_code, pr.city, pr.state].filter(Boolean).join(" "), pr.country].filter(Boolean).join(", ");
+  const hoy = new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
+  const folio = `FTA-${p.id}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+  const firmaImg = pr.signature_png
+    ? `<img src="${pr.signature_png}" alt="Firma" style="max-height:70px;max-width:260px"/>`
+    : `<span style="color:#b91c1c;font-size:12px">Firma pendiente — cárgala en “Datos de la empresa”.</span>`;
+  const row = (k: string, v: string) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Certificación de Origen ${esc(treaty)} — ${esc(p.sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:13px}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:18px}
+  .brand{font-size:20px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:12px}
+  h1{font-size:16px;color:${NAVY};margin:0 0 2px} .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
+  .ok{background:#dcfce7;color:#15803d} .no{background:#fee2e2;color:#b91c1c}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px} td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:top}
+  td.k{background:#f8fafc;font-weight:bold;width:34%;color:#374151} td.v{width:66%}
+  .section{font-size:13px;font-weight:bold;color:${NAVY};margin:18px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+  .sign{display:flex;gap:40px;margin-top:36px} .sign div{flex:1;border-top:1px solid #9ca3af;padding-top:6px;font-size:12px}
+  .legal{margin-top:24px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
+  @media print{.noprint{display:none} body{padding:16px}}
+</style></head><body>
+  <div class="head">
+    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
+    <div style="text-align:right"><h1>Certificación de Origen</h1><div class="sub">Tratado: <b>${esc(treaty)}</b></div>
+      <div class="sub">Folio: ${esc(folio)} · Emitido: ${esc(hoy)}</div></div>
+  </div>
+
+  <div class="section">Resultado de origen</div>
+  <p><span class="badge ${originario ? "ok" : "no"}">${originario ? "PRODUCTO ORIGINARIO" : "ORIGEN NO CONFIRMADO"}</span></p>
+
+  <div class="section">1. Mercancía</div>
+  <table>
+    ${row("Núm. de parte / SKU", esc(p.sku))}
+    ${row("Descripción", esc(p.description))}
+    ${row("Clasificación arancelaria (HS)", esc(p.hs_code ? formatHs(p.hs_code) : "—"))}
+    ${row("Criterio de origen", esc(criterio))}
+  </table>
+
+  <div class="section">2. Exportador / Productor (Empresa)</div>
+  <table>
+    ${row("Razón social", esc(empresa))}
+    ${row("RFC / Tax ID", esc(pr.tax_id || "—"))}
+    ${row("Domicilio", esc(dirEmp || "—"))}
+    ${row("País", esc(pr.country || "—"))}
+    ${row("Contacto", esc([pr.contact_name, pr.contact_email, pr.contact_phone].filter(Boolean).join(" · ") || "—"))}
+  </table>
+
+  <div class="section">3. Importador (Cliente)</div>
+  <table>
+    ${row("Razón social", esc(client.name))}
+    ${row("RFC / Tax ID", esc(client.tax_id || "—"))}
+    ${row("País", esc(client.country || "—"))}
+    ${row("Contacto", esc([client.email, client.phone].filter(Boolean).join(" · ") || "—"))}
+  </table>
+
+  <div class="section">4. Periodo que cubre (blanket period)</div>
+  <table>${row("Vigencia", esc(periodo))}</table>
+
+  <div class="section">5. Firma autorizada</div>
+  <div class="sign">
+    <div>${firmaImg}<br><b>${esc(pr.signatory_name || pr.contact_name || "—")}</b><br>
+      ${esc(pr.signatory_title || "")}<br>${esc(empresa)}<br>Fecha: ${esc(hoy)}</div>
+  </div>
+
+  <div class="legal">
+    Certificación de origen emitida por ${esc(empresa)} para el tratado ${esc(treaty)}. El cálculo de origen es
+    orientativo y debe ser validado por una persona con conocimientos técnicos en reglas de origen.
+    Documento generado por LogiQ Aduanas | FTA.
+  </div>
+
+  <div class="noprint" style="margin-top:24px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+  </div>
+</body></html>`;
+  const win = window.open("", "_blank", "width=900,height=1000");
+  if (!win) { alert("Permite las ventanas emergentes para generar el certificado."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// EMPRESA emite certificados de origen: elige producto + tratado + cliente.
+function CertificadosEmitirView() {
+  const productsL = useList<Product>(() => api.products());
+  const treatiesL = useList<Treaty>(() => api.treaties());
+  const clientsL = useList<Party>(() => api.parties("customer"));
+  const qualsL = useList<Qualification>(() => api.qualifications());
+  const [productId, setProductId] = useState<number | "">("");
+  const [treatyId, setTreatyId] = useState<number | "">("");
+  const [clientId, setClientId] = useState<number | "">("");
+  const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [profile, setProfile] = useState<ProfileShape | null>(null);
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api.companyProfile().then((p) => setProfile(p as ProfileShape)).catch(() => {}); }, []);
+  const productos = productsL.data.filter((p) => p.kind !== "material");
+  const qual = qualsL.data.find((q) => q.product === Number(productId) && q.treaty === Number(treatyId));
+  const profileOk = !!profile && !!profile.legal_name;
+  function emitir() {
+    const p = productos.find((x) => x.id === Number(productId));
+    const client = clientsL.data.find((x) => x.id === Number(clientId));
+    const treaty = treatiesL.data.find((x) => x.id === Number(treatyId));
+    if (!p || !client || !treaty || !profile) { setMsg("Elige producto, tratado y cliente."); return; }
+    generarCertificadoEmpresa({ product: p, treatyCode: treaty.code, client, profile, qual, blanketFrom: from, blanketTo: to });
+  }
+  return (
+    <div className="max-w-3xl">
+      <PageTitle title="Emitir certificados de origen" desc="Genera el certificado de origen de un producto, para el tratado que elijas, dirigido a un cliente." />
+      {!profileOk && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          ⚠️ Completa primero los <strong>Datos de la empresa</strong> (razón social y firma) para que el certificado salga lleno.
+        </div>
+      )}
+      {clientsL.data.length === 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          ⚠️ Aún no tienes clientes. Agrega uno en <strong>Catálogos → Clientes</strong>.
+        </div>
+      )}
+      <Card className="p-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Producto">
+            <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+              <option value="">Elige un producto…</option>
+              {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
+            </select>
+          </Field>
+          <Field label="Tratado">
+            <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+              <option value="">Elige un tratado…</option>
+              {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Cliente (importador)">
+            <select value={clientId} onChange={(e) => setClientId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+              <option value="">Elige un cliente…</option>
+              {clientsL.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Periodo desde"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} /></Field>
+            <Field label="Periodo hasta"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} /></Field>
+          </div>
+        </div>
+        {productId && treatyId && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Resultado de origen: {qual ? <Pill k={qual.status}>{qual.status_display}{qual.rvc_value ? ` · ${qual.rvc_value}%` : ""}</Pill>
+              : <span className="text-amber-600">sin calcular (usa “Cálculo de origen” primero; el certificado se emitirá como “origen no confirmado”).</span>}
+          </p>
+        )}
+        {msg && <p className="mt-3 text-sm text-amber-600">{msg}</p>}
+        <div className="mt-5">
+          <Btn onClick={emitir} disabled={!productId || !treatyId || !clientId}>Emitir certificado</Btn>
+        </div>
+      </Card>
+      <p className="mt-3 text-xs text-zinc-500">📄 El certificado se abre en una ventana nueva; usa “Imprimir / Guardar PDF” para descargarlo.</p>
+    </div>
+  );
+}
+
 function periodoTexto(s: Solicitation) {
   if (s.period_from && s.period_to)
     return `${s.period_display ?? ""} ${s.period_from} → ${s.period_to}`.trim();
@@ -2023,21 +2261,33 @@ function DeclaracionesAceptadasView({ me }: { me: Me }) {
     </div>
   );
 }
-const EMPTY_PROFILE: SupplierProfile = {
+type ProfileShape = {
+  legal_name: string; tax_id: string; address: string; city: string;
+  state: string; postal_code: string; country: string;
+  contact_name: string; contact_email: string; contact_phone: string;
+  signatory_name: string; signatory_title: string; signature_png: string;
+};
+const EMPTY_PROFILE: ProfileShape = {
   legal_name: "", tax_id: "", address: "", city: "", state: "", postal_code: "",
   country: "", contact_name: "", contact_email: "", contact_phone: "",
   signatory_name: "", signatory_title: "", signature_png: "",
 };
-function DatosEmpresaView() {
-  const [form, setForm] = useState<SupplierProfile>(EMPTY_PROFILE);
+// Editor de "Datos de la empresa" reutilizable por PROVEEDOR y EMPRESA.
+// El país se captura en ISO-3 (tres letras) para los certificados (PDF).
+function ProfileEditor({ desc, load, save }: {
+  desc: string;
+  load: () => Promise<ProfileShape>;
+  save: (p: ProfileShape) => Promise<unknown>;
+}) {
+  const [form, setForm] = useState<ProfileShape>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
   useEffect(() => {
-    api.supplierProfile().then((p) => setForm({ ...EMPTY_PROFILE, ...p }))
+    load().then((p) => setForm({ ...EMPTY_PROFILE, ...p }))
       .catch((e) => setErr((e as Error).message)).finally(() => setLoading(false));
-  }, []);
-  const set = (k: keyof SupplierProfile, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  }, [load]);
+  const set = (k: keyof ProfileShape, v: string) => setForm((f) => ({ ...f, [k]: v }));
   function onSignatureFile(file: File | undefined) {
     setErr("");
     if (!file) return;
@@ -2047,17 +2297,16 @@ function DatosEmpresaView() {
     reader.onload = () => set("signature_png", String(reader.result || ""));
     reader.readAsDataURL(file);
   }
-  async function save() {
+  async function guardar() {
     setSaving(true); setMsg(""); setErr("");
-    try { await api.updateSupplierProfile(form); setMsg("Datos guardados."); }
+    try { await save(form); setMsg("Datos guardados."); }
     catch (e) { setErr((e as Error).message); }
     finally { setSaving(false); }
   }
   if (loading) return <div className="p-6 text-sm text-zinc-400">Cargando…</div>;
   return (
     <div className="max-w-3xl">
-      <PageTitle title="Datos de la empresa"
-        desc="Información de contacto y firma de tu empresa. Se usan para generar el certificado de origen." />
+      <PageTitle title="Datos de la empresa" desc={desc} />
       <Card className="mb-4 p-5">
         <div className="mb-3 text-sm font-semibold text-zinc-800">Información de la empresa</div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -2067,7 +2316,10 @@ function DatosEmpresaView() {
           <Field label="Ciudad"><input className={inputCls} value={form.city} onChange={(e) => set("city", e.target.value)} /></Field>
           <Field label="Estado / Provincia"><input className={inputCls} value={form.state} onChange={(e) => set("state", e.target.value)} /></Field>
           <Field label="Código postal"><input className={inputCls} value={form.postal_code} onChange={(e) => set("postal_code", e.target.value)} /></Field>
-          <Field label="País"><CountryInput value={form.country} onChange={(v) => set("country", v)} /></Field>
+          <Field label="País (3 letras, ej. MEX)">
+            <input className={cx(inputCls, "uppercase")} value={form.country} maxLength={3} placeholder="MEX"
+              onChange={(e) => set("country", e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 3))} />
+          </Field>
         </div>
       </Card>
       <Card className="mb-4 p-5">
@@ -2101,9 +2353,21 @@ function DatosEmpresaView() {
       </Card>
       {msg && <p className="mb-2 text-sm text-emerald-700">{msg}</p>}
       {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
-      <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar datos"}</Btn>
+      <Btn onClick={guardar} disabled={saving}>{saving ? "Guardando…" : "Guardar datos"}</Btn>
     </div>
   );
+}
+// PROVEEDOR: sus datos de empresa.
+function DatosEmpresaView() {
+  const load = useCallback(() => api.supplierProfile() as Promise<ProfileShape>, []);
+  return <ProfileEditor load={load} save={(p) => api.updateSupplierProfile(p)}
+    desc="Información de contacto y firma de tu empresa. Se usan para llenar el certificado de origen." />;
+}
+// EMPRESA: sus datos para emitir certificados.
+function DatosEmpresaCompanyView() {
+  const load = useCallback(() => api.companyProfile() as Promise<ProfileShape>, []);
+  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)}
+    desc="Datos y firma de tu empresa para llenar los certificados de origen que emites a tus clientes." />;
 }
 function RechazoModal({ s, onClose, onSaved }: { s: Solicitation; onClose: () => void; onSaved: () => void }) {
   const [reason, setReason] = useState(""); const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);

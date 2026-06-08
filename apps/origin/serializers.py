@@ -1,8 +1,8 @@
 from rest_framework import serializers
 
 from apps.catalog.models import (
-    BOMComponent, Party, Product, SolicitationBOM, SolicitationBOMLine,
-    SolicitationRequest, SupplierDeclaration, SupplierProfile,
+    BOMComponent, CompanyProfile, Party, Product, SolicitationBOM,
+    SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
 from apps.origin.models import Certificate, Qualification
 from apps.treaties.models import OriginRule, Treaty
@@ -129,6 +129,24 @@ class SupplierProfileSerializer(serializers.ModelSerializer):
 
     def validate_signature_png(self, value):
         # Evita firmas gigantes en BD (~3 MB de base64).
+        if value and len(value) > 3_000_000:
+            raise serializers.ValidationError(
+                "La imagen de la firma es muy grande. Usa un PNG más pequeño.")
+        return value
+
+
+class CompanyProfileSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+
+    class Meta:
+        model = CompanyProfile
+        fields = ["id", "tenant", "tenant_name", "legal_name", "tax_id", "address",
+                  "city", "state", "postal_code", "country", "contact_name",
+                  "contact_email", "contact_phone", "signatory_name",
+                  "signatory_title", "signature_png"]
+        read_only_fields = ["tenant"]
+
+    def validate_signature_png(self, value):
         if value and len(value) > 3_000_000:
             raise serializers.ValidationError(
                 "La imagen de la firma es muy grande. Usa un PNG más pequeño.")

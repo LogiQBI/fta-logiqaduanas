@@ -21,9 +21,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
-    BOMComponent, HsChangeLog, Party, Product, RuleDisplay, SolicitationBOM,
-    SolicitationBOMLine, SolicitationLog, SolicitationRequest, SupplierDeclaration,
-    SupplierProfile,
+    BOMComponent, CompanyProfile, HsChangeLog, Party, Product, RuleDisplay,
+    SolicitationBOM, SolicitationBOMLine, SolicitationLog, SolicitationRequest,
+    SupplierDeclaration, SupplierProfile,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -201,6 +201,13 @@ class PartyViewSet(TenantScopedViewSet):
     queryset = Party.objects.all()
     serializer_class = s.PartySerializer
     supplier_field = "id"  # el proveedor solo se ve a sí mismo
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        kind = self.request.query_params.get("kind")  # 'supplier' | 'customer'
+        if kind:
+            qs = qs.filter(kind=kind)
+        return qs
 
     def _require_company(self):
         m = self.membership()
@@ -892,6 +899,23 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key})
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def company_profile_view(request):
+    """La EMPRESA consulta y edita los datos de su empresa y su firma (PNG),
+    que se usan para emitir/llenar los certificados de origen."""
+    m = request.user.memberships.select_related("tenant").first()
+    if not m or m.is_supplier:
+        raise PermissionDenied("Solo la empresa puede gestionar los datos de la empresa.")
+    prof, _ = CompanyProfile.objects.get_or_create(tenant=m.tenant)
+    if request.method == "GET":
+        return Response(s.CompanyProfileSerializer(prof).data)
+    ser = s.CompanyProfileSerializer(prof, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
 
 
 @api_view(["GET", "PATCH"])

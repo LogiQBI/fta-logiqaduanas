@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
-from apps.tenants.models import TenantOwnedModel
+from apps.tenants.models import TenantOwnedModel, TimeStampedModel, Tenant
 
 
 class Party(TenantOwnedModel):
@@ -61,7 +61,8 @@ class SupplierProfile(TenantOwnedModel):
     city = models.CharField("Ciudad", max_length=120, blank=True)
     state = models.CharField("Estado / Provincia", max_length=120, blank=True)
     postal_code = models.CharField("Código postal", max_length=20, blank=True)
-    country = models.CharField("País (ISO-2)", max_length=2, blank=True)
+    country = models.CharField("País (ISO-3)", max_length=3, blank=True,
+                               help_text="Tres letras, ej. MEX, USA, CHN.")
     contact_name = models.CharField("Nombre de contacto", max_length=255, blank=True)
     contact_email = models.EmailField("Correo de contacto", blank=True)
     contact_phone = models.CharField("Teléfono de contacto", max_length=30, blank=True)
@@ -76,6 +77,34 @@ class SupplierProfile(TenantOwnedModel):
 
     def __str__(self):
         return f"Datos de {self.party.name}"
+
+
+class CompanyProfile(TimeStampedModel):
+    """Datos de la EMPRESA (tenant) + firma en PNG, para llenar los certificados
+    de origen que la empresa emite a sus clientes. Uno por empresa."""
+
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="profile")
+    legal_name = models.CharField("Razón social", max_length=255, blank=True)
+    tax_id = models.CharField("RFC / Tax ID", max_length=30, blank=True)
+    address = models.CharField("Domicilio", max_length=255, blank=True)
+    city = models.CharField("Ciudad", max_length=120, blank=True)
+    state = models.CharField("Estado / Provincia", max_length=120, blank=True)
+    postal_code = models.CharField("Código postal", max_length=20, blank=True)
+    country = models.CharField("País (ISO-3)", max_length=3, blank=True,
+                               help_text="Tres letras, ej. MEX, USA, CAN.")
+    contact_name = models.CharField("Nombre de contacto", max_length=255, blank=True)
+    contact_email = models.EmailField("Correo de contacto", blank=True)
+    contact_phone = models.CharField("Teléfono de contacto", max_length=30, blank=True)
+    signatory_name = models.CharField("Nombre de quien firma", max_length=255, blank=True)
+    signatory_title = models.CharField("Cargo de quien firma", max_length=120, blank=True)
+    signature_png = models.TextField("Firma (PNG en base64)", blank=True)
+
+    class Meta:
+        verbose_name = "Datos de la empresa"
+        verbose_name_plural = "Datos de la empresa"
+
+    def __str__(self):
+        return f"Datos de {self.tenant.name}"
 
 
 class Product(TenantOwnedModel):
