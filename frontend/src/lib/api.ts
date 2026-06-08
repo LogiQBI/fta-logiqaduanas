@@ -42,16 +42,17 @@ export type Product = {
   hs_logs?: HsLog[];
 };
 export type Treaty = { id: number; code: string; name: string };
+export type ComponentDeclaration = {
+  treaty_code?: string; valid_from: string | null; valid_to: string | null;
+  is_originating: boolean; country: string;
+};
 export type BomComponent = {
   id: number; parent: number; component: number; quantity: string;
   origin_mode: "supplier" | "manual"; origin_as_of: string | null;
   manual_is_originating: boolean; manual_country: string;
   component_sku?: string; component_description?: string; component_hs?: string;
   component_unit_cost?: string; component_supplier_name?: string | null;
-};
-export type ComponentDeclaration = {
-  valid_from: string | null; valid_to: string | null;
-  is_originating: boolean; country: string;
+  component_declarations?: ComponentDeclaration[];
 };
 export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[] };
 export type BomOriginResponse = { product: Product; components: BomOriginComponent[] };

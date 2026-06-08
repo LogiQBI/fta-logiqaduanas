@@ -99,14 +99,26 @@ class BOMComponentSerializer(serializers.ModelSerializer):
         source="component.unit_cost", max_digits=14, decimal_places=4, read_only=True)
     component_supplier_name = serializers.CharField(
         source="component.supplier.name", read_only=True, default=None)
+    # Declaraciones que el proveedor entregó para este insumo (todos los tratados),
+    # para poder "traer" su país de origen al armar el BOM.
+    component_declarations = serializers.SerializerMethodField()
 
     class Meta:
         model = BOMComponent
         fields = ["id", "parent", "component", "quantity", "origin_mode",
                   "origin_as_of", "manual_is_originating", "manual_country",
                   "component_sku", "component_description", "component_hs",
-                  "component_unit_cost", "component_supplier_name"]
+                  "component_unit_cost", "component_supplier_name",
+                  "component_declarations"]
         read_only_fields = ["tenant"]
+
+    def get_component_declarations(self, obj):
+        from apps.catalog.models import SupplierDeclaration
+        qs = (SupplierDeclaration.objects.filter(product_id=obj.component_id)
+              .select_related("treaty").order_by("-valid_from")[:20])
+        return [{"treaty_code": d.treaty.code, "valid_from": d.valid_from,
+                 "valid_to": d.valid_to, "is_originating": d.is_originating,
+                 "country": d.country_of_origin} for d in qs]
 
 
 class SupplierDeclarationSerializer(serializers.ModelSerializer):

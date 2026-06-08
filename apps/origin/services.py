@@ -130,9 +130,17 @@ def _resolve_component_origin(bc, treaty, default_as_of):
     members = treaty.member_countries or []
 
     if bc.origin_mode == "manual":
-        return {"originating": bool(bc.manual_is_originating),
-                "country": (bc.manual_country or "").upper(),
-                "value": value, "source": "Captura manual de la empresa"}
+        country = (bc.manual_country or "").upper()
+        if country:
+            # El país capturado decide el origen: originario si es país miembro
+            # del tratado que se está calculando.
+            originating = country in [c.upper() for c in members]
+            source = f"País manual: {country}"
+        else:
+            originating = bool(bc.manual_is_originating)
+            source = "Captura manual de la empresa"
+        return {"originating": originating, "country": country,
+                "value": value, "source": source}
 
     as_of = bc.origin_as_of or default_as_of
     qs = SupplierDeclaration.objects.filter(product=comp, treaty=treaty)

@@ -1111,6 +1111,9 @@ function BomEditorModal({ product, allProducts, onClose }: {
   const [compId, setCompId] = useState<number | "">("");
   const [qty, setQty] = useState("1");
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  // País por insumo (local, para escribir fluido; se guarda al salir del campo).
+  const [pais, setPais] = useState<Record<number, string>>({});
+  useEffect(() => { setPais(Object.fromEntries(data.map((c) => [c.id, c.manual_country || ""]))); }, [data]);
   // Insumos disponibles: cualquier producto del catálogo distinto del padre y
   // que no esté ya en el BOM.
   const usados = new Set(data.map((c) => c.component));
@@ -1128,9 +1131,19 @@ function BomEditorModal({ product, allProducts, onClose }: {
     try { await api.deleteBomComponent(c.id); await reload(); }
     catch (e) { setErr((e as Error).message); }
   }
+  async function setPaisManual(c: BomComponent, country: string) {
+    try { await api.updateBomComponent(c.id, { origin_mode: "manual", manual_country: country.toUpperCase() }); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  async function usarDeclaracion(c: BomComponent) {
+    // Vuelve a modo "declaración del proveedor": el país/origen se toma de la
+    // declaración vigente del tratado al calcular.
+    try { await api.updateBomComponent(c.id, { origin_mode: "supplier", manual_country: "" }); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
   return (
     <Modal title={`Lista de materiales — ${product.sku}`} onClose={onClose} wide>
-      <p className="mb-3 text-sm text-zinc-500">Agrega los insumos (números de parte) que componen este producto y sus cantidades. El origen de cada insumo se define en “Cálculo de origen”.</p>
+      <p className="mb-3 text-sm text-zinc-500">Agrega los insumos que componen este producto. Por cada uno define el <strong>país de origen</strong>: a mano, o tráelo de una declaración del proveedor. El país determina el origen al calcular según cada tratado.</p>
       <div className="mb-4 flex flex-wrap items-end gap-2">
         <div className="min-w-[16rem] flex-1">
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Insumo</span>
@@ -1146,21 +1159,45 @@ function BomEditorModal({ product, allProducts, onClose }: {
         <Btn onClick={add} disabled={saving}><Plus size={15} className="-mt-0.5 mr-1 inline" />Agregar</Btn>
       </div>
       {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
-      <Table head={["Núm. de parte", "Descripción", "HS", "Proveedor", "Costo unit.", "Cantidad", ""]}>
-        {data.map((c) => (
-          <tr key={c.id}>
-            <td className="px-4 py-3 font-mono text-xs">{c.component_sku}</td>
-            <td className="px-4 py-3">{c.component_description}</td>
-            <td className="px-4 py-3 font-mono text-xs">{c.component_hs ? formatHs(c.component_hs) : "—"}</td>
-            <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
-            <td className="px-4 py-3 text-xs">{c.component_unit_cost}</td>
-            <td className="px-4 py-3 text-xs">{c.quantity}</td>
-            <td className="px-4 py-3 text-right">
-              <button onClick={() => quitar(c)} title="Quitar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
-            </td>
-          </tr>
-        ))}
-        {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin insumos en el BOM. Agrega el primero arriba.</td></tr>}
+      <Table head={["Núm. de parte", "Descripción", "Proveedor", "Cant.", "País de origen", ""]}>
+        {data.map((c) => {
+          const decls = c.component_declarations ?? [];
+          const enDeclaracion = c.origin_mode === "supplier";
+          return (
+            <tr key={c.id} className="align-top">
+              <td className="px-4 py-3 font-mono text-xs">{c.component_sku}<div className="text-[11px] text-zinc-400">HS {c.component_hs ? formatHs(c.component_hs) : "—"}</div></td>
+              <td className="px-4 py-3">{c.component_description}</td>
+              <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
+              <td className="px-4 py-3 text-xs">{c.quantity}</td>
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input value={pais[c.id] ?? ""} maxLength={2} placeholder="País"
+                    onChange={(e) => setPais((m) => ({ ...m, [c.id]: e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2) }))}
+                    onBlur={() => { const v = pais[c.id] ?? ""; if (v !== (c.manual_country || "") || enDeclaracion) setPaisManual(c, v); }}
+                    className={cx("w-20 rounded-lg border px-2 py-1 text-xs uppercase", enDeclaracion ? "border-zinc-200 bg-zinc-50 text-zinc-400" : "border-zinc-300")} />
+                  {decls.length > 0 && (
+                    <select value="" onChange={(e) => { if (e.target.value) setPaisManual(c, e.target.value); }}
+                      className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                      <option value="">Traer de declaración…</option>
+                      {decls.map((d, i) => (
+                        <option key={i} value={d.country}>
+                          {treatyLabel(d.treaty_code)} · {d.valid_from} → {d.valid_to} · {d.country || "—"} ({d.is_originating ? "orig." : "no orig."})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {enDeclaracion
+                  ? <div className="mt-1 text-[11px] text-zinc-400">Tomando origen de la declaración del proveedor al calcular.</div>
+                  : <button onClick={() => usarDeclaracion(c)} className="mt-1 text-[11px] text-blue-600 hover:underline">Usar declaración del proveedor</button>}
+              </td>
+              <td className="px-4 py-3 text-right">
+                <button onClick={() => quitar(c)} title="Quitar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+              </td>
+            </tr>
+          );
+        })}
+        {!loading && data.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Sin insumos en el BOM. Agrega el primero arriba.</td></tr>}
       </Table>
     </Modal>
   );
@@ -1339,14 +1376,20 @@ function CalculoOrigenView() {
                         </div>
                       ) : (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <select value={c.manual_is_originating ? "1" : "0"} onChange={(e) => patch(c, { manual_is_originating: e.target.value === "1" })}
-                            className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
-                            <option value="1">Originario</option>
-                            <option value="0">No originario</option>
-                          </select>
+                          <span className="text-[11px] text-zinc-500">País:</span>
                           <input value={c.manual_country ?? ""} maxLength={2} placeholder="País"
                             onChange={(e) => patch(c, { manual_country: e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2) })}
                             className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-xs uppercase" />
+                          {(c.component_declarations ?? []).length > 0 && (
+                            <select value="" onChange={(e) => { if (e.target.value) patch(c, { manual_country: e.target.value }); }}
+                              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                              <option value="">Traer de declaración…</option>
+                              {(c.component_declarations ?? []).map((d, i) => (
+                                <option key={i} value={d.country}>{treatyLabel(d.treaty_code)} · {d.valid_from} → {d.valid_to} · {d.country || "—"}</option>
+                              ))}
+                            </select>
+                          )}
+                          <span className="text-[11px] text-zinc-400">(originario si el país es miembro del tratado)</span>
                         </div>
                       )}
                     </td>
