@@ -63,6 +63,9 @@ def calculate_bom_origin(bom):
     params["rvc_method"] = method  # el método lo decide el proveedor
     shift_level = params.get("shift_level", "CTH")
     de_minimis = params.get("de_minimis", treaty.de_minimis_pct)
+    if (params.get("extra") or {}).get("de_minimis_excluded"):
+        de_minimis = 0  # la PSR excluye la tolerancia (p.ej. cap. 1-5 agrícolas)
+    except_codes = params.get("ctc_except", [])
     detail = {"rule": str(rule), "rule_type": rt, "bom": lines,
               "total_value": str(total)}
 
@@ -70,12 +73,16 @@ def calculate_bom_origin(bom):
     rvc_value = None
     if rt in ("CTC", "CTC_OR_RVC", "CTC_AND_RVC"):
         ctc_pass, ctc_detail = engine._check_tariff_shift(
-            fake_product, lines, shift_level, de_minimis, total)
+            fake_product, lines, shift_level, de_minimis, total, except_codes=except_codes)
         detail["tariff_shift"] = ctc_detail
     if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
         rvc_pass, rvc_value, rvc_detail = engine._check_rvc(
             treaty, params, rvc_base, vnm)
         detail["rvc"] = rvc_detail
+
+    note = engine.automotive_note(params)
+    if note:
+        detail["automotive_regime"] = note
 
     if rt == "WO":
         passed, criterion = (bool(lines) and all(ln["originating"] for ln in lines)), "WO"

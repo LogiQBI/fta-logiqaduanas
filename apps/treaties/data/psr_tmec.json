@@ -1,0 +1,104 @@
+{
+  "agreement": "TMEC",
+  "source_ref": "T-MEC Anexo 4-B (Reglas Específicas de Origen) y Apéndice del Capítulo 4 (automotriz)",
+  "hs_version": 2022,
+  "notes": "Las reglas automotrices están sujetas a LVC (40-45% a >=16 USD/h) y al requisito de 70% de acero/aluminio originario, capturados en 'extra'. Valores de RVC autopartes en fase plena (post-2023).",
+  "psr": [
+    {
+      "hs_from": "870323",
+      "hs_to": "870324",
+      "hs_level": 6,
+      "rule_type": "ctc_and_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {"method": "net_cost", "threshold": 75.0}
+      ],
+      "rule_text_es": "Vehículo de pasajeros: cambio de cualquier otra partida y VCR no menor a 75% (costo neto), sujeto a LVC y requisito de acero/aluminio.",
+      "extra": {
+        "lvc_pct": 40.0,
+        "lvc_wage_usd_h": 16.0,
+        "steel_aluminum_originating_pct": 70.0,
+        "core_parts_required": true
+      }
+    },
+    {
+      "hs_from": "870829",
+      "hs_to": "870829",
+      "hs_level": 6,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {"method": "transaction_value", "threshold": 60.0},
+        {"method": "net_cost", "threshold": 50.0}
+      ],
+      "rule_text_es": "Las demás partes y accesorios de carrocería (incluidas las cabinas): cambio a la partida 8708 desde cualquier otra partida; o VCR de 60% (valor de transacción) / 50% (costo neto). Autoparte: si es 'core part' aplica 75% NC.",
+      "extra": {"part_class": "complementary", "core_part_75_if_listed": true}
+    },
+    {
+      "hs_from": "870840",
+      "hs_to": "870840",
+      "hs_level": 6,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": ["870850"],
+      "rvc_options": [
+        {"method": "transaction_value", "threshold": 75.0},
+        {"method": "net_cost", "threshold": 70.0}
+      ],
+      "rule_text_es": "Cajas de cambio: cambio de cualquier otra partida excepto de la 8708.50; o VCR de 75% (TV) / 70% (NC). Parte esencial (core part).",
+      "extra": {"part_class": "core", "is_core_part": true}
+    },
+    {
+      "hs_from": "850440",
+      "hs_to": "850440",
+      "hs_level": 6,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTSH",
+      "ctc_except": [],
+      "rvc_options": [
+        {"method": "transaction_value", "threshold": 60.0},
+        {"method": "net_cost", "threshold": 50.0}
+      ],
+      "rule_text_es": "Convertidores estáticos: cambio de subpartida; o VCR 60% (TV) / 50% (NC).",
+      "extra": {}
+    },
+    {
+      "hs_from": "854430",
+      "hs_to": "854430",
+      "hs_level": 6,
+      "rule_type": "ctc_or_rvc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [
+        {"method": "transaction_value", "threshold": 60.0},
+        {"method": "net_cost", "threshold": 50.0}
+      ],
+      "rule_text_es": "Mazos de cables para vehículos: cambio de partida; o VCR 60% (TV) / 50% (NC).",
+      "extra": {}
+    },
+    {
+      "hs_from": "390000",
+      "hs_to": "399999",
+      "hs_level": 2,
+      "rule_type": "ctc",
+      "ctc_level": "CTH",
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Capítulo 39 (plásticos), regla general por defecto: cambio de partida. Verificar nota de capítulo y reglas específicas de subpartida.",
+      "extra": {"is_chapter_default": true}
+    },
+    {
+      "hs_from": "010000",
+      "hs_to": "059999",
+      "hs_level": 2,
+      "rule_type": "wholly_obtained",
+      "ctc_level": null,
+      "ctc_except": [],
+      "rvc_options": [],
+      "rule_text_es": "Animales vivos y productos del reino animal: totalmente obtenidos. Sin acceso a de minimis general.",
+      "extra": {"de_minimis_excluded": true}
+    }
+  ]
+}

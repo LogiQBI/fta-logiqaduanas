@@ -2486,8 +2486,8 @@ function emptyBomLine(): BomLine {
 function OriginReport({ bom }: { bom: SubmittedBom }) {
   if (!bom.origin_status) return null;
   const d = (bom.detail ?? {}) as {
-    rule?: string; rule_type?: string; error?: string;
-    tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; components: { sku: string; shifted: boolean }[] };
+    rule?: string; rule_type?: string; error?: string; automotive_regime?: string;
+    tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; except_codes?: string[]; components: { sku: string; shifted: boolean; in_exception?: boolean }[] };
     rvc?: { method: string; threshold: string; rvc: string; vnm: string; transaction_value: string };
   };
   const ok = bom.origin_status === "QUALIFIES";
@@ -2504,14 +2504,20 @@ function OriginReport({ bom }: { bom: SubmittedBom }) {
       </div>
       {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
       {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
+      {d.automotive_regime && (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          🚗 <strong>Régimen automotriz.</strong> {d.automotive_regime}
+        </div>
+      )}
       {d.tariff_shift && (
         <div className="mt-2 text-xs">
           <div className="font-semibold text-zinc-700">Salto arancelario ({d.tariff_shift.shift_level})</div>
-          <div className="text-zinc-500">Valor que no salta: {d.tariff_shift.violating_value} ({d.tariff_shift.violating_pct}%) · de minimis permitido {d.tariff_shift.de_minimis}%</div>
+          <div className="text-zinc-500">Valor que no salta: {d.tariff_shift.violating_value} ({d.tariff_shift.violating_pct}%) · de minimis permitido {d.tariff_shift.de_minimis}%
+            {d.tariff_shift.except_codes && d.tariff_shift.except_codes.length > 0 && <> · excepto desde {d.tariff_shift.except_codes.map(formatHs).join(", ")}</>}</div>
           <ul className="mt-1 space-y-0.5">
             {d.tariff_shift.components.map((c, i) => (
-              <li key={i} className={c.shifted ? "text-green-700" : "text-red-700"}>
-                {c.shifted ? "✓" : "✗"} {c.sku} — {c.shifted ? "cambia de clasificación" : "NO cambia (mismo capítulo/partida)"}
+              <li key={i} className={c.shifted && !c.in_exception ? "text-green-700" : "text-red-700"}>
+                {c.shifted && !c.in_exception ? "✓" : "✗"} {c.sku} — {c.in_exception ? "viene de una clasificación excluida por la regla" : c.shifted ? "cambia de clasificación" : "NO cambia (mismo capítulo/partida)"}
               </li>
             ))}
           </ul>

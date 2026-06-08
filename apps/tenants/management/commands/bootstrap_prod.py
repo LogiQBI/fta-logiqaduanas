@@ -64,3 +64,10 @@ class Command(BaseCommand):
         if gn11.exists() and OriginRule.objects.count() < 1000:
             self.stdout.write("Cargando catálogo completo de reglas (GN11)…")
             call_command("import_rules", str(gn11))
+
+        # Asegura el catálogo de los TLC de México (idempotente).
+        call_command("seed_treaties")
+        # PSR curadas (texto auditable + RVC multi-método + régimen automotriz).
+        # Se cargan DESPUÉS de las GN11 para que sobrescriban las autogeneradas.
+        self.stdout.write("Cargando PSR curadas (biblioteca de tratados)…")
+        call_command("load_psr")
