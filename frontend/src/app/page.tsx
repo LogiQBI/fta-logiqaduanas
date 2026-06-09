@@ -461,6 +461,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "calculo-origen": return <CalculoOrigenView />;
     case "automotriz": return <AutomotivoView />;
     case "insumos": return <InsumosView />;
+    case "asignar-proveedor": return <AsignarProveedorView />;
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosEmitirView />;
     case "proveedores": return <ProveedoresView me={me} />;
@@ -665,6 +666,7 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
           : me.is_supplier ? "Completa la información de origen que te solicitan."
           : "Gestiona el origen de tus productos y proveedores."} />
       {me.role !== "master" && !me.is_supplier && <LicenseBanner />}
+      {me.role !== "master" && !me.is_supplier && <InsumosSinProveedorBanner go={go} />}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => <ActionCard key={c.k} {...c} onClick={() => go(c.k)} />)}
       </div>
@@ -1993,6 +1995,65 @@ const KIND_BADGE: Record<string, { label: string; cls: string }> = {
 function KindBadge({ kind }: { kind: string }) {
   const b = KIND_BADGE[kind] ?? { label: kind, cls: "bg-zinc-100 text-zinc-600" };
   return <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", b.cls)}>{b.label}</span>;
+}
+// Banner del dashboard: insumos (materiales) sin proveedor asignado.
+function InsumosSinProveedorBanner({ go }: { go: (v: string) => void }) {
+  const { data } = useList<Product>(() => api.products());
+  const n = data.filter((p) => p.kind === "material" && !p.supplier).length;
+  if (!n) return null;
+  return (
+    <button onClick={() => go("asignar-proveedor")}
+      className="mb-4 flex w-full items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-sm text-amber-800 hover:bg-amber-100">
+      <span>📦 <strong>{n} insumo{n === 1 ? "" : "s"} sin proveedor asignado.</strong> Da clic para ver cuáles y asignarlos (uno por uno o por layout).</span>
+      <span className="font-medium text-amber-700">Asignar →</span>
+    </button>
+  );
+}
+// Vista para asignar proveedor a los insumos que no lo tienen.
+function AsignarProveedorView() {
+  const { data, reload, loading } = useList<Product>(() => api.products());
+  const sup = useList<Party>(() => api.parties("supplier"));
+  const [bulk, setBulk] = useState(false);
+  const [q, setQ] = useState("");
+  const [msg, setMsg] = useState("");
+  const sinProv = smartFilter(data.filter((p) => p.kind === "material" && !p.supplier), q, (p) => [p.sku, p.description]);
+  async function asignar(p: Product, sid: string) {
+    if (!sid) return;
+    setMsg("");
+    try { await api.updateProduct(p.id, { supplier: Number(sid) }); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  return (
+    <div>
+      <PageTitle title="Insumos sin proveedor" desc="Asigna un proveedor a cada insumo, uno por uno o por layout (Excel). Si el proveedor no existe en el layout, se precarga automáticamente." />
+      <div className="mb-3 flex">
+        <div className="ml-auto"><Btn variant="ghost" onClick={() => setBulk(true)}><Upload size={15} className="-mt-0.5 mr-1 inline" />Asignar por layout</Btn></div>
+      </div>
+      <ReportToolbar q={q} setQ={setQ} onExport={() => exportCSV("insumos_sin_proveedor", ["Núm. de parte", "Descripción", "HS"], sinProv.map((p) => [p.sku, p.description, p.hs_code ?? ""]))} placeholder="Buscar insumo…" />
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["Núm. de parte", "Descripción", "HS", "Asignar proveedor"]}>
+        {sinProv.map((p) => (
+          <tr key={p.id}>
+            <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
+            <td className="px-4 py-3">{p.description}</td>
+            <td className="px-4 py-3 font-mono text-xs">{p.hs_code ? formatHs(p.hs_code) : "—"}</td>
+            <td className="px-4 py-3">
+              <select className={cx(inputCls, "max-w-xs")} defaultValue="" onChange={(e) => asignar(p, e.target.value)}>
+                <option value="">Elegir proveedor…</option>
+                {sup.data.map((s) => <option key={s.id} value={s.id}>{s.name}{s.code ? ` (${s.code})` : ""}</option>)}
+              </select>
+            </td>
+          </tr>
+        ))}
+        {!loading && sinProv.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Todos los insumos tienen proveedor asignado. 🎉</td></tr>}
+      </Table>
+      {bulk && (
+        <CargaMasivaModal title="Asignar proveedor por layout" onClose={() => setBulk(false)} onDone={reload}
+          hint="Sube el número de parte (SKU) y el código de proveedor. Si el proveedor no existe, se precarga automáticamente (complétalo luego en Proveedores)."
+          templateFn={() => api.bulkTemplate("supplier_assign")} importFn={(f) => api.bulkImport("supplier_assign", f)} />
+      )}
+    </div>
+  );
 }
 function InsumosView() {
   const { data, reload, loading } = useList<Product>(() => api.products());

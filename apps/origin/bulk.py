@@ -48,9 +48,12 @@ def import_products(tenant, rows, user):
             supplier = Party.objects.filter(
                 tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
             if not supplier:
-                # No bloquea: se crea el producto SIN proveedor y se avisa.
+                # Precarga: si el proveedor no existe, se crea automáticamente con
+                # ese código (queda como ficha por completar en Proveedores).
+                supplier = Party.objects.create(
+                    tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
                 res["advertencias"].append({"fila": i,
-                    "error": f"Proveedor con código '{scode}' no existe; se creó sin proveedor."})
+                    "error": f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."})
         defaults = {
             "description": str(r.get("descripcion") or "").strip(),
             "kind": kind,
@@ -134,8 +137,42 @@ def import_bom(tenant, rows, user):
     return res
 
 
+def import_supplier_assign(tenant, rows, user):
+    """Asigna el proveedor a números de parte ya existentes, por layout
+    (num_parte + código de proveedor). Precarga el proveedor si no existe."""
+    from apps.catalog.models import Party, Product
+    res = {"creados": 0, "actualizados": 0, "errores": [], "advertencias": []}
+    for i, r in enumerate(rows, start=2):
+        sku = str(r.get("num_parte") or "").strip()
+        scode = str(r.get("codigo_proveedor") or "").strip()
+        if not sku or not scode:
+            res["errores"].append({"fila": i, "error": "Falta num_parte o codigo_proveedor."}); continue
+        product = Product.objects.filter(tenant=tenant, sku=sku).first()
+        if not product:
+            res["errores"].append({"fila": i, "error": f"Número de parte '{sku}' no existe."}); continue
+        supplier = Party.objects.filter(
+            tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
+        if not supplier:
+            supplier = Party.objects.create(
+                tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
+            res["advertencias"].append({"fila": i,
+                "error": f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."})
+        product.supplier = supplier
+        product.save(update_fields=["supplier", "updated_at"])
+        res["actualizados"] += 1
+    return res
+
+
 # Definición de cada tipo de carga: hoja, columnas (clave, etiqueta, ejemplo) e importador.
 SPECS = {
+    "supplier_assign": {
+        "sheet": "Asignar proveedor",
+        "columns": [
+            ("num_parte", "Núm. de parte (SKU)", "MAT-001"),
+            ("codigo_proveedor", "Código de proveedor", "ST01"),
+        ],
+        "importer": import_supplier_assign,
+    },
     "products": {
         "sheet": "Insumos y productos",
         "columns": [
