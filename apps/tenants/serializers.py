@@ -10,11 +10,19 @@ class LicenseSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     plan_display = serializers.CharField(source="get_plan_display", read_only=True)
     is_valid = serializers.BooleanField(read_only=True)
+    days_left = serializers.SerializerMethodField()
 
     class Meta:
         model = License
         fields = ["plan", "plan_display", "status", "status_display", "valid_until",
-                  "max_users", "max_products", "is_valid"]
+                  "renewal_amount", "renewal_currency", "renewal_notes",
+                  "max_users", "max_products", "is_valid", "days_left"]
+
+    def get_days_left(self, obj):
+        if not obj.valid_until:
+            return None
+        from django.utils import timezone
+        return (obj.valid_until - timezone.localdate()).days
 
 
 class TenantSerializer(serializers.ModelSerializer):

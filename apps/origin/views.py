@@ -1047,9 +1047,13 @@ def login_view(request):
         m = user.memberships.select_related("tenant").first()
         lic = getattr(m.tenant, "license", None) if m else None
         if lic and not lic.is_valid:
+            monto = ""
+            if lic.renewal_amount and lic.renewal_amount > 0:
+                monto = (f" Monto de renovación: {lic.renewal_amount} "
+                         f"{lic.renewal_currency}.")
             return Response(
-                {"error": f"La licencia de {m.tenant.name} está "
-                          f"{lic.get_status_display().lower()}. Contacta a LogiQ."},
+                {"error": "Sistema SUSPENDIDO por vencimiento de licencia. "
+                          "Contacta a tu proveedor LogiQ Aduanas para renovar." + monto},
                 status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key})
@@ -1149,6 +1153,21 @@ def bulk_import(request):
                         status=status.HTTP_400_BAD_REQUEST)
     result = spec["importer"](m.tenant, rows, request.user)
     return Response(result)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def license_view(request):
+    """La EMPRESA consulta su propia licencia (vigencia, días restantes, monto de
+    renovación) para el dashboard y el módulo de Licencia."""
+    from apps.tenants.serializers import LicenseSerializer
+    m = request.user.memberships.select_related("tenant__license").first()
+    if not m:
+        return Response({})
+    lic = getattr(m.tenant, "license", None)
+    if not lic:
+        return Response({})
+    return Response(LicenseSerializer(lic).data)
 
 
 @api_view(["GET", "PATCH"])

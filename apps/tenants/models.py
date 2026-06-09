@@ -48,6 +48,10 @@ class License(TimeStampedModel):
     plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.TRIAL)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     valid_until = models.DateField("Vigente hasta", null=True, blank=True)
+    renewal_amount = models.DecimalField("Monto de renovación", max_digits=12,
+                                         decimal_places=2, default=0)
+    renewal_currency = models.CharField("Moneda", max_length=3, default="MXN")
+    renewal_notes = models.CharField("Notas de renovación", max_length=255, blank=True)
     max_users = models.PositiveIntegerField("Máx. usuarios", default=5)
     max_products = models.PositiveIntegerField("Máx. productos", default=100)
 

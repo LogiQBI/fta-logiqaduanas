@@ -62,13 +62,22 @@ class MasterTenantViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["patch"])
     def license(self, request, pk=None):
-        """Actualiza la licencia: {plan, status, valid_until, max_users, max_products}."""
+        """Actualiza la licencia: {plan, status, valid_until, renewal_amount,
+        renewal_currency, renewal_notes, max_users, max_products}."""
         tenant = self.get_object()
         lic, _ = License.objects.get_or_create(tenant=tenant)
-        for field in ["plan", "status", "valid_until", "max_users", "max_products"]:
+        for field in ["plan", "status", "valid_until", "renewal_amount",
+                      "renewal_currency", "renewal_notes", "max_users", "max_products"]:
             if field in request.data:
-                setattr(lic, field, request.data[field])
+                val = request.data[field]
+                # Las fechas/decimales vacíos se guardan como nulos/cero.
+                if field == "valid_until" and not val:
+                    val = None
+                if field == "renewal_amount" and val in (None, ""):
+                    val = 0
+                setattr(lic, field, val)
         lic.save()
+        tenant = Tenant.objects.select_related("license").get(pk=tenant.pk)
         return Response(TenantSerializer(tenant).data)
 
 

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkResult, clearToken, EmittedCertificate, getToken, MasterTenant, Me,
+  BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
   OriginCalcResult, OriginRule, Party, Product, Qualification, Solicitation,
   SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
@@ -23,10 +23,15 @@ const treatyLabel = (code?: string) => (code ? (TREATY_LABELS[code] ?? code) : "
 
 export default function Page() {
   const [me, setMe] = useState<Me | null>(null);
+  const [lic, setLic] = useState<LicenseInfo | null>(null);
   const [ready, setReady] = useState(false);
 
   async function loadMe() {
-    try { setMe(await api.me()); } catch { clearToken(); setMe(null); }
+    try {
+      const u = await api.me(); setMe(u);
+      if (u.role !== "master") { try { setLic(await api.license()); } catch { setLic(null); } }
+      else setLic(null);
+    } catch { clearToken(); setMe(null); }
     finally { setReady(true); }
   }
   useEffect(() => { if (getToken()) loadMe(); else setReady(true); }, []);
@@ -41,7 +46,34 @@ export default function Page() {
   if (!me) return <Login onLogin={loadMe} />;
   if (me.must_change_password)
     return <FirstLoginPassword me={me} onDone={loadMe} onLogout={logout} />;
+  if (me.role !== "master" && lic && lic.is_valid === false)
+    return <SuspensionScreen lic={lic} onLogout={logout} />;
   return <Shell me={me} onLogout={logout} />;
+}
+
+/* ============ Sistema suspendido por licencia vencida ============ */
+function SuspensionScreen({ lic, onLogout }: { lic: LicenseInfo; onLogout: () => void }) {
+  const monto = lic.renewal_amount && Number(lic.renewal_amount) > 0
+    ? `${Number(lic.renewal_amount).toLocaleString("es-MX")} ${lic.renewal_currency ?? "MXN"}` : null;
+  return (
+    <main className="grid min-h-screen place-items-center bg-zinc-50 p-6">
+      <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-red-100 text-3xl">⛔</div>
+        <h1 className="text-xl font-bold text-red-700">Sistema suspendido</h1>
+        <p className="mt-2 text-sm text-zinc-600">
+          Tu licencia de <strong>LogiQ Aduanas | FTA</strong> se encuentra <strong>vencida</strong>.
+          El acceso está suspendido hasta su renovación.
+        </p>
+        <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm">
+          {lic.valid_until && <div className="text-zinc-600">Venció el <strong>{lic.valid_until}</strong></div>}
+          {monto && <div className="mt-1 text-zinc-900">Monto de renovación: <strong>{monto}</strong></div>}
+          {lic.renewal_notes && <div className="mt-1 text-xs text-zinc-500">{lic.renewal_notes}</div>}
+        </div>
+        <p className="mt-4 text-sm text-zinc-600">Contacta a tu proveedor <strong>LogiQ Aduanas</strong> para renovar tu licencia.</p>
+        <button onClick={onLogout} className="mt-6 rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100">Cerrar sesión</button>
+      </div>
+    </main>
+  );
 }
 
 /* ============ Primer ingreso: cambio de contraseña obligatorio ============ */
@@ -282,6 +314,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
     { items: [{ key: "home", label: "Inicio", icon: Home }] },
     { label: "Mi empresa", items: [
       { key: "datos-empresa", label: "Datos de la empresa", icon: Building2 },
+      { key: "licencia", label: "Licencia", icon: BadgeCheck },
     ] },
     { label: "Catálogos", items: [
       { key: "proveedores", label: "Proveedores", icon: Truck },
@@ -432,6 +465,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "certificados": return <CertificadosEmitirView />;
     case "proveedores": return <ProveedoresView me={me} />;
     case "clientes": return <ClientesView />;
+    case "licencia": return <LicenciaView />;
     case "datos-empresa": return me.is_supplier ? <DatosEmpresaView /> : <DatosEmpresaCompanyView />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-productos": return <ProveedorProductosView />;
@@ -630,6 +664,7 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
         desc={me.role === "master" ? "Panel del equipo LogiQ — administra el sistema."
           : me.is_supplier ? "Completa la información de origen que te solicitan."
           : "Gestiona el origen de tus productos y proveedores."} />
+      {me.role !== "master" && !me.is_supplier && <LicenseBanner />}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => <ActionCard key={c.k} {...c} onClick={() => go(c.k)} />)}
       </div>
@@ -722,6 +757,7 @@ function EmpresasView() {
   const { data, reload, loading } = useList<MasterTenant>(() => api.masterTenants());
   const [name, setName] = useState(""); const [rfc, setRfc] = useState(""); const [msg, setMsg] = useState("");
   const [edit, setEdit] = useState<MasterTenant | null>(null);
+  const [licFor, setLicFor] = useState<MasterTenant | null>(null);
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); await reload(); } catch (e) { setMsg((e as Error).message); } };
   return (
     <div>
@@ -738,12 +774,7 @@ function EmpresasView() {
             <td className="px-4 py-3"><Pill k={t.license?.status}>{t.license?.status_display ?? "—"}</Pill></td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
               <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
-              <span className="mr-2 inline-block">
-                <Btn size="sm" variant="ghost" onClick={() => act(() => api.masterSetLicense(t.id,
-                  { status: t.license?.status === "active" ? "suspended" : "active" }))}>
-                  {t.license?.status === "active" ? "Suspender" : "Activar"}
-                </Btn>
-              </span>
+              <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLicFor(t)}>Licencia</Btn></span>
               <Btn size="sm" variant="danger" onClick={() => { if (confirm(`¿Eliminar ${t.name}?`)) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>
             </td>
           </tr>
@@ -762,7 +793,58 @@ function EmpresasView() {
       </Card>
       {edit && <EditTenantModal tenant={edit} onClose={() => setEdit(null)}
         onSaved={async () => { setEdit(null); await reload(); }} />}
+      {licFor && <LicenseModal tenant={licFor} onClose={() => setLicFor(null)}
+        onSaved={async () => { setLicFor(null); await reload(); }} />}
     </div>
+  );
+}
+// El master fija la vigencia, el estado y el monto de renovación de la licencia.
+function LicenseModal({ tenant, onClose, onSaved }: {
+  tenant: MasterTenant; onClose: () => void; onSaved: () => void;
+}) {
+  const l = tenant.license;
+  const [f, setF] = useState({
+    plan: l?.plan ?? "trial", status: l?.status ?? "active",
+    valid_until: l?.valid_until ?? "", renewal_amount: l?.renewal_amount ?? "",
+    renewal_currency: l?.renewal_currency ?? "MXN", renewal_notes: l?.renewal_notes ?? "",
+  });
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v });
+  async function save() {
+    setErr(""); setSaving(true);
+    try { await api.masterSetLicense(tenant.id, f); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Licencia — ${tenant.name}`} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Plan">
+          <select className={inputCls} value={f.plan} onChange={(e) => set("plan", e.target.value)}>
+            <option value="trial">Prueba</option><option value="basic">Básico</option>
+            <option value="pro">Pro</option><option value="enterprise">Enterprise</option>
+          </select>
+        </Field>
+        <Field label="Estado">
+          <select className={inputCls} value={f.status} onChange={(e) => set("status", e.target.value)}>
+            <option value="active">Activa</option><option value="suspended">Suspendida</option>
+            <option value="expired">Vencida</option>
+          </select>
+        </Field>
+        <div className="col-span-2"><Field label="Vigente hasta">
+          <input type="date" className={inputCls} value={f.valid_until} onChange={(e) => set("valid_until", e.target.value)} /></Field></div>
+        <Field label="Monto de renovación">
+          <input type="number" step="any" className={inputCls} value={f.renewal_amount} onChange={(e) => set("renewal_amount", e.target.value)} /></Field>
+        <Field label="Moneda">
+          <input className={cx(inputCls, "uppercase")} maxLength={3} value={f.renewal_currency} onChange={(e) => set("renewal_currency", e.target.value.toUpperCase())} /></Field>
+        <div className="col-span-2"><Field label="Notas de renovación (opcional)">
+          <input className={inputCls} value={f.renewal_notes} onChange={(e) => set("renewal_notes", e.target.value)} placeholder="Ej. incluye soporte y actualizaciones" /></Field></div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar licencia"}</Btn>
+      </div>
+    </Modal>
   );
 }
 // El master edita la razón social / RFC de una empresa (se sincroniza con sus
@@ -3017,6 +3099,63 @@ function DatosEmpresaCompanyView() {
   const load = useCallback(() => api.companyProfile() as Promise<ProfileShape>, []);
   return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity
     desc="Datos y firma de tu empresa para llenar los certificados de origen. La razón social y el RFC los administra LogiQ (no editables aquí)." />;
+}
+// Color/etiqueta de la vigencia según días restantes.
+function vigenciaInfo(d: number | null | undefined): { txt: string; cls: string } {
+  if (d === null || d === undefined) return { txt: "Sin fecha de vigencia", cls: "bg-zinc-100 text-zinc-600" };
+  if (d < 0) return { txt: `Vencida hace ${-d} día${-d === 1 ? "" : "s"}`, cls: "bg-red-100 text-red-700" };
+  if (d === 0) return { txt: "Vence hoy", cls: "bg-red-100 text-red-700" };
+  if (d <= 30) return { txt: `Vence en ${d} día${d === 1 ? "" : "s"}`, cls: "bg-amber-100 text-amber-800" };
+  return { txt: `Vigente · ${d} días restantes`, cls: "bg-emerald-100 text-emerald-700" };
+}
+// Banner de licencia para el dashboard (avisa si está por vencer).
+function LicenseBanner() {
+  const [lic, setLic] = useState<LicenseInfo | null>(null);
+  useEffect(() => { api.license().then(setLic).catch(() => {}); }, []);
+  if (!lic || !lic.valid_until) return null;
+  const d = lic.days_left ?? null;
+  if (d === null || d > 30) return null; // solo avisa cuando está por vencer/vencida
+  const info = vigenciaInfo(d);
+  const monto = lic.renewal_amount && Number(lic.renewal_amount) > 0
+    ? `${Number(lic.renewal_amount).toLocaleString("es-MX")} ${lic.renewal_currency ?? "MXN"}` : null;
+  return (
+    <div className={cx("mb-4 rounded-lg border p-3 text-sm",
+      d <= 0 ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
+      🔔 <strong>Licencia:</strong> {info.txt} (vence el {lic.valid_until}).
+      {monto && <> Monto de renovación: <strong>{monto}</strong>.</>} Renueva con tu proveedor LogiQ Aduanas.
+    </div>
+  );
+}
+// Módulo de Licencia (EMPRESA): vigencia, días restantes y monto de renovación.
+function LicenciaView() {
+  const [lic, setLic] = useState<LicenseInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { api.license().then(setLic).catch(() => {}).finally(() => setLoading(false)); }, []);
+  if (loading) return <div className="p-6 text-sm text-zinc-400">Cargando…</div>;
+  const info = vigenciaInfo(lic?.days_left ?? null);
+  const monto = lic?.renewal_amount && Number(lic.renewal_amount) > 0
+    ? `${Number(lic.renewal_amount).toLocaleString("es-MX")} ${lic.renewal_currency ?? "MXN"}` : "—";
+  const row = (k: string, v: React.ReactNode) => (
+    <div className="flex justify-between border-b border-zinc-100 py-2.5 text-sm last:border-0">
+      <span className="text-zinc-500">{k}</span><span className="font-medium text-zinc-900">{v}</span>
+    </div>
+  );
+  return (
+    <div className="max-w-2xl">
+      <PageTitle title="Licencia" desc="Estado y vigencia de tu licencia del sistema. El control de licencias lo realiza el administrador de LogiQ." />
+      <Card className="p-5">
+        {row("Plan", lic?.plan_display ?? "—")}
+        {row("Estado", <Pill k={lic?.status}>{lic?.status_display ?? "—"}</Pill>)}
+        {row("Vigente hasta", lic?.valid_until ?? "—")}
+        {row("Vigencia", <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", info.cls)}>{info.txt}</span>)}
+        {row("Monto de renovación", monto)}
+        {lic?.renewal_notes ? row("Notas", lic.renewal_notes) : null}
+      </Card>
+      <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+        Para <strong>renovar</strong> tu licencia, contacta a tu proveedor <strong>LogiQ Aduanas</strong>. Una vez confirmado el pago, el administrador actualizará la vigencia y el sistema se reactivará automáticamente.
+      </div>
+    </div>
+  );
 }
 function RechazoModal({ s, onClose, onSaved }: { s: Solicitation; onClose: () => void; onSaved: () => void }) {
   const [reason, setReason] = useState(""); const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);

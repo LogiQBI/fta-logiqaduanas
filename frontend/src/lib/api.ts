@@ -275,6 +275,7 @@ export const api = {
     req("/change-password/", {
       method: "POST", body: JSON.stringify({ new_password: newPassword }),
     }),
+  license: (): Promise<LicenseInfo> => req("/license/"),
   certificates: () => req("/certificates/"),
   emitCertificate: (payload: Record<string, unknown>): Promise<EmittedCertificate> =>
     req("/certificates/emit/", { method: "POST", body: JSON.stringify(payload) }),
@@ -352,8 +353,13 @@ export const api = {
     req(`/master/users/${id}/unlock/`, { method: "POST" }),
 };
 
+export type LicenseInfo = {
+  plan?: string; plan_display?: string; status?: string; status_display?: string;
+  valid_until?: string | null; days_left?: number | null;
+  renewal_amount?: string; renewal_currency?: string; renewal_notes?: string;
+  is_valid?: boolean;
+};
 export type MasterTenant = {
   id: number; name: string; rfc: string; slug: string; user_count: number;
-  license: { plan_display: string; status: string; status_display: string;
-             valid_until: string | null } | null;
+  license: LicenseInfo | null;
 };
