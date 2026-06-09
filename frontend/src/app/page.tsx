@@ -308,8 +308,13 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState("home");
   const [badges, setBadges] = useState<Record<string, number>>({});
   const [menuOpen, setMenuOpen] = useState(false);
-  // Secciones del menú lateral colapsadas (por etiqueta).
-  const [colapsadas, setColapsadas] = useState<Record<string, boolean>>({});
+  // Secciones del menú lateral colapsadas (por etiqueta). Por defecto TODAS
+  // retraídas para una UX limpia; el usuario expande la que necesite.
+  const [colapsadas, setColapsadas] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    navFor(me, {}).forEach((s) => { if (s.label) o[s.label] = true; });
+    return o;
+  });
   const toggleSec = (label: string) => setColapsadas((c) => ({ ...c, [label]: !c[label] }));
 
   useEffect(() => {
@@ -953,6 +958,11 @@ function ReglasView({ me }: { me: Me }) {
     if (!confirm(`¿Eliminar la regla ${formatHs(r.hs_pattern)}?`)) return;
     setMsg(""); try { await api.deleteRule(r.id); await reload(); } catch (e) { setMsg((e as Error).message); }
   }
+  function exportar() {
+    exportCSV("reglas_de_origen", ["Tratado", "HS", "Tipo", "Descripción"],
+      data.map((r) => [r.treaty_label ?? r.treaty_code ?? "", r.hs_pattern || "General",
+        ruleTypeLabel(r.display_type || r.rule_type), cleanRuleDesc(r.display_description || r.description)]));
+  }
   return (
     <div>
       <PageTitle title="Reglas de origen"
@@ -979,7 +989,10 @@ function ReglasView({ me }: { me: Me }) {
             <option value="50">50</option><option value="100">100</option><option value="all">Todo</option>
           </select>
         </div>
-        {esMaster && <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva regla</Btn></div>}
+        <div className="ml-auto flex gap-2">
+          <Btn variant="ghost" onClick={exportar}><Download size={14} className="-mt-0.5 mr-1 inline" />Exportar a Excel</Btn>
+          {esMaster && <Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva regla</Btn>}
+        </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <Table head={["Tratado", "HS", "Tipo", "Descripción", ""]}>
@@ -2780,13 +2793,20 @@ function generarCertificado(s: Solicitation) {
 function DeclaracionesAceptadasView({ me }: { me: Me }) {
   const { data, loading } = useList<Solicitation>(() => api.solicitations());
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
+  const [q, setQ] = useState("");
   const esEmpresa = me.role !== "master" && !me.is_supplier;
-  const aceptadas = data.filter((s) => s.status === "accepted");
+  const aceptadas = smartFilter(data.filter((s) => s.status === "accepted"), q,
+    (s) => [s.product_sku, s.product_description, s.supplier_name, s.treaty_code]);
+  function exportar() {
+    exportCSV("declaraciones_aceptadas", ["Núm. de parte", "Descripción", "Proveedor", "Tratado", "Periodo", "Origen"],
+      aceptadas.map((s) => [s.product_sku ?? "", s.product_description ?? "", s.supplier_name ?? "", treatyLabel(s.treaty_code), periodoTexto(s), s.declared_originating || s.submitted_bom?.origin_status === "QUALIFIES" ? "Originario" : "No originario"]));
+  }
   return (
     <div>
       <PageTitle title="Declaraciones aceptadas"
         desc={esEmpresa ? "Declaraciones de origen aceptadas por ti. Genera el certificado de origen del tratado."
           : "Tus declaraciones aceptadas por tus clientes. Genera el certificado de origen del tratado."} />
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} placeholder="Buscar por núm. de parte o proveedor…" />
       <Table head={["Núm. de parte", "Descripción", esEmpresa ? "Proveedor" : "Tipo", "Tratado", "Periodo", "Origen / PSR", ""]}>
         {aceptadas.map((s) => (
           <tr key={s.id}>
@@ -2945,6 +2965,7 @@ function SolicitudesEmpresaView() {
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
   const [rejecting, setRejecting] = useState<Solicitation | null>(null);
   const [periodo, setPeriodo] = useState("");
+  const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
   async function aceptar(s: Solicitation) {
     setMsg(""); try { await api.acceptSolicitud(s.id); setMsg("Declaración aceptada."); await reload(); }
@@ -2952,7 +2973,12 @@ function SolicitudesEmpresaView() {
   }
   // Periodos distintos presentes (para el filtro).
   const periodos = Array.from(new Set(data.map((s) => periodoTexto(s)).filter((p) => p !== "—")));
-  const visibles = periodo ? data.filter((s) => periodoTexto(s) === periodo) : data;
+  const porPeriodo = periodo ? data.filter((s) => periodoTexto(s) === periodo) : data;
+  const visibles = smartFilter(porPeriodo, q, (s) => [s.product_sku, s.supplier_name, s.treaty_code]);
+  function exportar() {
+    exportCSV("solicitudes", ["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Límite", "Estado"],
+      visibles.map((s) => [s.product_sku ?? `#${s.product}`, s.supplier_name ?? "", treatyLabel(s.treaty_code), periodoTexto(s), s.due_date ?? "", s.status_display]));
+  }
   return (
     <div>
       <PageTitle title="Solicitudes a proveedores" desc="Pide a tus proveedores la declaración de origen, por periodo." />
@@ -2966,6 +2992,7 @@ function SolicitudesEmpresaView() {
         </div>
         <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
       </div>
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} placeholder="Buscar por núm. de parte o proveedor…" />
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
       {(() => {
         const conAlerta = data.filter((s) => dueAlert(s));
