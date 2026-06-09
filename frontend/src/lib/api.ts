@@ -60,6 +60,14 @@ async function uploadFile(path: string, file: File) {
 }
 
 export type BulkResult = { creados: number; actualizados: number; errores: { fila: number; error: string }[] };
+export type EmittedCertificate = {
+  id: number; folio: string;
+  certifier_data: Record<string, string>; importer_data: Record<string, string>;
+  blanket_from: string | null; blanket_to: string | null; issued_at: string;
+  product_sku: string; product_description: string; product_hs: string;
+  treaty_code: string; treaty_label: string; criterion: string;
+  origin_status: string; rvc_value: string | null;
+};
 
 export type HsLog = {
   old_hs: string; new_hs: string; action: string;
@@ -251,6 +259,8 @@ export const api = {
       method: "POST", body: JSON.stringify({ new_password: newPassword }),
     }),
   certificates: () => req("/certificates/"),
+  emitCertificate: (payload: Record<string, unknown>): Promise<EmittedCertificate> =>
+    req("/certificates/emit/", { method: "POST", body: JSON.stringify(payload) }),
   rules: (params = "") => req(`/origin-rules/${params}`),
   createRule: (payload: Record<string, unknown>) =>
     req("/origin-rules/", { method: "POST", body: JSON.stringify(payload) }),

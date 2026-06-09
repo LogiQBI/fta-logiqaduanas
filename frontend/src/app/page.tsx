@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import {
   api, BomComponent, BomLine, BomOriginComponent, BulkResult, clearToken,
-  getToken, MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product,
-  Qualification, Solicitation, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
+  EmittedCertificate, getToken, MasterTenant, Me, OriginCalcResult, OriginRule,
+  Party, Product, Qualification, Solicitation, SubmittedBom, SupplierProfile,
+  SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
@@ -2159,6 +2160,77 @@ function generarCertificadoEmpresa(a: {
 }
 
 // EMPRESA emite certificados de origen: elige producto + tratado + cliente.
+// Imprime un certificado YA REGISTRADO (desde el folio guardado).
+function generarCertificadoRegistro(c: EmittedCertificate) {
+  const esc = (v?: string | null) =>
+    (v ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch] as string));
+  const ce = c.certifier_data || {}; const im = c.importer_data || {};
+  const originario = c.origin_status === "QUALIFIES";
+  const criterio = `${c.criterion || c.origin_status}${c.rvc_value ? ` · VCR ${c.rvc_value}%` : ""}`;
+  const periodo = (c.blanket_from && c.blanket_to) ? `${c.blanket_from} a ${c.blanket_to}` : "No especificado";
+  const hoy = (c.issued_at || "").slice(0, 10);
+  const firmaImg = ce.firma_png
+    ? `<img src="${ce.firma_png}" alt="Firma" style="max-height:70px;max-width:260px"/>`
+    : `<span style="color:#b91c1c;font-size:12px">Sin firma cargada.</span>`;
+  const row = (k: string, v: string) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Certificado ${esc(c.folio)} — ${esc(c.product_sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:13px}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:18px}
+  .brand{font-size:20px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:12px}
+  h1{font-size:16px;color:${NAVY};margin:0 0 2px} .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
+  .ok{background:#dcfce7;color:#15803d} .no{background:#fee2e2;color:#b91c1c}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px} td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:top}
+  td.k{background:#f8fafc;font-weight:bold;width:34%;color:#374151} td.v{width:66%}
+  .section{font-size:13px;font-weight:bold;color:${NAVY};margin:18px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+  .sign{display:flex;gap:40px;margin-top:36px} .sign div{flex:1;border-top:1px solid #9ca3af;padding-top:6px;font-size:12px}
+  .legal{margin-top:24px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
+  @media print{.noprint{display:none} body{padding:16px}}
+</style></head><body>
+  <div class="head">
+    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
+    <div style="text-align:right"><h1>Certificación de Origen</h1><div class="sub">Tratado: <b>${esc(c.treaty_label)}</b></div>
+      <div class="sub">Folio: ${esc(c.folio)} · Emitido: ${esc(hoy)}</div></div>
+  </div>
+  <div class="section">Resultado de origen</div>
+  <p><span class="badge ${originario ? "ok" : "no"}">${originario ? "PRODUCTO ORIGINARIO" : "ORIGEN NO CONFIRMADO"}</span></p>
+  <div class="section">1. Mercancía</div>
+  <table>
+    ${row("Núm. de parte / SKU", esc(c.product_sku))}
+    ${row("Descripción", esc(c.product_description))}
+    ${row("Clasificación arancelaria (HS)", esc(c.product_hs ? formatHs(c.product_hs) : "—"))}
+    ${row("Criterio de origen", esc(criterio))}
+  </table>
+  <div class="section">2. Exportador / Productor (Empresa)</div>
+  <table>
+    ${row("Razón social", esc(ce.nombre || "—"))}
+    ${row("RFC / Tax ID", esc(ce.rfc || "—"))}
+    ${row("Domicilio", esc(ce.direccion || "—"))}
+    ${row("País", esc(ce.pais || "—"))}
+    ${row("Contacto", esc([ce.email, ce.telefono].filter(Boolean).join(" · ") || "—"))}
+  </table>
+  <div class="section">3. Importador (Cliente)</div>
+  <table>
+    ${row("Razón social", esc(im.nombre || "—"))}
+    ${row("RFC / Tax ID", esc(im.rfc || "—"))}
+    ${row("País", esc(im.pais || "—"))}
+    ${row("Contacto", esc([im.email, im.telefono].filter(Boolean).join(" · ") || "—"))}
+  </table>
+  <div class="section">4. Periodo que cubre (blanket period)</div>
+  <table>${row("Vigencia", esc(periodo))}</table>
+  <div class="section">5. Firma autorizada</div>
+  <div class="sign"><div>${firmaImg}<br><b>${esc(ce.firmante || "—")}</b><br>${esc(ce.cargo || "")}<br>${esc(ce.nombre || "")}<br>Fecha: ${esc(hoy)}</div></div>
+  <div class="legal">Certificación de origen con folio ${esc(c.folio)} emitida por ${esc(ce.nombre || "")} para el tratado ${esc(c.treaty_label)}. Documento generado por LogiQ Aduanas | FTA.</div>
+  <div class="noprint" style="margin-top:24px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+  </div>
+</body></html>`;
+  const win = window.open("", "_blank", "width=900,height=1000");
+  if (!win) { alert("Permite las ventanas emergentes para ver el certificado."); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
 function CertificadosEmitirView() {
   const productsL = useList<Product>(() => api.products());
   const treatiesL = useList<Treaty>(() => api.treaties());
@@ -2169,21 +2241,34 @@ function CertificadosEmitirView() {
   const [clientId, setClientId] = useState<number | "">("");
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
   const [profile, setProfile] = useState<ProfileShape | null>(null);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const emitidos = useList<EmittedCertificate>(() => api.certificates());
   useEffect(() => { api.companyProfile().then((p) => setProfile(p as ProfileShape)).catch(() => {}); }, []);
   const productos = productsL.data.filter((p) => p.kind !== "material");
   const qual = qualsL.data.find((q) => q.product === Number(productId) && q.treaty === Number(treatyId));
   const profileOk = !!profile && !!profile.legal_name;
-  function emitir() {
+  const califica = qual?.status === "QUALIFIES";
+  function vistaPrevia() {
     const p = productos.find((x) => x.id === Number(productId));
     const client = clientsL.data.find((x) => x.id === Number(clientId));
     const treaty = treatiesL.data.find((x) => x.id === Number(treatyId));
-    if (!p || !client || !treaty || !profile) { setMsg("Elige producto, tratado y cliente."); return; }
+    if (!p || !client || !treaty || !profile) { setErr("Elige producto, tratado y cliente."); return; }
+    setErr("");
     generarCertificadoEmpresa({ product: p, treatyCode: treaty.code, client, profile, qual, blanketFrom: from, blanketTo: to });
   }
+  async function emitirRegistrar() {
+    if (!productId || !treatyId || !clientId) { setErr("Elige producto, tratado y cliente."); return; }
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      const cert = await api.emitCertificate({ product: productId, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null });
+      setMsg(`Certificado ${cert.folio} emitido y registrado.`);
+      await emitidos.reload();
+      generarCertificadoRegistro(cert);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
   return (
-    <div className="max-w-3xl">
-      <PageTitle title="Emitir certificados de origen" desc="Genera el certificado de origen de un producto, para el tratado que elijas, dirigido a un cliente." />
+    <div className="max-w-5xl">
+      <PageTitle title="Emitir certificados de origen" desc="Emite el certificado de origen de un producto que CALIFICA, para el tratado que elijas, dirigido a un cliente. Queda registrado con folio." />
       {!profileOk && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           ⚠️ Completa primero los <strong>Datos de la empresa</strong> (razón social y firma) para que el certificado salga lleno.
@@ -2222,15 +2307,38 @@ function CertificadosEmitirView() {
         {productId && treatyId && (
           <p className="mt-3 text-xs text-zinc-500">
             Resultado de origen: {qual ? <Pill k={qual.status}>{qual.status_display}{qual.rvc_value ? ` · ${qual.rvc_value}%` : ""}</Pill>
-              : <span className="text-amber-600">sin calcular (usa “Cálculo de origen” primero; el certificado se emitirá como “origen no confirmado”).</span>}
+              : <span className="text-amber-600">sin calcular — usa “Cálculo de origen” primero.</span>}
+            {qual && !califica && <span className="ml-2 text-amber-600">El producto NO califica; solo puedes ver una vista previa.</span>}
           </p>
         )}
-        {msg && <p className="mt-3 text-sm text-amber-600">{msg}</p>}
-        <div className="mt-5">
-          <Btn onClick={emitir} disabled={!productId || !treatyId || !clientId}>Emitir certificado</Btn>
+        {msg && <p className="mt-3 text-sm text-emerald-700">{msg}</p>}
+        {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Btn onClick={emitirRegistrar} disabled={busy || !productId || !treatyId || !clientId || !califica}>
+            {busy ? "Emitiendo…" : "Emitir y registrar"}
+          </Btn>
+          <Btn variant="ghost" onClick={vistaPrevia} disabled={!productId || !treatyId || !clientId}>Vista previa (sin registrar)</Btn>
         </div>
       </Card>
-      <p className="mt-3 text-xs text-zinc-500">📄 El certificado se abre en una ventana nueva; usa “Imprimir / Guardar PDF” para descargarlo.</p>
+      <p className="mt-3 text-xs text-zinc-500">📄 El certificado se abre en una ventana nueva; usa “Imprimir / Guardar PDF” para descargarlo. “Emitir y registrar” requiere que el producto CALIFIQUE y lo guarda con folio en el historial.</p>
+
+      <div className="mt-8">
+        <div className="mb-2 text-sm font-semibold text-zinc-800">Certificados emitidos ({emitidos.count})</div>
+        <Table head={["Folio", "Producto", "Tratado", "Cliente", "Criterio", "Emitido", ""]}>
+          {emitidos.data.map((c) => (
+            <tr key={c.id}>
+              <td className="px-4 py-3 font-mono text-xs font-semibold">{c.folio}</td>
+              <td className="px-4 py-3"><span className="font-mono text-xs">{c.product_sku}</span><div className="text-[11px] text-zinc-500">{c.product_description}</div></td>
+              <td className="px-4 py-3">{c.treaty_label}</td>
+              <td className="px-4 py-3 text-xs">{c.importer_data?.nombre ?? "—"}</td>
+              <td className="px-4 py-3 text-xs">{c.criterion}{c.rvc_value ? ` · ${c.rvc_value}%` : ""}</td>
+              <td className="px-4 py-3 text-xs text-zinc-500">{c.issued_at?.slice(0, 10)}</td>
+              <td className="px-4 py-3 text-right"><Btn size="sm" variant="ghost" onClick={() => generarCertificadoRegistro(c)}>Reimprimir</Btn></td>
+            </tr>
+          ))}
+          {emitidos.count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no has emitido certificados.</td></tr>}
+        </Table>
+      </div>
     </div>
   );
 }

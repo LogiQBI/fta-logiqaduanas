@@ -560,7 +560,8 @@ class QualificationViewSet(TenantScopedViewSet):
 
 
 class CertificateViewSet(TenantScopedViewSet):
-    queryset = Certificate.objects.select_related("qualification__product").all()
+    queryset = Certificate.objects.select_related(
+        "qualification__product", "qualification__treaty").order_by("-issued_at")
     serializer_class = s.CertificateSerializer
     # los proveedores no ven certificados (None)
 
@@ -568,6 +569,54 @@ class CertificateViewSet(TenantScopedViewSet):
     def elements(self, request, pk=None):
         """Devuelve los 9 elementos mínimos del T-MEC para impresión."""
         return Response(certificate_elements(self.get_object()))
+
+    @action(detail=False, methods=["post"])
+    def emit(self, request):
+        """La EMPRESA emite y REGISTRA un certificado de origen (con folio) para
+        un producto que CALIFICA en un tratado, dirigido a un cliente.
+        Body: {product, treaty, client, blanket_from?, blanket_to?}."""
+        from django.utils.dateparse import parse_date
+
+        from apps.origin.services import _next_folio
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede emitir certificados.")
+        product = Product.objects.filter(tenant=m.tenant, pk=request.data.get("product")).first()
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        client = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.CUSTOMER,
+                                      pk=request.data.get("client")).first()
+        if not (product and treaty and client):
+            return Response({"error": "Selecciona producto, tratado y cliente válidos."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        qual = Qualification.objects.filter(tenant=m.tenant, product=product, treaty=treaty).first()
+        if not qual or qual.status != Qualification.Status.QUALIFIES:
+            return Response({"error": "Primero calcula el origen en “Cálculo de origen” y "
+                             "asegúrate de que el producto CALIFIQUE para este tratado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        prof = getattr(m.tenant, "profile", None)
+        certifier = {
+            "nombre": (prof.legal_name if prof and prof.legal_name else m.tenant.name),
+            "rfc": prof.tax_id if prof else "",
+            "direccion": ", ".join(p for p in [getattr(prof, "address", ""),
+                         getattr(prof, "city", ""), getattr(prof, "state", "")] if p) if prof else "",
+            "pais": prof.country if prof else "",
+            "email": prof.contact_email if prof else "",
+            "telefono": prof.contact_phone if prof else "",
+            "firma_png": prof.signature_png if prof else "",
+            "firmante": prof.signatory_name if prof else "",
+            "cargo": prof.signatory_title if prof else "",
+        }
+        importer = {"nombre": client.name, "rfc": client.tax_id, "pais": client.country,
+                    "email": client.email, "telefono": client.phone}
+        cert = Certificate.objects.create(
+            tenant=m.tenant, qualification=qual, folio=_next_folio(m.tenant),
+            certifier_type=Certificate.CertifierType.PRODUCER,
+            certifier_data=certifier, exporter_data=certifier, producer_data=certifier,
+            importer_data=importer,
+            blanket_from=parse_date(request.data.get("blanket_from") or "") or None,
+            blanket_to=parse_date(request.data.get("blanket_to") or "") or None,
+            issued_by=request.user)
+        return Response(s.CertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
 
 
 class SolicitationRequestViewSet(TenantScopedViewSet):

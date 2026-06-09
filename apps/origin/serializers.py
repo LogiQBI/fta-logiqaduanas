@@ -174,9 +174,26 @@ class QualificationSerializer(serializers.ModelSerializer):
 
 
 class CertificateSerializer(serializers.ModelSerializer):
+    product_sku = serializers.CharField(source="qualification.product.sku", read_only=True)
+    product_description = serializers.CharField(source="qualification.product.description", read_only=True)
+    product_hs = serializers.CharField(source="qualification.product.hs_code", read_only=True)
+    treaty_code = serializers.CharField(source="qualification.treaty.code", read_only=True)
+    treaty_label = serializers.SerializerMethodField()
+    criterion = serializers.CharField(source="qualification.criterion", read_only=True)
+    origin_status = serializers.CharField(source="qualification.status", read_only=True)
+    rvc_value = serializers.DecimalField(source="qualification.rvc_value", max_digits=6,
+                                         decimal_places=2, read_only=True)
+
     class Meta:
         model = Certificate
-        fields = "__all__"
+        fields = ["id", "folio", "certifier_type", "certifier_data", "exporter_data",
+                  "producer_data", "importer_data", "blanket_from", "blanket_to",
+                  "issued_at", "product_sku", "product_description", "product_hs",
+                  "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value"]
+
+    def get_treaty_label(self, obj):
+        code = obj.qualification.treaty.code
+        return TREATY_LABELS.get(code, code)
 
 
 class SolicitationBOMLineSerializer(serializers.ModelSerializer):
