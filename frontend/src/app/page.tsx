@@ -7,10 +7,10 @@ import {
   Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator, Upload,
 } from "lucide-react";
 import {
-  api, BomComponent, BomLine, BomOriginComponent, BulkResult, clearToken,
-  EmittedCertificate, getToken, MasterTenant, Me, OriginCalcResult, OriginRule,
-  Party, Product, Qualification, Solicitation, SubmittedBom, SupplierProfile,
-  SupplierUser, Treaty,
+  api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
+  BulkResult, clearToken, EmittedCertificate, getToken, MasterTenant, Me,
+  OriginCalcResult, OriginRule, Party, Product, Qualification, Solicitation,
+  SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 
@@ -285,6 +285,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
     { label: "Origen", items: [
       { key: "productos", label: "Productos", icon: Boxes },
       { key: "calculo-origen", label: "Cálculo de origen", icon: Calculator },
+      { key: "automotriz", label: "Automotriz (T-MEC)", icon: Truck },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Emitir certificados", icon: BadgeCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
@@ -403,6 +404,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "reglas": return <ReglasView me={me} />;
     case "productos": return <ProductosView />;
     case "calculo-origen": return <CalculoOrigenView />;
+    case "automotriz": return <AutomotivoView />;
     case "insumos": return <InsumosView />;
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosEmitirView />;
@@ -1317,6 +1319,136 @@ function OriginResultReport({ result }: { result: OriginCalcResult }) {
         <div className="mt-2 text-xs">
           <div className="font-semibold text-zinc-700">Valor de Contenido Regional (VCR)</div>
           <div className="text-zinc-500">VCR {d.rvc.rvc}% vs umbral {d.rvc.threshold}% · método {d.rvc.method === "net_cost" ? "Costo neto" : "Valor de transacción"} · valor no originario {d.rvc.vnm} sobre base {d.rvc.transaction_value}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Régimen automotriz T-MEC: evalúa los pilares (VCR net cost, LVC, acero,
+// aluminio, core parts) y da el veredicto combinado.
+const VCLASSES = [
+  { v: "passenger", l: "Automóvil de pasajeros" },
+  { v: "light_truck", l: "Camión ligero" },
+  { v: "heavy", l: "Vehículo pesado" },
+  { v: "autopart", l: "Autoparte (core)" },
+];
+const EMPTY_AUTO = {
+  vehicle_class: "passenger", as_of: new Date().toISOString().slice(0, 10),
+  net_cost: "", vnm: "", lvc_pct: "", wage_usd_h: "16", steel_na_pct: "", aluminum_na_pct: "",
+  core_parts_originating: false,
+};
+function AutomotivoView() {
+  const productsL = useList<Product>(() => api.products());
+  const treatiesL = useList<Treaty>(() => api.treaties());
+  const [productId, setProductId] = useState<number | "">("");
+  const [treatyId, setTreatyId] = useState<number | "">("");
+  const [f, setF] = useState({ ...EMPTY_AUTO });
+  const [result, setResult] = useState<AutomotiveResult | null>(null);
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const productos = productsL.data.filter((p) => p.kind !== "material");
+  const set = (k: keyof typeof f, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+  useEffect(() => {
+    if (treatyId === "" && treatiesL.data.length) {
+      const t = treatiesL.data.find((x) => x.code === "TMEC"); setTreatyId(t ? t.id : treatiesL.data[0].id);
+    }
+  }, [treatiesL.data, treatyId]);
+  const loadSaved = useCallback(async () => {
+    setResult(null);
+    if (!productId || !treatyId) return;
+    try {
+      const a: AutomotiveSaved = await api.automotive(Number(productId), Number(treatyId));
+      if (a && a.vehicle_class) {
+        setF({
+          vehicle_class: a.vehicle_class, as_of: a.as_of || EMPTY_AUTO.as_of,
+          net_cost: a.net_cost ?? "", vnm: a.vnm ?? "", lvc_pct: a.lvc_pct ?? "",
+          wage_usd_h: a.wage_usd_h ?? "16", steel_na_pct: a.steel_na_pct ?? "",
+          aluminum_na_pct: a.aluminum_na_pct ?? "", core_parts_originating: !!a.core_parts_originating,
+        });
+        if (a.detail) setResult(a.detail);
+      } else { setF({ ...EMPTY_AUTO }); }
+    } catch { /* sin guardado */ }
+  }, [productId, treatyId]);
+  useEffect(() => { loadSaved(); }, [loadSaved]);
+  async function evaluar() {
+    if (!productId || !treatyId) { setMsg("Elige producto y tratado."); return; }
+    setBusy(true); setMsg("");
+    try { setResult(await api.calcAutomotive(Number(productId), { treaty: treatyId, ...f })); }
+    catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  }
+  const numField = (k: keyof typeof f, label: string, suffix = "") => (
+    <Field label={label}>
+      <div className="flex items-center gap-1">
+        <input type="number" step="any" className={inputCls} value={f[k] as string} onChange={(e) => set(k, e.target.value)} />
+        {suffix && <span className="text-xs text-zinc-400">{suffix}</span>}
+      </div>
+    </Field>
+  );
+  return (
+    <div className="max-w-4xl">
+      <PageTitle title="Régimen automotriz (T-MEC)" desc="Evalúa los requisitos automotrices del USMCA: VCR por costo neto (phase-in), Valor de Contenido Laboral, acero/aluminio y core parts. Califica solo si pasan todos." />
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        ⚠️ Herramienta <strong>orientativa</strong>. Los umbrales y fechas del T-MEC deben confirmarse contra la normativa vigente y validarse con un especialista antes de uso formal ante el SAT. Además se requieren 3 certificaciones a CBP (LVC, acero, aluminio).
+      </div>
+      <Card className="p-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Producto">
+            <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+              <option value="">Elige…</option>
+              {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
+            </select>
+          </Field>
+          <Field label="Tratado">
+            <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+              {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
+            </select>
+          </Field>
+          <Field label="Clase de vehículo">
+            <select value={f.vehicle_class} onChange={(e) => set("vehicle_class", e.target.value)} className={inputCls}>
+              {VCLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha (phase-in)"><input type="date" className={inputCls} value={f.as_of} onChange={(e) => set("as_of", e.target.value)} /></Field>
+          {numField("net_cost", "Costo neto del bien")}
+          {numField("vnm", "Valor materiales NO originarios")}
+          {numField("lvc_pct", "LVC (%)", "%")}
+          {numField("wage_usd_h", "Salario base", "USD/h")}
+          {numField("steel_na_pct", "Acero N.A. (%)", "%")}
+          {numField("aluminum_na_pct", "Aluminio N.A. (%)", "%")}
+          <Field label="Core parts">
+            <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <input type="checkbox" checked={f.core_parts_originating} onChange={(e) => set("core_parts_originating", e.target.checked)} />
+              Los 7 sistemas core son originarios
+            </label>
+          </Field>
+        </div>
+        {msg && <p className="mt-3 text-sm text-amber-600">{msg}</p>}
+        <div className="mt-5"><Btn onClick={evaluar} disabled={busy || !productId || !treatyId}>{busy ? "Evaluando…" : "Evaluar régimen automotriz"}</Btn></div>
+      </Card>
+
+      {result && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <span className={cx("rounded-full px-3 py-1 text-sm font-bold", result.qualifies ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+              {result.qualifies ? "CALIFICA (todos los pilares)" : "NO CALIFICA"}
+            </span>
+            <span className="text-xs text-zinc-500">{result.class_label}{result.as_of ? ` · ${result.as_of}` : ""}</span>
+          </div>
+          {!result.qualifies && result.failing.length > 0 && (
+            <p className="mb-3 text-sm text-red-700">Falla: {result.failing.join(", ")}.</p>
+          )}
+          <Table head={["Pilar", "Valor", "Umbral", "Estado", "Detalle"]}>
+            {result.pillars.map((p) => (
+              <tr key={p.key}>
+                <td className="px-4 py-3 font-medium">{p.label}</td>
+                <td className="px-4 py-3 text-xs">{p.value ?? "—"}</td>
+                <td className="px-4 py-3 text-xs">{p.threshold}</td>
+                <td className="px-4 py-3">{p.ok ? <span className="text-green-700">✓</span> : <span className="text-red-700">✗</span>}</td>
+                <td className="px-4 py-3 text-xs text-zinc-500">{p.detail}</td>
+              </tr>
+            ))}
+          </Table>
+          <p className="mt-3 text-xs text-zinc-400">{result.disclaimer}</p>
         </div>
       )}
     </div>

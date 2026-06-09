@@ -4,7 +4,7 @@ from apps.catalog.models import (
     BOMComponent, CompanyProfile, Party, Product, SolicitationBOM,
     SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
-from apps.origin.models import Certificate, Qualification
+from apps.origin.models import AutomotiveAssessment, Certificate, Qualification
 from apps.treaties.models import OriginRule, Treaty
 
 
@@ -171,6 +171,17 @@ class QualificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Qualification
         fields = "__all__"
+
+
+class AutomotiveAssessmentSerializer(serializers.ModelSerializer):
+    product_sku = serializers.CharField(source="product.sku", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+
+    class Meta:
+        model = AutomotiveAssessment
+        fields = ["id", "product", "product_sku", "treaty", "treaty_code", "vehicle_class",
+                  "as_of", "net_cost", "vnm", "lvc_pct", "wage_usd_h", "steel_na_pct",
+                  "aluminum_na_pct", "core_parts_originating", "qualifies", "detail", "computed_at"]
 
 
 class CertificateSerializer(serializers.ModelSerializer):

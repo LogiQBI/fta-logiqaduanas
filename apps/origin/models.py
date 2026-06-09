@@ -39,6 +39,46 @@ class Qualification(TenantOwnedModel):
         return f"{self.product.sku} / {self.treaty.code}: {self.get_status_display()}"
 
 
+class AutomotiveAssessment(TenantOwnedModel):
+    """Evaluación del régimen automotriz T-MEC de un producto (vehículo/autoparte):
+    RVC por costo neto (phase-in) + LVC + acero/aluminio + core parts. Orientativa."""
+
+    class VehicleClass(models.TextChoices):
+        PASSENGER = "passenger", "Automóvil de pasajeros"
+        LIGHT_TRUCK = "light_truck", "Camión ligero"
+        HEAVY = "heavy", "Vehículo pesado"
+        AUTOPART = "autopart", "Autoparte (core)"
+
+    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE,
+                                related_name="automotive_assessments")
+    treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE,
+                               related_name="automotive_assessments")
+    vehicle_class = models.CharField(max_length=20, choices=VehicleClass.choices,
+                                     default=VehicleClass.PASSENGER)
+    as_of = models.DateField("Fecha de evaluación (phase-in)", null=True, blank=True)
+    net_cost = models.DecimalField("Costo neto", max_digits=16, decimal_places=4, default=0)
+    vnm = models.DecimalField("Valor de materiales no originarios", max_digits=16, decimal_places=4, default=0)
+    lvc_pct = models.DecimalField("LVC (%)", max_digits=6, decimal_places=2, default=0)
+    wage_usd_h = models.DecimalField("Salario base (USD/h)", max_digits=8, decimal_places=2, default=0)
+    steel_na_pct = models.DecimalField("Acero N.A. (%)", max_digits=6, decimal_places=2, default=0)
+    aluminum_na_pct = models.DecimalField("Aluminio N.A. (%)", max_digits=6, decimal_places=2, default=0)
+    core_parts_originating = models.BooleanField("Core parts originarios", default=False)
+    qualifies = models.BooleanField("¿Califica (combinado)?", default=False)
+    detail = models.JSONField("Traza", default=dict, blank=True)
+    computed_at = models.DateTimeField(auto_now=True)
+    computed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL)
+
+    class Meta:
+        unique_together = [("tenant", "product", "treaty")]
+        ordering = ["-computed_at"]
+        verbose_name = "Evaluación automotriz"
+        verbose_name_plural = "Evaluaciones automotrices"
+
+    def __str__(self):
+        return f"Automotriz {self.product.sku} / {self.treaty.code}: {'SI' if self.qualifies else 'NO'}"
+
+
 class Certificate(TenantOwnedModel):
     """Certificado de origen emitido al cliente.
     Guarda los elementos mínimos del T-MEC (Anexo 5-A).

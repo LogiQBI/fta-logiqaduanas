@@ -27,7 +27,8 @@ from apps.catalog.models import (
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
-from apps.origin.models import Certificate, Qualification
+from apps.origin import automotive as auto
+from apps.origin.models import AutomotiveAssessment, Certificate, Qualification
 from apps.origin.services import (
     calculate_bom_origin, calculate_product_origin, certificate_elements,
     issue_certificate, qualify_and_save,
@@ -466,6 +467,55 @@ class ProductViewSet(TenantScopedViewSet):
                           "country": d.country_of_origin} for d in qs]
             comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls})
         return Response({"product": s.ProductSerializer(product).data, "components": comps})
+
+    @action(detail=True, methods=["get"], url_path="automotive")
+    def automotive_get(self, request, pk=None):
+        """Devuelve la evaluación automotriz guardada del producto (si existe)."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede ver el régimen automotriz.")
+        product = self.get_object()
+        treaty_id = request.query_params.get("treaty")
+        a = AutomotiveAssessment.objects.filter(
+            tenant=m.tenant, product=product, treaty_id=treaty_id).first() if treaty_id else None
+        return Response(s.AutomotiveAssessmentSerializer(a).data if a else {})
+
+    @action(detail=True, methods=["post"], url_path="calc-automotive")
+    def calc_automotive(self, request, pk=None):
+        """Evalúa el régimen automotriz T-MEC y guarda el resultado.
+        Body: {treaty, vehicle_class, as_of, net_cost, vnm, lvc_pct, wage_usd_h,
+        steel_na_pct, aluminum_na_pct, core_parts_originating}."""
+        from django.utils.dateparse import parse_date
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede calcular el régimen automotriz.")
+        product = self.get_object()
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        if not treaty:
+            return Response({"error": "Falta el tratado o no existe."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        d = request.data
+        vclass = d.get("vehicle_class") or "passenger"
+        if vclass not in auto.CLASSES:
+            return Response({"error": "Clase de vehículo inválida."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        as_of = parse_date(d.get("as_of") or "") or None
+        core = bool(d.get("core_parts_originating"))
+        result = auto.evaluate(
+            vehicle_class=vclass, as_of=as_of,
+            net_cost=d.get("net_cost"), vnm=d.get("vnm"), lvc_pct=d.get("lvc_pct"),
+            wage_usd_h=d.get("wage_usd_h"), steel_na_pct=d.get("steel_na_pct"),
+            aluminum_na_pct=d.get("aluminum_na_pct"), core_parts_originating=core)
+        AutomotiveAssessment.objects.update_or_create(
+            tenant=m.tenant, product=product, treaty=treaty,
+            defaults={"vehicle_class": vclass, "as_of": as_of,
+                      "net_cost": d.get("net_cost") or 0, "vnm": d.get("vnm") or 0,
+                      "lvc_pct": d.get("lvc_pct") or 0, "wage_usd_h": d.get("wage_usd_h") or 0,
+                      "steel_na_pct": d.get("steel_na_pct") or 0,
+                      "aluminum_na_pct": d.get("aluminum_na_pct") or 0,
+                      "core_parts_originating": core, "qualifies": result["qualifies"],
+                      "detail": result, "computed_by": request.user})
+        return Response(result)
 
     @action(detail=True, methods=["post"], url_path="calc-bom-origin")
     def calc_bom_origin(self, request, pk=None):

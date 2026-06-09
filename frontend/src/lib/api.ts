@@ -102,6 +102,18 @@ export type OriginCalcResult = {
   status: string; criterion: string; rvc_value: string | number | null;
   detail: Record<string, unknown>;
 };
+export type AutoPillar = {
+  key: string; label: string; value: string | null; threshold: string; ok: boolean; detail: string;
+};
+export type AutomotiveResult = {
+  vehicle_class: string; class_label: string; as_of: string | null; qualifies: boolean;
+  pillars: AutoPillar[]; failing: string[]; rvc_value: string | null; disclaimer: string;
+};
+export type AutomotiveSaved = {
+  vehicle_class?: string; as_of?: string | null; net_cost?: string; vnm?: string;
+  lvc_pct?: string; wage_usd_h?: string; steel_na_pct?: string; aluminum_na_pct?: string;
+  core_parts_originating?: boolean; detail?: AutomotiveResult;
+};
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {
   id: number; kind: string; kind_display?: string; name: string;
@@ -231,6 +243,10 @@ export const api = {
     req(`/products/${id}/calc-bom-origin/`, {
       method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null }),
     }),
+  automotive: (id: number, treaty: number): Promise<AutomotiveSaved> =>
+    req(`/products/${id}/automotive/?treaty=${treaty}`),
+  calcAutomotive: (id: number, payload: Record<string, unknown>): Promise<AutomotiveResult> =>
+    req(`/products/${id}/calc-automotive/`, { method: "POST", body: JSON.stringify(payload) }),
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
   parties: (kind?: string) => req(kind ? `/parties/?kind=${kind}` : "/parties/"),
