@@ -1455,6 +1455,41 @@ function AutomotivoView() {
   );
 }
 
+// Ayuda: cómo funciona el cálculo de origen y el BOM recursivo (roll-up).
+function AyudaOrigenModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="¿Cómo funciona el cálculo de origen?" onClose={onClose} wide>
+      <div className="space-y-4 text-sm text-zinc-700">
+        <div>
+          <div className="font-semibold text-zinc-900">¿Para qué sirve?</div>
+          <p>Determina si tu producto es <strong>originario</strong> de un tratado (TLC) según su lista de materiales (BOM). El sistema aplica la regla de origen de la fracción (salto arancelario y/o valor de contenido regional) y te dice si <strong>califica</strong>.</p>
+        </div>
+        <div>
+          <div className="font-semibold text-zinc-900">Paso a paso</div>
+          <ol className="ml-5 list-decimal space-y-1">
+            <li>Da de alta el producto y su <strong>BOM</strong> (Productos → botón “BOM”), con cada insumo y su cantidad.</li>
+            <li>Aquí eliges el <strong>producto</strong> y el <strong>tratado</strong>.</li>
+            <li>Por cada insumo defines su origen: <strong>declaración del proveedor</strong> (más reciente o de un periodo) o <strong>manual</strong> (país).</li>
+            <li>Pulsas <strong>“Calcular origen”</strong> y obtienes el resultado con su detalle.</li>
+          </ol>
+        </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="font-semibold text-blue-900">BOM recursivo (roll-up) — para subensambles que fabricas tú</div>
+          <p className="mt-1 text-blue-900">Si un insumo es un <strong>subensamble que tú fabricas</strong> y tiene su propio BOM, el sistema lo calcula “hacia adentro”: primero califica el subensamble con SUS materiales y, si resulta originario, su <strong>valor completo</strong> cuenta como originario en el producto de arriba (esto se llama <em>roll-up</em> y maximiza el VCR).</p>
+          <p className="mt-2 text-blue-900"><strong>Ejemplo:</strong> un Tablero ($100) lleva un Arnés que fabricas ($60) + una carcasa importada ($40). El Arnés, por dentro, lleva cobre de México ($50) + un conector importado ($10). El sistema califica primero el Arnés (VCR 83% → originario) y entonces sus $60 completos cuentan como originarios en el Tablero.</p>
+          <p className="mt-2 text-blue-900"><strong>¿Cómo se activa?</strong> Deja el subensamble en modo <strong>“usar declaración del proveedor”</strong> (sin país manual y sin declaración cargada): al no encontrar declaración y ver que tiene BOM propio, el sistema lo calcula solo. En el reporte verás la línea como <em>“Subensamble calculado (roll-up)”</em>.</p>
+        </div>
+        <div>
+          <div className="font-semibold text-zinc-900">¿Cuándo NO lo necesitas?</div>
+          <p>Si todos tus insumos son <strong>comprados</strong> (llegan ya hechos con su declaración), el cálculo a un nivel es suficiente; el roll-up solo aplica cuando hay manufactura en varios niveles.</p>
+        </div>
+        <p className="text-xs text-zinc-400">El cálculo es orientativo; valídalo con un especialista antes de uso formal ante el SAT.</p>
+      </div>
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Entendido</Btn></div>
+    </Modal>
+  );
+}
+
 // Cálculo de origen del producto de la EMPRESA a partir de su BOM, con toggle
 // por insumo (declaración del proveedor / periodo, o captura manual).
 function CalculoOrigenView() {
@@ -1466,6 +1501,7 @@ function CalculoOrigenView() {
   const [loadingBom, setLoadingBom] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
+  const [ayuda, setAyuda] = useState(false);
   const productos = productsL.data.filter((p) => p.kind !== "material");
 
   useEffect(() => {
@@ -1499,7 +1535,11 @@ function CalculoOrigenView() {
 
   return (
     <div>
-      <PageTitle title="Cálculo de origen" desc="Calcula el origen de tus productos a partir de su BOM. Por cada insumo elige si tomas el origen que declaró el proveedor o lo capturas tú." />
+      <div className="flex items-start justify-between gap-3">
+        <PageTitle title="Cálculo de origen" desc="Calcula el origen de tus productos a partir de su BOM. Por cada insumo elige si tomas el origen que declaró el proveedor o lo capturas tú." />
+        <Btn variant="ghost" size="sm" onClick={() => setAyuda(true)}>¿Cómo funciona?</Btn>
+      </div>
+      {ayuda && <AyudaOrigenModal onClose={() => setAyuda(false)} />}
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="min-w-[18rem]">
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Producto</span>

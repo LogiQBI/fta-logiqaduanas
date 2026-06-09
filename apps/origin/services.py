@@ -115,32 +115,29 @@ def _save_bom_result(bom, rule, result):
     return result
 
 
-def _resolve_component_origin(bc, treaty, default_as_of):
-    """Resuelve el origen de UN insumo del BOM de la empresa según su toggle.
+def _resolve_component_origin(bc, treaty, default_as_of, visited):
+    """Resuelve el origen de UN insumo del BOM, según su toggle:
 
-    - origin_mode MANUAL: usa lo que capturó la empresa.
-    - origin_mode SUPPLIER: usa la declaración del proveedor (la del periodo
-      `origin_as_of`, o la del periodo global pedido, o la MÁS RECIENTE). Si no
-      hay declaración, cae a país miembro y, en último caso, a no originario.
+    - MANUAL: usa el país capturado (originario si es país miembro).
+    - DECLARACIÓN: usa la declaración del proveedor (periodo o más reciente).
+    - Si NO hay declaración y el insumo es un SUBENSAMBLE con su propio BOM
+      (fabricado en casa), se calcula su origen RECURSIVAMENTE y, si califica,
+      su valor TOTAL cuenta como originario (roll-up).
+    - Si no, cae a país miembro y, en último caso, a no originario.
     """
     from apps.catalog.models import SupplierDeclaration
 
     comp = bc.component
     value = (comp.unit_cost or Decimal("0")) * (bc.quantity or Decimal("0"))
-    members = treaty.member_countries or []
+    members = [c.upper() for c in (treaty.member_countries or [])]
 
     if bc.origin_mode == "manual":
         country = (bc.manual_country or "").upper()
         if country:
-            # El país capturado decide el origen: originario si es país miembro
-            # del tratado que se está calculando.
-            originating = country in [c.upper() for c in members]
-            source = f"País manual: {country}"
-        else:
-            originating = bool(bc.manual_is_originating)
-            source = "Captura manual de la empresa"
-        return {"originating": originating, "country": country,
-                "value": value, "source": source}
+            return {"originating": country in members, "country": country,
+                    "value": value, "source": f"País manual: {country}"}
+        return {"originating": bool(bc.manual_is_originating), "country": "",
+                "value": value, "source": "Captura manual de la empresa"}
 
     as_of = bc.origin_as_of or default_as_of
     qs = SupplierDeclaration.objects.filter(product=comp, treaty=treaty)
@@ -153,37 +150,50 @@ def _resolve_component_origin(bc, treaty, default_as_of):
         decl = qs.order_by("-valid_from", "-created_at").first()
     if decl:
         return {"originating": decl.is_originating,
-                "country": (decl.country_of_origin or "").upper(),
-                "value": value,
+                "country": (decl.country_of_origin or "").upper(), "value": value,
                 "source": f"Declaración del proveedor {decl.valid_from} → {decl.valid_to}"}
+
+    # Subensamble fabricado en casa: calificarlo con SU propio BOM (roll-up).
+    if comp.id not in visited and comp.bom_components.exists():
+        sub = _evaluate_product(comp, treaty, as_of, visited)
+        orig = sub["status"] == "QUALIFIES"
+        rvc = sub.get("rvc_value")
+        return {"originating": orig, "country": (comp.country_of_origin or "").upper(),
+                "value": value,
+                "source": ("Subensamble calculado (roll-up): "
+                           + ("originario" if orig else "no originario")
+                           + (f" · VCR {rvc}%" if rvc is not None else ""))}
+
     if comp.country_of_origin and comp.country_of_origin.upper() in members:
         return {"originating": True, "country": comp.country_of_origin.upper(),
                 "value": value, "source": "País miembro (sin declaración)"}
     return {"originating": False, "country": (comp.country_of_origin or "").upper(),
-            "value": value, "source": "Sin declaración de origen"}
+            "value": value, "source": "Sin declaración ni BOM propio"}
 
 
-def calculate_product_origin(product, treaty, as_of=None, user=None):
-    """Calcula el origen del producto terminado de la EMPRESA a partir de SU BOM
-    (BOMComponent), resolviendo el origen de cada insumo según su toggle.
-    Guarda/actualiza la Qualification y devuelve el resultado con su traza."""
+def _evaluate_product(product, treaty, as_of, visited):
+    """Evalúa el origen de un producto a partir de su BOM, RECURSIVAMENTE: los
+    subensambles con BOM propio se califican primero y, si originan, hacen
+    roll-up (su valor total cuenta como originario). Detecta ciclos."""
+    if product.id in visited:
+        return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
+                "detail": {"error": f"Ciclo en el BOM detectado en {product.sku}."}}
+    visited = visited | {product.id}
     components = list(product.bom_components.select_related("component").all())
     if not components:
-        return _save_qual(product, treaty, None, {
-            "status": "INSUFFICIENT", "criterion": "", "rvc_value": None,
-            "detail": {"error": "El producto no tiene lista de materiales (BOM)."}}, user)
+        return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
+                "detail": {"error": "El producto no tiene lista de materiales (BOM)."}}
     rule = engine.find_rule(treaty, product.hs_code or "")
     if rule is None:
-        return _save_qual(product, treaty, None, {
-            "status": "INSUFFICIENT", "criterion": "", "rvc_value": None,
-            "detail": {"error": f"No hay regla de origen para HS "
-                                f"{product.hs_code} en {treaty.code}."}}, user)
+        return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
+                "detail": {"error": f"No hay regla de origen para HS "
+                                    f"{product.hs_code} en {treaty.code}."}}
 
     total = Decimal("0")
     vnm = Decimal("0")
     lines = []
     for bc in components:
-        info = _resolve_component_origin(bc, treaty, as_of)
+        info = _resolve_component_origin(bc, treaty, as_of, visited)
         val = info["value"]
         total += val
         if not info["originating"]:
@@ -234,9 +244,15 @@ def calculate_product_origin(product, treaty, as_of=None, user=None):
         passed = bool(ctc_pass) and bool(rvc_pass)
         criterion = "CTC_AND_RVC"
 
-    return _save_qual(product, treaty, rule, {
-        "status": "QUALIFIES" if passed else "DOES_NOT",
-        "criterion": criterion, "rvc_value": rvc_value, "detail": detail}, user)
+    return {"status": "QUALIFIES" if passed else "DOES_NOT", "criterion": criterion,
+            "rvc_value": rvc_value, "detail": detail, "rule": rule}
+
+
+def calculate_product_origin(product, treaty, as_of=None, user=None):
+    """Calcula el origen del producto de la EMPRESA a partir de SU BOM, con
+    roll-up recursivo de subensambles. Guarda la Qualification y devuelve la traza."""
+    result = _evaluate_product(product, treaty, as_of, set())
+    return _save_qual(product, treaty, result.get("rule"), result, user)
 
 
 def _save_qual(product, treaty, rule, result, user):
