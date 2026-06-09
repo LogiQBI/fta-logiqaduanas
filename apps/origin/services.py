@@ -80,7 +80,7 @@ def calculate_bom_origin(bom):
             treaty, params, rvc_base, vnm)
         detail["rvc"] = rvc_detail
 
-    note = engine.automotive_note(params)
+    note = engine.automotive_note(params, product.hs_code or "")
     if note:
         detail["automotive_regime"] = note
 
@@ -217,7 +217,7 @@ def calculate_product_origin(product, treaty, as_of=None, user=None):
     if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
         rvc_pass, rvc_value, rvc_detail = engine._check_rvc(treaty, params, transaction_value, vnm)
         detail["rvc"] = rvc_detail
-    note = engine.automotive_note(params)
+    note = engine.automotive_note(params, product.hs_code or "")
     if note:
         detail["automotive_regime"] = note
 

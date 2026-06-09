@@ -126,10 +126,16 @@ def _digits(code):
     return "".join(ch for ch in (code or "") if ch.isdigit())
 
 
-def automotive_note(params):
-    """Si la PSR trae régimen automotriz (LVC / acero-aluminio / core part) en
-    'extra', devuelve un aviso para el expediente: el VCR no basta, hay que
-    validar aparte el Valor de Contenido Laboral y la compra de acero/aluminio.
+# Fracciones (4 dígitos) del sector automotor para el aviso de régimen.
+AUTO_VEHICLE_HEADINGS = {"8701", "8702", "8703", "8704", "8705"}
+AUTO_PART_HEADINGS = {"8706", "8707", "8708"}
+
+
+def automotive_note(params, hs_code=""):
+    """Aviso de régimen automotriz para el expediente. Se dispara si la PSR trae
+    banderas en 'extra' (LVC / acero-aluminio / core) O si la fracción del bien
+    es del sector automotor (cap. 87 vehículos/autopartes), SIEMPRE (califique o
+    no), porque el VCR no basta: hay requisitos que el motor no calcula.
     Devuelve None si no aplica."""
     extra = (params or {}).get("extra") or {}
     flags = []
@@ -142,11 +148,22 @@ def automotive_note(params):
             f"compra de acero/aluminio originario ≥ {extra['steel_aluminum_originating_pct']}%")
     if extra.get("is_core_part") or extra.get("core_parts_required") or extra.get("core_part_75_if_listed"):
         flags.append("verificar si es 'core part' (puede exigir VCR 75% costo neto)")
-    if not flags:
-        return None
-    return ("Régimen automotriz T-MEC: además del VCR, este bien está sujeto a "
-            + "; ".join(flags) + ". Estos requisitos NO los calcula el motor; "
-            "deben validarse por separado con un especialista.")
+    if flags:
+        return ("Régimen automotriz T-MEC: además del VCR, este bien está sujeto a "
+                + "; ".join(flags) + ". Estos requisitos NO los calcula el motor; "
+                "deben validarse por separado con un especialista.")
+    # Aviso por fracción automotriz aunque la regla no traiga banderas.
+    h = "".join(c for c in (hs_code or "") if c.isdigit())[:4]
+    if h in AUTO_VEHICLE_HEADINGS:
+        return ("Sector automotor (vehículo, fracción " + h + "). En el USMCA, además del VCR, "
+                "aplican el Valor de Contenido Laboral (LVC), la compra de acero/aluminio "
+                "originario y reglas de 'core/super-core parts'. Estos requisitos NO los calcula "
+                "el motor; valídalos por separado con un especialista.")
+    if h in AUTO_PART_HEADINGS:
+        return ("Sector automotor (autoparte, fracción " + h + "). En el USMCA puede aplicar el "
+                "régimen automotriz (VCR mayor para 'core parts' y requisitos de acero/aluminio). "
+                "Verifica si es parte esencial; estos requisitos NO los calcula el motor.")
+    return None
 
 
 def _check_tariff_shift(product, lines, shift_level, de_minimis, total_value,
@@ -265,7 +282,7 @@ def qualify(product, treaty, as_of=None, _visited=None):
         rvc_pass, rvc_value, rvc_detail = _check_rvc(treaty, params, transaction_value, vnm)
         detail["rvc"] = rvc_detail
 
-    note = automotive_note(params)
+    note = automotive_note(params, product.hs_code or "")
     if note:
         detail["automotive_regime"] = note
 
