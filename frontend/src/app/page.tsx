@@ -302,6 +302,9 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState("home");
   const [badges, setBadges] = useState<Record<string, number>>({});
   const [menuOpen, setMenuOpen] = useState(false);
+  // Secciones del menú lateral colapsadas (por etiqueta).
+  const [colapsadas, setColapsadas] = useState<Record<string, boolean>>({});
+  const toggleSec = (label: string) => setColapsadas((c) => ({ ...c, [label]: !c[label] }));
 
   useEffect(() => {
     // badge de solicitudes pendientes (empresa o proveedor)
@@ -332,14 +335,18 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <div className="truncate text-xs text-zinc-500">{subtitle}</div>
         </div>
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-          {sections.map((sec, i) => (
+          {sections.map((sec, i) => {
+            const isCollapsed = sec.label ? !!colapsadas[sec.label] : false;
+            return (
             <div key={i}>
               {sec.label && (
-                <div className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  {sec.label}
-                </div>
+                <button onClick={() => toggleSec(sec.label!)}
+                  className="mb-1 flex w-full items-center gap-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 hover:text-zinc-600">
+                  <ChevronDown size={13} className={cx("transition-transform", isCollapsed && "-rotate-90")} />
+                  <span className="flex-1 text-left">{sec.label}</span>
+                </button>
               )}
-              {sec.items.map((it) => {
+              {!isCollapsed && sec.items.map((it) => {
                 const active = view === it.key;
                 const Icon = it.icon;
                 return (
@@ -355,7 +362,8 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
       </aside>
 
@@ -1737,6 +1745,7 @@ function InsumosView() {
   const parties = useList<Party>(() => api.parties());
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [logFor, setLogFor] = useState<Product | null>(null);
+  const [bomFor, setBomFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   const [msg, setMsg] = useState("");
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
@@ -1804,6 +1813,9 @@ function InsumosView() {
               </span>
             </td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
+              {p.kind !== "material" && (
+                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
+              )}
               <button onClick={() => setEditing(p)} title="Editar"
                 className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
               <button onClick={() => del(p)} title="Eliminar"
@@ -1818,6 +1830,7 @@ function InsumosView() {
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
       {logFor && <HsLogModal product={logFor} onClose={() => setLogFor(null)} />}
+      {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
       {bulk === "products" && (
         <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
           hint="Da de alta o actualiza muchos insumos/productos a la vez. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga al proveedor (opcional)."
