@@ -5,6 +5,7 @@ import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
   Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator, Upload,
+  Sun, Moon, Download,
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
@@ -29,6 +30,11 @@ export default function Page() {
     finally { setReady(true); }
   }
   useEffect(() => { if (getToken()) loadMe(); else setReady(true); }, []);
+  // Aplica el tema guardado (día/noche) al cargar.
+  useEffect(() => {
+    if (typeof document !== "undefined" && localStorage.getItem("fta_theme") === "dark")
+      document.documentElement.classList.add("dark");
+  }, []);
 
   const logout = () => { clearToken(); setMe(null); };
   if (!ready) return null;
@@ -374,6 +380,8 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <Search size={16} className="absolute left-3 top-2.5 text-zinc-400" />
             <input placeholder="Buscar…" className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
           </div>
+          <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle />
           <div className="relative">
             <button onClick={() => setMenuOpen(!menuOpen)}
               className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50">
@@ -392,6 +400,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
                 </button>
               </div>
             )}
+          </div>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-8">
@@ -497,6 +506,69 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 const inputCls = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-blue-500";
+
+// Botón de modo día/noche. Persiste la elección en localStorage.
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+  useEffect(() => { setDark(document.documentElement.classList.contains("dark")); }, []);
+  function toggle() {
+    const d = !dark;
+    document.documentElement.classList.toggle("dark", d);
+    localStorage.setItem("fta_theme", d ? "dark" : "light");
+    setDark(d);
+  }
+  return (
+    <button onClick={toggle} title={dark ? "Modo día" : "Modo noche"}
+      className="grid h-9 w-9 place-items-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700">
+      {dark ? <Sun size={17} /> : <Moon size={17} />}
+    </button>
+  );
+}
+
+// Búsqueda inteligente: prioriza coincidencias por PREFIJO (ej. "ST" → ST001,
+// ST002…) y luego por contenido. `fields` extrae los textos buscables de cada fila.
+function smartFilter<T>(rows: T[], q: string, fields: (r: T) => (string | null | undefined)[]): T[] {
+  const s = q.trim().toLowerCase();
+  if (!s) return rows;
+  const pref: T[] = [], sub: T[] = [];
+  for (const r of rows) {
+    const fs = fields(r).map((x) => (x ?? "").toString().toLowerCase());
+    if (fs.some((x) => x.startsWith(s))) pref.push(r);
+    else if (fs.some((x) => x.includes(s))) sub.push(r);
+  }
+  return [...pref, ...sub];
+}
+
+// Exporta filas a un archivo CSV (lo abre Excel; con BOM para acentos correctos).
+function exportCSV(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
+  const esc = (v: string | number | null | undefined) => {
+    const t = String(v ?? "");
+    return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+// Barra de reportes: buscador inteligente + botón de exportar a Excel (CSV).
+function ReportToolbar({ q, setQ, onExport, placeholder }: {
+  q: string; setQ: (s: string) => void; onExport: () => void; placeholder?: string;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
+        <Search size={15} className="absolute left-2.5 top-2.5 text-zinc-400" />
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={placeholder ?? "Buscar… (ej. ST muestra ST001, ST002)"}
+          className={cx(inputCls, "pl-8")} />
+      </div>
+      <Btn size="sm" variant="ghost" onClick={onExport}><Download size={14} className="-mt-0.5 mr-1 inline" />Exportar a Excel</Btn>
+    </div>
+  );
+}
 
 const STATUS_PILL: Record<string, string> = {
   QUALIFIES: "bg-green-100 text-green-700", DOES_NOT: "bg-red-100 text-red-700",
@@ -1048,6 +1120,7 @@ function ProductosView() {
   const parties = useList<{ id: number; name: string; kind: string }>(() => api.parties());
   const [treatyId, setTreatyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
+  const [busq, setBusq] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
   useEffect(() => {
@@ -1068,7 +1141,11 @@ function ProductosView() {
   }
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
   // En "Productos" solo los terminados/subensambles; los insumos van en "Números de parte".
-  const visibles = data.filter((p) => p.kind !== "material");
+  const visibles = smartFilter(data.filter((p) => p.kind !== "material"), busq, (p) => [p.sku, p.description, p.hs_code]);
+  function exportar() {
+    exportCSV("productos", ["SKU", "Descripción", "Tipo", "HS", "Resultado"],
+      visibles.map((p) => { const qq = qualFor(p.id); return [p.sku, p.description, p.kind_display ?? p.kind, p.hs_code ?? "", qq ? `${qq.status_display}${qq.rvc_value ? ` ${qq.rvc_value}%` : ""}` : ""]; }));
+  }
   return (
     <div>
       <PageTitle title="Productos terminados" desc="Tus productos terminados. Califícalos contra los tratados." />
@@ -1081,6 +1158,7 @@ function ProductosView() {
         <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo producto</Btn></div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (SKU o descripción)" />
       <Table head={["SKU", "Descripción", "Tipo", "HS", "Resultado", ""]}>
         {visibles.map((p) => {
           const q = qualFor(p.id);
@@ -1747,8 +1825,14 @@ function InsumosView() {
   const [logFor, setLogFor] = useState<Product | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
+  const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
+  const vis = smartFilter(data, q, (p) => [p.sku, p.description, p.hs_code, p.supplier_name]);
+  function exportar() {
+    exportCSV("numeros_de_parte", ["Núm. de parte", "Tipo", "Descripción", "Proveedor", "HS", "País", "Precio unitario", "Moneda", "Estatus"],
+      vis.map((p) => [p.sku, p.kind_display ?? p.kind, p.description, p.supplier_name ?? "", p.hs_code ?? "", p.country_of_origin ?? "", p.unit_cost ?? "", p.currency ?? "", p.is_active ? "Activo" : "Inactivo"]));
+  }
   async function del(p: Product) {
     if (!confirm(`¿Eliminar el número de parte “${p.sku}”?`)) return;
     setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
@@ -1772,13 +1856,14 @@ function InsumosView() {
         </div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
       {suppliers.length === 0 && !loading && (
         <Card className="mb-4 p-4 text-sm text-amber-700">
           Primero da de alta al menos un proveedor en <strong>Catálogos → Proveedores</strong> para poder ligarle números de parte.
         </Card>
       )}
       <Table head={["Núm. de parte", "Tipo", "Descripción", "Proveedor", "HS", "País", "Precio unitario", "Estatus", ""]}>
-        {data.map((p) => (
+        {vis.map((p) => (
           <tr key={p.id} className={p.is_active ? "" : "opacity-60"}>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{p.sku}</td>
             <td className="px-4 py-3"><KindBadge kind={p.kind} /></td>
@@ -1931,11 +2016,18 @@ function CalificacionesView() {
   const { data, count } = useList<Qualification & { product: number }>(() => api.qualifications());
   const products = useList<Product>(() => api.products());
   const name = (pid: number) => products.data.find((p) => p.id === pid)?.sku ?? `#${pid}`;
+  const [q, setQ] = useState("");
+  const vis = smartFilter(data, q, (x) => [name(x.product), x.criterion, x.status_display]);
+  function exportar() {
+    exportCSV("calificaciones", ["Producto", "Criterio", "VCR", "Resultado"],
+      vis.map((x) => [name(x.product), x.criterion || "", x.rvc_value ? `${x.rvc_value}%` : "", x.status_display]));
+  }
   return (
     <div>
       <PageTitle title="Calificaciones" desc={`${count} calificaciones registradas.`} />
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
       <Table head={["Producto", "Criterio", "VCR", "Resultado"]}>
-        {data.map((q) => (
+        {vis.map((q) => (
           <tr key={q.id}>
             <td className="px-4 py-3 font-mono text-xs">{name(q.product)}</td>
             <td className="px-4 py-3">{q.criterion || "—"}</td>
@@ -1952,7 +2044,13 @@ function ProveedoresView({ me }: { me: Me }) {
   const [editing, setEditing] = useState<Party | "new" | null>(null);
   const [access, setAccess] = useState<Party | null>(null);
   const [bulk, setBulk] = useState(false);
+  const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
+  const vis = smartFilter(data, q, (p) => [p.code, p.name, p.tax_id, p.country]);
+  function exportar() {
+    exportCSV("proveedores", ["Código", "Proveedor", "País", "RFC / Tax ID", "Email", "Teléfono"],
+      vis.map((p) => [p.code ?? "", p.name, p.country ?? "", p.tax_id ?? "", p.email ?? "", p.phone ?? ""]));
+  }
   async function del(p: Party) {
     if (!confirm(`¿Eliminar el proveedor “${p.name}”?`)) return;
     setMsg(""); try { await api.deleteParty(p.id); await reload(); }
@@ -1968,8 +2066,9 @@ function ProveedoresView({ me }: { me: Me }) {
         </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} placeholder="Buscar proveedor… (código o nombre)" />
       <Table head={["Código", "Proveedor", "País", "RFC / Tax ID", "Acceso", ""]}>
-        {data.map((p) => (
+        {vis.map((p) => (
           <tr key={p.id}>
             <td className="px-4 py-3"><code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-700">{p.code || "—"}</code></td>
             <td className="px-4 py-3">
@@ -2166,7 +2265,13 @@ function ClientesView() {
   const { data, reload, loading } = useList<Party>(() => api.parties("customer"));
   const [editing, setEditing] = useState<Party | "new" | null>(null);
   const [bulk, setBulk] = useState(false);
+  const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
+  const vis = smartFilter(data, q, (p) => [p.name, p.tax_id, p.country]);
+  function exportar() {
+    exportCSV("clientes", ["Cliente", "País", "RFC / Tax ID", "Email", "Teléfono"],
+      vis.map((p) => [p.name, p.country ?? "", p.tax_id ?? "", p.email ?? "", p.phone ?? ""]));
+  }
   async function del(p: Party) {
     if (!confirm(`¿Eliminar el cliente “${p.name}”?`)) return;
     setMsg(""); try { await api.deleteParty(p.id); await reload(); }
@@ -2182,8 +2287,9 @@ function ClientesView() {
         </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <ReportToolbar q={q} setQ={setQ} onExport={exportar} placeholder="Buscar cliente…" />
       <Table head={["Cliente", "País", "RFC / Tax ID", "Contacto", ""]}>
-        {data.map((p) => (
+        {vis.map((p) => (
           <tr key={p.id}>
             <td className="px-4 py-3"><div className="font-medium">{p.name}</div></td>
             <td className="px-4 py-3">{p.country || "—"}</td>
@@ -2432,6 +2538,12 @@ function CertificadosEmitirView() {
   const [profile, setProfile] = useState<ProfileShape | null>(null);
   const [msg, setMsg] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const emitidos = useList<EmittedCertificate>(() => api.certificates());
+  const [qReg, setQReg] = useState("");
+  const visCerts = smartFilter(emitidos.data, qReg, (c) => [c.folio, c.product_sku, c.product_description, c.importer_data?.nombre, c.treaty_label]);
+  function exportarCerts() {
+    exportCSV("certificados_emitidos", ["Folio", "Producto", "Descripción", "Tratado", "Cliente", "Criterio", "VCR", "Emitido"],
+      visCerts.map((c) => [c.folio, c.product_sku, c.product_description, c.treaty_label, c.importer_data?.nombre ?? "", c.criterion, c.rvc_value ?? "", c.issued_at?.slice(0, 10) ?? ""]));
+  }
   useEffect(() => { api.companyProfile().then((p) => setProfile(p as ProfileShape)).catch(() => {}); }, []);
   const productos = productsL.data.filter((p) => p.kind !== "material");
   const qual = qualsL.data.find((q) => q.product === Number(productId) && q.treaty === Number(treatyId));
@@ -2513,8 +2625,9 @@ function CertificadosEmitirView() {
 
       <div className="mt-8">
         <div className="mb-2 text-sm font-semibold text-zinc-800">Certificados emitidos ({emitidos.count})</div>
+        {emitidos.count > 0 && <ReportToolbar q={qReg} setQ={setQReg} onExport={exportarCerts} placeholder="Buscar por folio, producto o cliente…" />}
         <Table head={["Folio", "Producto", "Tratado", "Cliente", "Criterio", "Emitido", ""]}>
-          {emitidos.data.map((c) => (
+          {visCerts.map((c) => (
             <tr key={c.id}>
               <td className="px-4 py-3 font-mono text-xs font-semibold">{c.folio}</td>
               <td className="px-4 py-3"><span className="font-mono text-xs">{c.product_sku}</span><div className="text-[11px] text-zinc-500">{c.product_description}</div></td>
