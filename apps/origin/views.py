@@ -1159,10 +1159,21 @@ def company_profile_view(request):
     m = request.user.memberships.select_related("tenant").first()
     if not m or m.is_supplier:
         raise PermissionDenied("Solo la empresa puede gestionar los datos de la empresa.")
-    prof, _ = CompanyProfile.objects.get_or_create(tenant=m.tenant)
+    prof, created = CompanyProfile.objects.get_or_create(tenant=m.tenant)
+    # La identidad (razón social y RFC) la fija el administrador de LogiQ desde el
+    # alta del tenant; se siembra aquí y NO la puede cambiar el usuario de empresa
+    # (evita que el sistema se use para otra empresa cambiando el nombre).
+    changed = []
+    if not prof.legal_name and m.tenant.name:
+        prof.legal_name = m.tenant.name; changed.append("legal_name")
+    if not prof.tax_id and getattr(m.tenant, "rfc", ""):
+        prof.tax_id = m.tenant.rfc; changed.append("tax_id")
+    if changed:
+        prof.save(update_fields=changed)
     if request.method == "GET":
         return Response(s.CompanyProfileSerializer(prof).data)
-    ser = s.CompanyProfileSerializer(prof, data=request.data, partial=True)
+    data = {k: v for k, v in request.data.items() if k not in ("legal_name", "tax_id")}
+    ser = s.CompanyProfileSerializer(prof, data=data, partial=True)
     ser.is_valid(raise_exception=True)
     ser.save()
     return Response(ser.data)

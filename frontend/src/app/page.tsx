@@ -721,6 +721,7 @@ function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
 function EmpresasView() {
   const { data, reload, loading } = useList<MasterTenant>(() => api.masterTenants());
   const [name, setName] = useState(""); const [rfc, setRfc] = useState(""); const [msg, setMsg] = useState("");
+  const [edit, setEdit] = useState<MasterTenant | null>(null);
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); await reload(); } catch (e) { setMsg((e as Error).message); } };
   return (
     <div>
@@ -735,7 +736,8 @@ function EmpresasView() {
             <td className="px-4 py-3">{t.user_count}</td>
             <td className="px-4 py-3">{t.license?.plan_display ?? "—"}</td>
             <td className="px-4 py-3"><Pill k={t.license?.status}>{t.license?.status_display ?? "—"}</Pill></td>
-            <td className="px-4 py-3 text-right">
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
               <span className="mr-2 inline-block">
                 <Btn size="sm" variant="ghost" onClick={() => act(() => api.masterSetLicense(t.id,
                   { status: t.license?.status === "active" ? "suspended" : "active" }))}>
@@ -758,7 +760,36 @@ function EmpresasView() {
           <Plus size={15} className="-mt-0.5 mr-1 inline" />Crear empresa
         </Btn>
       </Card>
+      {edit && <EditTenantModal tenant={edit} onClose={() => setEdit(null)}
+        onSaved={async () => { setEdit(null); await reload(); }} />}
     </div>
+  );
+}
+// El master edita la razón social / RFC de una empresa (se sincroniza con sus
+// "Datos de la empresa"). Solo el master puede cambiar la identidad del tenant.
+function EditTenantModal({ tenant, onClose, onSaved }: {
+  tenant: MasterTenant; onClose: () => void; onSaved: () => void;
+}) {
+  const [name, setName] = useState(tenant.name);
+  const [rfc, setRfc] = useState(tenant.rfc ?? "");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  async function save() {
+    if (!name.trim()) { setErr("La razón social es obligatoria."); return; }
+    setErr(""); setSaving(true);
+    try { await api.masterUpdateTenant(tenant.id, { name: name.trim(), rfc: rfc.trim() }); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Editar empresa — ${tenant.name}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">La razón social y el RFC alimentan los certificados de origen de la empresa. Solo el administrador de LogiQ puede cambiarlos.</p>
+      <Field label="Razón social"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
+      <div className="mt-3"><Field label="RFC / Tax ID"><input className={inputCls} value={rfc} onChange={(e) => setRfc(e.target.value)} /></Field></div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -2885,10 +2916,11 @@ const EMPTY_PROFILE: ProfileShape = {
 };
 // Editor de "Datos de la empresa" reutilizable por PROVEEDOR y EMPRESA.
 // El país se captura en ISO-3 (tres letras) para los certificados (PDF).
-function ProfileEditor({ desc, load, save }: {
+function ProfileEditor({ desc, load, save, lockIdentity }: {
   desc: string;
   load: () => Promise<ProfileShape>;
   save: (p: ProfileShape) => Promise<unknown>;
+  lockIdentity?: boolean;
 }) {
   const [form, setForm] = useState<ProfileShape>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
@@ -2921,8 +2953,14 @@ function ProfileEditor({ desc, load, save }: {
       <Card className="mb-4 p-5">
         <div className="mb-3 text-sm font-semibold text-zinc-800">Información de la empresa</div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Razón social"><input className={inputCls} value={form.legal_name} onChange={(e) => set("legal_name", e.target.value)} /></Field>
-          <Field label="RFC / Tax ID"><input className={inputCls} value={form.tax_id} onChange={(e) => set("tax_id", e.target.value)} /></Field>
+          <Field label={lockIdentity ? "Razón social (la fija LogiQ)" : "Razón social"}>
+            <input className={cx(inputCls, lockIdentity && "cursor-not-allowed bg-zinc-100 text-zinc-500")} value={form.legal_name}
+              readOnly={lockIdentity} disabled={lockIdentity}
+              onChange={(e) => !lockIdentity && set("legal_name", e.target.value)} /></Field>
+          <Field label={lockIdentity ? "RFC / Tax ID (la fija LogiQ)" : "RFC / Tax ID"}>
+            <input className={cx(inputCls, lockIdentity && "cursor-not-allowed bg-zinc-100 text-zinc-500")} value={form.tax_id}
+              readOnly={lockIdentity} disabled={lockIdentity}
+              onChange={(e) => !lockIdentity && set("tax_id", e.target.value)} /></Field>
           <Field label="Domicilio"><input className={inputCls} value={form.address} onChange={(e) => set("address", e.target.value)} /></Field>
           <Field label="Ciudad"><input className={inputCls} value={form.city} onChange={(e) => set("city", e.target.value)} /></Field>
           <Field label="Estado / Provincia"><input className={inputCls} value={form.state} onChange={(e) => set("state", e.target.value)} /></Field>
@@ -2977,8 +3015,8 @@ function DatosEmpresaView() {
 // EMPRESA: sus datos para emitir certificados.
 function DatosEmpresaCompanyView() {
   const load = useCallback(() => api.companyProfile() as Promise<ProfileShape>, []);
-  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)}
-    desc="Datos y firma de tu empresa para llenar los certificados de origen que emites a tus clientes." />;
+  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity
+    desc="Datos y firma de tu empresa para llenar los certificados de origen. La razón social y el RFC los administra LogiQ (no editables aquí)." />;
 }
 function RechazoModal({ s, onClose, onSaved }: { s: Solicitation; onClose: () => void; onSaved: () => void }) {
   const [reason, setReason] = useState(""); const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);

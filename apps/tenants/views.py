@@ -38,6 +38,17 @@ class MasterTenantViewSet(viewsets.ModelViewSet):
         # Toda empresa nueva nace con una licencia de prueba.
         License.objects.get_or_create(tenant=tenant)
 
+    def perform_update(self, serializer):
+        """Al cambiar el nombre/RFC del tenant (solo master), se sincroniza con
+        los Datos de la empresa (razón social/RFC del certificado)."""
+        tenant = serializer.save()
+        from apps.catalog.models import CompanyProfile
+        prof = getattr(tenant, "profile", None)
+        if prof:
+            prof.legal_name = tenant.name or prof.legal_name
+            prof.tax_id = tenant.rfc or prof.tax_id
+            prof.save(update_fields=["legal_name", "tax_id", "updated_at"])
+
     def destroy(self, request, *args, **kwargs):
         """Elimina la empresa y TODOS sus datos. Primero se borran las relaciones
         protegidas (componentes de BOM y certificados) para que la cascada del

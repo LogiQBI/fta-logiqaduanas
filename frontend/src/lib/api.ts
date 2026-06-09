@@ -340,6 +340,8 @@ export const api = {
   masterUsers: () => req("/master/users/"),
   masterCreateTenant: (payload: Record<string, unknown>) =>
     req("/master/tenants/", { method: "POST", body: JSON.stringify(payload) }),
+  masterUpdateTenant: (id: number, payload: Record<string, unknown>) =>
+    req(`/master/tenants/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
   masterDeleteTenant: (id: number) =>
     req(`/master/tenants/${id}/`, { method: "DELETE" }),
   masterSetLicense: (id: number, payload: Record<string, unknown>) =>
