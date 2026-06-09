@@ -59,7 +59,11 @@ async function uploadFile(path: string, file: File) {
   return data;
 }
 
-export type BulkResult = { creados: number; actualizados: number; errores: { fila: number; error: string }[] };
+export type BulkResult = {
+  creados: number; actualizados: number;
+  errores: { fila: number; error: string }[];
+  advertencias?: { fila: number; error: string }[];
+};
 export type EmittedCertificate = {
   id: number; folio: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;

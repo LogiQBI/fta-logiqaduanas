@@ -36,7 +36,7 @@ KIND_MAP = {
 
 def import_products(tenant, rows, user):
     from apps.catalog.models import Party, Product
-    res = {"creados": 0, "actualizados": 0, "errores": []}
+    res = {"creados": 0, "actualizados": 0, "errores": [], "advertencias": []}
     for i, r in enumerate(rows, start=2):
         sku = str(r.get("sku") or "").strip()
         if not sku:
@@ -48,7 +48,9 @@ def import_products(tenant, rows, user):
             supplier = Party.objects.filter(
                 tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
             if not supplier:
-                res["errores"].append({"fila": i, "error": f"Proveedor con código '{scode}' no existe."}); continue
+                # No bloquea: se crea el producto SIN proveedor y se avisa.
+                res["advertencias"].append({"fila": i,
+                    "error": f"Proveedor con código '{scode}' no existe; se creó sin proveedor."})
         defaults = {
             "description": str(r.get("descripcion") or "").strip(),
             "kind": kind,

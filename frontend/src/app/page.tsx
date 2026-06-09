@@ -1516,6 +1516,14 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn }
               </ul>
             </div>
           )}
+          {(result.advertencias?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <div className="font-semibold text-amber-700">{result.advertencias!.length} advertencia(s):</div>
+              <ul className="mt-1 max-h-40 overflow-auto text-xs text-amber-700">
+                {result.advertencias!.map((e, i) => <li key={i}>Fila {e.fila}: {e.error}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
