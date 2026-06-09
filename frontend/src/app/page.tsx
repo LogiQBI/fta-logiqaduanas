@@ -633,42 +633,84 @@ function HomeView({ me, go }: { me: Me; go: (v: string) => void }) {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => <ActionCard key={c.k} {...c} onClick={() => go(c.k)} />)}
       </div>
-      {me.is_supplier && <ProveedorDashboard go={go} />}
+      {me.role !== "master" && <PendientesPanel me={me} go={go} />}
     </div>
   );
 }
-// Dashboard del proveedor: solicitudes pendientes por tratado.
-function ProveedorDashboard({ go }: { go: (v: string) => void }) {
-  const { data } = useList<Solicitation>(() => api.solicitations());
-  const pend = data.filter((s) => s.status !== "responded");
-  const porTratado = new Map<string, number>();
-  for (const s of pend) {
-    const t = treatyLabel(s.treaty_code);
-    porTratado.set(t, (porTratado.get(t) ?? 0) + 1);
-  }
-  const vencidas = pend.filter((s) => dueAlert(s)?.label.startsWith("Vencida")).length;
-  const porVencer = pend.filter((s) => dueAlert(s)?.label.startsWith("Por vencer")).length;
+// Días restantes / vencimiento de una solicitud por su fecha límite.
+function diasInfo(s: Solicitation): { dias: number | null; txt: string; cls: string } {
+  if (!s.due_date) return { dias: null, txt: "Sin fecha límite", cls: "bg-zinc-100 text-zinc-600" };
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const due = new Date(s.due_date + "T00:00:00");
+  const d = Math.round((due.getTime() - hoy.getTime()) / 86400000);
+  if (d < 0) return { dias: d, txt: `Vencida hace ${-d} día${-d === 1 ? "" : "s"}`, cls: "bg-red-100 text-red-700" };
+  if (d === 0) return { dias: 0, txt: "Vence hoy", cls: "bg-red-100 text-red-700" };
+  if (d <= 7) return { dias: d, txt: `Quedan ${d} día${d === 1 ? "" : "s"}`, cls: "bg-amber-100 text-amber-800" };
+  return { dias: d, txt: `Quedan ${d} días`, cls: "bg-emerald-100 text-emerald-700" };
+}
+// Panel de solicitudes pendientes de respuesta (empresa o proveedor) con su
+// estado de vencimiento (vencidas / por vencer / días restantes).
+function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
+  const { data, loading } = useList<Solicitation>(() => api.solicitations());
+  const esEmpresa = !me.is_supplier;
+  const pend = data.filter((s) => s.status !== "responded" && s.status !== "accepted");
+  const conInfo = pend.map((s) => ({ s, info: diasInfo(s) }));
+  const vencidas = conInfo.filter((x) => x.info.dias !== null && x.info.dias <= 0).length;
+  const porVencer = conInfo.filter((x) => x.info.dias !== null && x.info.dias > 0 && x.info.dias <= 7).length;
+  const aTiempo = conInfo.length - vencidas - porVencer;
+  const orden = [...conInfo].sort((a, b) => {
+    if (a.info.dias === null) return 1;
+    if (b.info.dias === null) return -1;
+    return a.info.dias - b.info.dias;
+  });
+  const target = esEmpresa ? "solicitudes" : "mis-solicitudes";
+  const titulo = esEmpresa
+    ? "Solicitudes pendientes de respuesta (proveedores)"
+    : "Solicitudes pendientes por responder";
+  const quien = esEmpresa ? "Proveedor" : "Cliente";
+  if (loading) return null;
   return (
     <div className="mt-8">
-      <h2 className="mb-3 text-lg font-bold text-zinc-900">Solicitudes pendientes por tratado</h2>
+      <h2 className="mb-3 text-lg font-bold text-zinc-900">{titulo}</h2>
       {pend.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-zinc-400">No tienes solicitudes pendientes. 🎉</Card>
+        <Card className="p-6 text-center text-sm text-zinc-400">No hay solicitudes pendientes. 🎉</Card>
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-2 text-sm">
-            <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">{pend.length} pendientes</span>
-            {porVencer > 0 && <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">⏰ {porVencer} por vencer</span>}
-            {vencidas > 0 && <span className="rounded-full bg-red-100 px-3 py-1 font-medium text-red-700">⏰ {vencidas} vencidas</span>}
+            <span className="rounded-full bg-zinc-100 px-3 py-1 font-medium text-zinc-700">{pend.length} pendientes</span>
+            {vencidas > 0 && <span className="rounded-full bg-red-100 px-3 py-1 font-medium text-red-700">⏰ {vencidas} vencida{vencidas === 1 ? "" : "s"} / vence hoy</span>}
+            {porVencer > 0 && <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">⏳ {porVencer} por vencer (≤7 días)</span>}
+            {aTiempo > 0 && <span className="rounded-full bg-emerald-100 px-3 py-1 font-medium text-emerald-700">✓ {aTiempo} a tiempo</span>}
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from(porTratado.entries()).map(([t, n]) => (
-              <button key={t} onClick={() => go("mis-solicitudes")}
-                className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 text-left hover:border-blue-300 hover:shadow-sm">
-                <span className="rounded-md bg-blue-600 px-2.5 py-1 text-sm font-bold text-white">{t}</span>
-                <span className="text-2xl font-bold text-zinc-900">{n}</span>
-              </button>
-            ))}
-          </div>
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full text-sm">
+              <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
+                <tr>
+                  <th className="px-4 py-2.5">Núm. de parte</th>
+                  <th className="px-4 py-2.5">{quien}</th>
+                  <th className="px-4 py-2.5">Tratado</th>
+                  <th className="px-4 py-2.5">Fecha límite</th>
+                  <th className="px-4 py-2.5">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {orden.slice(0, 12).map(({ s, info }) => (
+                  <tr key={s.id} className="cursor-pointer hover:bg-zinc-50" onClick={() => go(target)}>
+                    <td className="px-4 py-2.5 font-mono text-xs">{s.product_sku ?? `#${s.product}`}</td>
+                    <td className="px-4 py-2.5 text-xs">{esEmpresa ? (s.supplier_name ?? "—") : (s.tenant_name ?? "—")}</td>
+                    <td className="px-4 py-2.5 text-xs">{treatyLabel(s.treaty_code)}</td>
+                    <td className="px-4 py-2.5 text-xs text-zinc-500">{s.due_date ?? "—"}</td>
+                    <td className="px-4 py-2.5"><span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", info.cls)}>{info.txt}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          {orden.length > 12 && (
+            <button onClick={() => go(target)} className="mt-2 text-sm text-blue-600 hover:underline">
+              Ver las {orden.length} solicitudes pendientes →
+            </button>
+          )}
         </>
       )}
     </div>
