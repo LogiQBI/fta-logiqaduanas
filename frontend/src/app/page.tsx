@@ -1396,7 +1396,7 @@ function AutomotivoView() {
     <div className="max-w-4xl">
       <PageTitle title="Régimen automotriz (T-MEC)" desc="Evalúa los requisitos automotrices del USMCA: VCR por costo neto (phase-in), Valor de Contenido Laboral, acero/aluminio y core parts. Califica solo si pasan todos." />
       <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        ⚠️ Herramienta <strong>orientativa</strong>. Los umbrales y fechas del T-MEC deben confirmarse contra la normativa vigente y validarse con un especialista antes de uso formal ante el SAT. Además se requieren 3 certificaciones a CBP (LVC, acero, aluminio).
+        ⚠️ Herramienta <strong>orientativa</strong>. Los umbrales y fechas del T-MEC deben confirmarse contra la normativa vigente y validarse con un especialista antes de uso formal ante la autoridad. Además se requieren 3 certificaciones a CBP (LVC, acero, aluminio).
       </div>
       <Card className="p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -1491,7 +1491,7 @@ function AyudaOrigenModal({ onClose }: { onClose: () => void }) {
           <div className="font-semibold text-zinc-900">¿Cuándo NO lo necesitas?</div>
           <p>Si todos tus insumos son <strong>comprados</strong> (llegan ya hechos con su declaración), el cálculo a un nivel es suficiente; el roll-up solo aplica cuando hay manufactura en varios niveles.</p>
         </div>
-        <p className="text-xs text-zinc-400">El cálculo es orientativo; valídalo con un especialista antes de uso formal ante el SAT.</p>
+        <p className="text-xs text-zinc-400">El cálculo es orientativo; valídalo con un especialista antes de uso formal ante la autoridad.</p>
       </div>
       <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Entendido</Btn></div>
     </Modal>

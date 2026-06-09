@@ -13,7 +13,7 @@ Veredicto: califica solo si TODOS los pilares pasan.
 
 AVISO: es una herramienta orientativa. Los umbrales y fechas del T-MEC deben
 confirmarse contra la normativa vigente (Capítulo 4 y Reglamentaciones
-Uniformes) y validarse con un especialista antes de uso formal ante el SAT.
+Uniformes) y validarse con un especialista antes de uso formal ante la autoridad.
 """
 from datetime import date
 from decimal import Decimal

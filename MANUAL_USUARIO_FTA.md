@@ -259,7 +259,7 @@ POST /api/certificates/emit/             Emitir+registrar {product,treaty,client
 - **TLCUEM / AELC** (estilo UE): cargadas las reglas mapeables (cambio de partida y
   topes de valor → VCR); los procesos específicos no convertibles se omitieron.
 - Las reglas son extracción **verbatim** de fuentes oficiales; conviene **validación
-  final por un especialista** contra el anexo vigente antes de uso formal ante el SAT.
+  final por un especialista** contra el anexo vigente antes de uso formal ante la autoridad.
 - El BOM multinivel profundo (subensamble con su propio BOM) se resuelve hoy por
   declaración/país; el cálculo recursivo completo es una mejora futura.
 - Cálculo automotriz completo (LVC + acero/aluminio + core parts): hoy se **avisa**,
