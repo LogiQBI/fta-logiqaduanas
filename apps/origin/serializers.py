@@ -194,17 +194,33 @@ class CertificateSerializer(serializers.ModelSerializer):
     origin_status = serializers.CharField(source="qualification.status", read_only=True)
     rvc_value = serializers.DecimalField(source="qualification.rvc_value", max_digits=6,
                                          decimal_places=2, read_only=True)
+    verify_url = serializers.SerializerMethodField()
+    qr_data_uri = serializers.SerializerMethodField()
 
     class Meta:
         model = Certificate
         fields = ["id", "folio", "certifier_type", "certifier_data", "exporter_data",
                   "producer_data", "importer_data", "blanket_from", "blanket_to",
                   "issued_at", "product_sku", "product_description", "product_hs",
-                  "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value"]
+                  "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
+                  "verify_url", "qr_data_uri"]
 
     def get_treaty_label(self, obj):
         code = obj.qualification.treaty.code
         return TREATY_LABELS.get(code, code)
+
+    def get_verify_url(self, obj):
+        if not obj.verify_token:
+            return ""
+        path = f"/api/verify/{obj.verify_token}/"
+        req = self.context.get("request")
+        return req.build_absolute_uri(path) if req else path
+
+    def get_qr_data_uri(self, obj):
+        if not obj.verify_token:
+            return ""
+        import segno
+        return segno.make(self.get_verify_url(obj), error="m").png_data_uri(scale=3, border=2)
 
 
 class SolicitationBOMLineSerializer(serializers.ModelSerializer):

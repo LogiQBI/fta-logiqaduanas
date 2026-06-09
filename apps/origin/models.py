@@ -92,6 +92,9 @@ class Certificate(TenantOwnedModel):
     qualification = models.ForeignKey(Qualification, on_delete=models.PROTECT,
                                       related_name="certificates")
     folio = models.CharField("Folio", max_length=40)
+    # Token aleatorio para verificación pública (QR). Único globalmente.
+    verify_token = models.CharField("Token de verificación", max_length=32, blank=True,
+                                    db_index=True)
     certifier_type = models.CharField("Tipo de certificador", max_length=20,
                                       choices=CertifierType.choices)
     # Elementos mínimos (datos de cada parte: nombre, dirección, país, email, tel.)

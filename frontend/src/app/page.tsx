@@ -2352,8 +2352,12 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   <div class="section">4. Periodo que cubre (blanket period)</div>
   <table>${row("Vigencia", esc(periodo))}</table>
   <div class="section">5. Firma autorizada</div>
-  <div class="sign"><div>${firmaImg}<br><b>${esc(ce.firmante || "—")}</b><br>${esc(ce.cargo || "")}<br>${esc(ce.nombre || "")}<br>Fecha: ${esc(hoy)}</div></div>
-  <div class="legal">Certificación de origen con folio ${esc(c.folio)} emitida por ${esc(ce.nombre || "")} para el tratado ${esc(c.treaty_label)}. Documento generado por LogiQ Aduanas | FTA.</div>
+  <div class="sign">
+    <div>${firmaImg}<br><b>${esc(ce.firmante || "—")}</b><br>${esc(ce.cargo || "")}<br>${esc(ce.nombre || "")}<br>Fecha: ${esc(hoy)}</div>
+    ${c.qr_data_uri ? `<div style="flex:0 0 auto;border-top:0;text-align:center"><img src="${c.qr_data_uri}" alt="QR" style="width:96px;height:96px"/><div style="font-size:10px;color:#6b7280">Verifica este certificado</div></div>` : ""}
+  </div>
+  <div class="legal">Certificación de origen con folio ${esc(c.folio)} emitida por ${esc(ce.nombre || "")} para el tratado ${esc(c.treaty_label)}.
+    ${c.verify_url ? `Verificación pública: ${esc(c.verify_url)}.` : ""} Documento generado por LogiQ Aduanas | FTA.</div>
   <div class="noprint" style="margin-top:24px;text-align:center">
     <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
   </div>
@@ -2797,6 +2801,19 @@ function SolicitudesEmpresaView() {
         <div className="ml-auto"><Btn onClick={() => setOpen(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva solicitud</Btn></div>
       </div>
       {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
+      {(() => {
+        const conAlerta = data.filter((s) => dueAlert(s));
+        const vencidas = conAlerta.filter((s) => (dueAlert(s)?.label ?? "").startsWith("Vencida")).length;
+        const porVencer = conAlerta.length - vencidas;
+        if (!conAlerta.length) return null;
+        return (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            ⏰ <strong>Recordatorio:</strong> {vencidas > 0 && <span>{vencidas} solicitud(es) <strong>vencida(s)</strong>. </span>}
+            {porVencer > 0 && <span>{porVencer} por vencer. </span>}
+            Da seguimiento a tus proveedores para recibir sus declaraciones a tiempo.
+          </div>
+        );
+      })()}
       <Table head={["Núm. de parte", "Proveedor", "Tratado", "Periodo", "Origen / PSR", "Límite", "Estado", ""]}>
         {visibles.map((s) => {
           const alert = dueAlert(s);

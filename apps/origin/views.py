@@ -660,13 +660,15 @@ class CertificateViewSet(TenantScopedViewSet):
                     "email": client.email, "telefono": client.phone}
         cert = Certificate.objects.create(
             tenant=m.tenant, qualification=qual, folio=_next_folio(m.tenant),
+            verify_token=secrets.token_urlsafe(16),
             certifier_type=Certificate.CertifierType.PRODUCER,
             certifier_data=certifier, exporter_data=certifier, producer_data=certifier,
             importer_data=importer,
             blanket_from=parse_date(request.data.get("blanket_from") or "") or None,
             blanket_to=parse_date(request.data.get("blanket_to") or "") or None,
             issued_by=request.user)
-        return Response(s.CertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
+        return Response(s.CertificateSerializer(cert, context={"request": request}).data,
+                        status=status.HTTP_201_CREATED)
 
 
 class SolicitationRequestViewSet(TenantScopedViewSet):
@@ -1051,6 +1053,53 @@ def login_view(request):
                 status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({"token": token.key})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_certificate(request, token):
+    """Página pública de verificación de un certificado (la apunta el QR).
+    No requiere autenticación; muestra solo datos no sensibles."""
+    from django.http import HttpResponse
+    from django.utils.html import escape
+    cert = (Certificate.objects.select_related(
+        "qualification__product", "qualification__treaty", "tenant")
+        .filter(verify_token=token).first() if token else None)
+    navy = "#043a70"
+    if not cert:
+        body = ('<div class="card"><h1 class="bad">Certificado no encontrado</h1>'
+                '<p>El código no corresponde a ningún certificado emitido en LogiQ Aduanas | FTA.</p></div>')
+    else:
+        q = cert.qualification
+        ce = cert.certifier_data or {}
+        im = cert.importer_data or {}
+        treaty = s.TREATY_LABELS.get(q.treaty.code, q.treaty.code)
+        rows = "".join(
+            f'<tr><td class="k">{escape(k)}</td><td>{escape(str(v))}</td></tr>' for k, v in [
+                ("Folio", cert.folio),
+                ("Producto", f"{q.product.sku} — {q.product.description}"),
+                ("Fracción (HS)", q.product.hs_code or "—"),
+                ("Tratado", treaty),
+                ("Criterio de origen", q.criterion or q.status),
+                ("Exportador / Productor", ce.get("nombre", cert.tenant.name)),
+                ("Importador", im.get("nombre", "—")),
+                ("Emitido", cert.issued_at.strftime("%Y-%m-%d")),
+            ])
+        body = (f'<div class="card"><h1 class="ok">✓ Certificado válido</h1>'
+                f'<table>{rows}</table>'
+                f'<p class="note">Verificación pública de autenticidad. LogiQ Aduanas | FTA.</p></div>')
+    html = (f'<!doctype html><html lang="es"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>Verificar certificado — LogiQ Aduanas</title><style>'
+            f'body{{font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;margin:0;padding:24px;color:#1f2937}}'
+            f'.card{{max-width:560px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;'
+            f'box-shadow:0 1px 3px rgba(0,0,0,.1)}} h1{{font-size:20px;margin:0 0 16px}}'
+            f'.ok{{color:#15803d}} .bad{{color:#b91c1c}} table{{width:100%;border-collapse:collapse}}'
+            f'td{{border-bottom:1px solid #eee;padding:8px 6px;font-size:14px;vertical-align:top}}'
+            f'td.k{{color:#6b7280;width:42%}} .note{{margin-top:16px;font-size:12px;color:#9ca3af}}'
+            f'.brand{{color:{navy};font-weight:bold;font-size:18px;text-align:center}}</style></head>'
+            f'<body><div class="brand">LogiQ Aduanas | FTA</div>{body}</body></html>')
+    return HttpResponse(html)
 
 
 @api_view(["GET"])
