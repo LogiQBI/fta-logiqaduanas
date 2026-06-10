@@ -28,15 +28,25 @@ class LicenseSerializer(serializers.ModelSerializer):
 class TenantSerializer(serializers.ModelSerializer):
     license = LicenseSerializer(read_only=True)
     user_count = serializers.SerializerMethodField()
+    product_count = serializers.SerializerMethodField()
+    party_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
         fields = ["id", "name", "rfc", "slug", "is_active", "created_at",
-                  "license", "user_count"]
+                  "license", "user_count", "product_count", "party_count"]
         extra_kwargs = {"slug": {"required": False}}
 
     def get_user_count(self, obj):
         return obj.memberships.count()
+
+    def get_product_count(self, obj):
+        from apps.catalog.models import Product
+        return Product.objects.filter(tenant=obj).count()
+
+    def get_party_count(self, obj):
+        from apps.catalog.models import Party
+        return Party.objects.filter(tenant=obj).count()
 
 
 class UserAdminSerializer(serializers.ModelSerializer):
