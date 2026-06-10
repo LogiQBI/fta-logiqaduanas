@@ -1520,13 +1520,13 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
       </ol>
       {preview && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          ⚠️ En el Excel hay <strong>{preview.existentes}</strong> número(s) de parte que <strong>ya están en el sistema</strong> (no se modificarán).
-          Solo se cargarán los <strong>{preview.nuevos}</strong> faltantes. ¿Deseas continuar?
+          ⚠️ En el Excel hay <strong>{preview.existentes}</strong> número(s) de parte que <strong>ya están en el sistema</strong>: se <strong>actualizarán</strong> sus datos (precio, descripción, HS, país, proveedor…) con lo que traiga el archivo, sin duplicarlos.
+          {preview.nuevos > 0 && <> Además se agregarán <strong>{preview.nuevos}</strong> nuevos.</>} ¿Deseas continuar?
           {preview.existentes_skus.length > 0 && (
             <div className="mt-1 text-xs text-amber-700">Ya existen: {preview.existentes_skus.join(", ")}{preview.existentes > preview.existentes_skus.length ? "…" : ""}</div>
           )}
           <div className="mt-3 flex gap-2">
-            <Btn size="sm" onClick={() => file && doImport(file)} disabled={busy}>{busy ? "Cargando…" : `Sí, cargar ${preview.nuevos} faltantes`}</Btn>
+            <Btn size="sm" onClick={() => file && doImport(file)} disabled={busy}>{busy ? "Cargando…" : `Sí, actualizar ${preview.existentes}${preview.nuevos > 0 ? ` y agregar ${preview.nuevos}` : ""}`}</Btn>
             <Btn size="sm" variant="ghost" onClick={() => setPreview(null)}>Cancelar</Btn>
           </div>
         </div>
@@ -2181,7 +2181,7 @@ function InsumosView() {
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
       {bulk === "products" && (
         <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
-          hint="Da de alta muchos insumos/productos a la vez. Los que YA existen no se modifican ni se duplican: solo se cargan los faltantes. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga (o precarga) al proveedor."
+          hint="Da de alta o actualiza muchos insumos/productos a la vez. Los que YA existen NO se duplican: se actualizan sus datos (precio, descripción, HS, país…) con lo que traiga el Excel; los que no existen se crean. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga (o precarga) al proveedor."
           templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} previewFn={(f) => api.bulkPreview("products", f)} />
       )}
       {bulk === "bom" && (

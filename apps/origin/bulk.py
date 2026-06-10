@@ -35,21 +35,25 @@ KIND_MAP = {
 }
 
 
+def _has(v):
+    """¿La celda trae un valor? (para no pisar datos existentes con celdas vacías)."""
+    return v is not None and str(v).strip() != ""
+
+
 def import_products(tenant, rows, user):
+    """Carga/actualiza números de parte. Si el SKU ya existe NO se duplica: se
+    actualizan los campos que el Excel trae con valor (precio, descripción, HS,
+    país, proveedor…), dejando intactos los que vengan vacíos. Si no existe, se crea."""
     from apps.catalog.models import Party, Product
     res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": []}
     for i, r in enumerate(rows, start=2):
         sku = str(r.get("sku") or "").strip()
         if not sku:
             res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
-        # No se duplica ni modifica lo que ya existe: solo se cargan los faltantes.
-        if Product.objects.filter(tenant=tenant, sku=sku).exists():
-            res["omitidos"] += 1
-            continue
         try:
             adv = None
             with transaction.atomic():
-                kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")
+                # Proveedor (solo si la fila trae código): se busca o se precarga.
                 supplier = None
                 scode = str(r.get("proveedor_codigo") or "").strip()
                 if scode:
@@ -59,14 +63,36 @@ def import_products(tenant, rows, user):
                         supplier = Party.objects.create(
                             tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
                         adv = f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."
-                Product.objects.create(
-                    tenant=tenant, sku=sku,
-                    description=str(r.get("descripcion") or "").strip(),
-                    kind=kind, hs_code=_digits(r.get("hs_code"), 8),
-                    unit_cost=_dec(r.get("costo_unitario")),
-                    currency=(str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
-                    country_of_origin=_iso2(r.get("pais_origen")), supplier=supplier)
-            res["creados"] += 1
+
+                existing = Product.objects.filter(tenant=tenant, sku=sku).first()
+                if existing:
+                    # Actualiza SOLO lo que venga con valor (no pisa con vacíos).
+                    if _has(r.get("descripcion")):
+                        existing.description = str(r.get("descripcion")).strip()
+                    if _has(r.get("tipo")):
+                        existing.kind = KIND_MAP.get(str(r.get("tipo")).strip().lower(), existing.kind)
+                    if _has(r.get("hs_code")):
+                        existing.hs_code = _digits(r.get("hs_code"), 8)
+                    if _has(r.get("costo_unitario")):
+                        existing.unit_cost = _dec(r.get("costo_unitario"))
+                    if _has(r.get("moneda")):
+                        existing.currency = str(r.get("moneda")).strip().upper()[:3]
+                    if _has(r.get("pais_origen")):
+                        existing.country_of_origin = _iso2(r.get("pais_origen"))
+                    if supplier:
+                        existing.supplier = supplier
+                    existing.save()
+                    res["actualizados"] += 1
+                else:
+                    kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")
+                    Product.objects.create(
+                        tenant=tenant, sku=sku,
+                        description=str(r.get("descripcion") or "").strip(),
+                        kind=kind, hs_code=_digits(r.get("hs_code"), 8),
+                        unit_cost=_dec(r.get("costo_unitario")),
+                        currency=(str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
+                        country_of_origin=_iso2(r.get("pais_origen")), supplier=supplier)
+                    res["creados"] += 1
             if adv:
                 res["advertencias"].append({"fila": i, "error": adv})
         except Exception as e:

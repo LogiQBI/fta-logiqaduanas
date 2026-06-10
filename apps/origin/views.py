@@ -89,6 +89,15 @@ def _party_users(party):
     ]
 
 
+class CatalogPagination(PageNumberPagination):
+    """Catálogos (productos, proveedores, etc.): el front filtra/exporta del lado
+    del cliente, así que devolvemos TODO en una sola página (hasta 10 000). Evita
+    que solo se vean los primeros 50 cuando hay cientos de números de parte."""
+    page_size = 10000
+    page_size_query_param = "page_size"
+    max_page_size = 10000
+
+
 class TenantScopedViewSet(viewsets.ModelViewSet):
     """Acota por tenant y, si el usuario es proveedor, por su Party.
 
@@ -97,6 +106,7 @@ class TenantScopedViewSet(viewsets.ModelViewSet):
     """
 
     supplier_field = None
+    pagination_class = CatalogPagination
 
     def membership(self):
         return self.request.user.memberships.select_related("party").first()
