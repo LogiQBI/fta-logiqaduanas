@@ -22,7 +22,13 @@ def spa_index(request):
     Los assets (/_next, logos) los entrega WhiteNoise antes de llegar aquí."""
     index = settings.FRONTEND_BUILD_DIR / "index.html"
     if index.exists():
-        return FileResponse(open(index, "rb"))
+        resp = FileResponse(open(index, "rb"))
+        # El index NO se cachea: así cada deploy se ve de inmediato (los chunks
+        # con hash sí se cachean, los sirve WhiteNoise). Evita versiones viejas.
+        resp["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp["Pragma"] = "no-cache"
+        resp["Expires"] = "0"
+        return resp
     return HttpResponse("Frontend no desplegado en este servicio.", status=404)
 
 
