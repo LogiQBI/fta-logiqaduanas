@@ -37,11 +37,15 @@ KIND_MAP = {
 
 def import_products(tenant, rows, user):
     from apps.catalog.models import Party, Product
-    res = {"creados": 0, "actualizados": 0, "errores": [], "advertencias": []}
+    res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": []}
     for i, r in enumerate(rows, start=2):
         sku = str(r.get("sku") or "").strip()
         if not sku:
             res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
+        # No se duplica ni modifica lo que ya existe: solo se cargan los faltantes.
+        if Product.objects.filter(tenant=tenant, sku=sku).exists():
+            res["omitidos"] += 1
+            continue
         try:
             adv = None
             with transaction.atomic():
@@ -52,26 +56,39 @@ def import_products(tenant, rows, user):
                     supplier = Party.objects.filter(
                         tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
                     if not supplier:
-                        # Precarga: si el proveedor no existe, se crea con ese código.
                         supplier = Party.objects.create(
                             tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
                         adv = f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."
-                defaults = {
-                    "description": str(r.get("descripcion") or "").strip(),
-                    "kind": kind,
-                    "hs_code": _digits(r.get("hs_code"), 8),
-                    "unit_cost": _dec(r.get("costo_unitario")),
-                    "currency": (str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
-                    "country_of_origin": _iso2(r.get("pais_origen")),
-                    "supplier": supplier,
-                }
-                _, created = Product.objects.update_or_create(tenant=tenant, sku=sku, defaults=defaults)
-            res["creados" if created else "actualizados"] += 1
+                Product.objects.create(
+                    tenant=tenant, sku=sku,
+                    description=str(r.get("descripcion") or "").strip(),
+                    kind=kind, hs_code=_digits(r.get("hs_code"), 8),
+                    unit_cost=_dec(r.get("costo_unitario")),
+                    currency=(str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
+                    country_of_origin=_iso2(r.get("pais_origen")), supplier=supplier)
+            res["creados"] += 1
             if adv:
                 res["advertencias"].append({"fila": i, "error": adv})
         except Exception as e:
             res["errores"].append({"fila": i, "error": f"No se pudo guardar “{sku}”: {str(e)[:120]}"})
     return res
+
+
+def preview_products(tenant, rows):
+    """Analiza el archivo SIN guardar: cuántos números de parte ya existen y
+    cuántos son nuevos (para confirmar antes de importar)."""
+    from apps.catalog.models import Product
+    skus = []
+    for r in rows:
+        s = str(r.get("sku") or "").strip()
+        if s and s not in skus:
+            skus.append(s)
+    existentes = set(Product.objects.filter(tenant=tenant, sku__in=skus)
+                     .values_list("sku", flat=True))
+    ex = [s for s in skus if s in existentes]
+    nuevos = [s for s in skus if s not in existentes]
+    return {"total": len(skus), "existentes": len(ex), "nuevos": len(nuevos),
+            "existentes_skus": ex[:40]}
 
 
 def _import_parties(tenant, rows, kind):

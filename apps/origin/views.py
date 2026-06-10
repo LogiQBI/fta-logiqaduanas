@@ -1151,6 +1151,9 @@ def bulk_import(request):
     if not rows:
         return Response({"error": "El archivo no tiene filas con datos."},
                         status=status.HTTP_400_BAD_REQUEST)
+    # Modo previsualización (no guarda): para confirmar antes de importar.
+    if request.query_params.get("dry") and t == "products":
+        return Response(bulk.preview_products(m.tenant, rows))
     result = spec["importer"](m.tenant, rows, request.user)
     return Response(result)
 

@@ -60,10 +60,11 @@ async function uploadFile(path: string, file: File) {
 }
 
 export type BulkResult = {
-  creados: number; actualizados: number;
+  creados: number; actualizados: number; omitidos?: number;
   errores: { fila: number; error: string }[];
   advertencias?: { fila: number; error: string }[];
 };
+export type BulkPreview = { total: number; existentes: number; nuevos: number; existentes_skus: string[] };
 export type EmittedCertificate = {
   id: number; folio: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;
@@ -337,6 +338,7 @@ export const api = {
     req("/company-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
   bulkTemplate: (type: string) => downloadFile(`/bulk/template/?type=${type}`, `plantilla_${type}.xlsx`),
   bulkImport: (type: string, file: File): Promise<BulkResult> => uploadFile(`/bulk/import/?type=${type}`, file),
+  bulkPreview: (type: string, file: File): Promise<BulkPreview> => uploadFile(`/bulk/import/?type=${type}&dry=1`, file),
   solicitudBomTemplate: () => downloadFile(`/bulk/template/?type=bom_response`, "plantilla_respuesta_bom.xlsx"),
   importSolicitudBom: (id: number, file: File) => uploadFile(`/solicitations/${id}/import-bom/`, file),
 

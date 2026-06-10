@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
+  BulkPreview, BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
   OriginCalcResult, OriginRule, Party, Product, Qualification, Solicitation,
   SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
@@ -1463,27 +1463,40 @@ function BomEditorModal({ product, allProducts, onClose }: {
 }
 
 // Modal reutilizable de carga masiva por Excel (.xlsx).
-function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn }: {
+function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, previewFn }: {
   title: string; hint?: string; onClose: () => void; onDone: () => void;
   templateFn: () => Promise<void>; importFn: (file: File) => Promise<unknown>;
+  previewFn?: (file: File) => Promise<BulkPreview>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState<BulkResult | null>(null);
   const [ok, setOk] = useState(false);
+  const [preview, setPreview] = useState<BulkPreview | null>(null);
   async function descargar() {
     setErr(""); try { await templateFn(); } catch (e) { setErr((e as Error).message); }
   }
-  async function importar() {
-    if (!file) { setErr("Elige un archivo .xlsx."); return; }
-    setBusy(true); setErr(""); setResult(null); setOk(false);
+  async function doImport(f: File) {
+    setBusy(true); setErr(""); setResult(null); setOk(false); setPreview(null);
     try {
-      const r = await importFn(file);
+      const r = await importFn(f);
       if (r && typeof (r as BulkResult).creados === "number") setResult(r as BulkResult);
       else setOk(true);
       onDone();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function importar() {
+    if (!file) { setErr("Elige un archivo .xlsx."); return; }
+    // Si hay previsualización, primero avisamos cuántos ya existen.
+    if (previewFn) {
+      setBusy(true); setErr(""); setResult(null); setOk(false);
+      try {
+        const pv = await previewFn(file);
+        if (pv.existentes > 0) { setPreview(pv); setBusy(false); return; }
+      } catch (e) { setErr((e as Error).message); setBusy(false); return; }
+    }
+    await doImport(file);
   }
   return (
     <Modal title={title} onClose={onClose} wide>
@@ -1497,19 +1510,32 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn }
         <li className="flex items-center gap-3">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">2</span>
           <span>Elige el archivo:</span>
-          <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          <input type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setResult(null); setOk(false); }}
             className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
         </li>
         <li className="flex items-center gap-3">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">3</span>
-          <Btn size="sm" onClick={importar} disabled={busy || !file}>{busy ? "Importando…" : "Importar"}</Btn>
+          <Btn size="sm" onClick={importar} disabled={busy || !file}>{busy ? "Procesando…" : "Importar"}</Btn>
         </li>
       </ol>
+      {preview && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          ⚠️ En el Excel hay <strong>{preview.existentes}</strong> número(s) de parte que <strong>ya están en el sistema</strong> (no se modificarán).
+          Solo se cargarán los <strong>{preview.nuevos}</strong> faltantes. ¿Deseas continuar?
+          {preview.existentes_skus.length > 0 && (
+            <div className="mt-1 text-xs text-amber-700">Ya existen: {preview.existentes_skus.join(", ")}{preview.existentes > preview.existentes_skus.length ? "…" : ""}</div>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Btn size="sm" onClick={() => file && doImport(file)} disabled={busy}>{busy ? "Cargando…" : `Sí, cargar ${preview.nuevos} faltantes`}</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => setPreview(null)}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       {ok && <p className="mt-3 text-sm text-emerald-700">✓ Cargado correctamente.</p>}
       {result && (
         <div className="mt-4 rounded-lg border border-zinc-200 p-3 text-sm">
-          <div className="text-emerald-700">✓ {result.creados} creados · {result.actualizados} actualizados</div>
+          <div className="text-emerald-700">✓ {result.creados} creados{(result.omitidos ?? 0) > 0 ? ` · ${result.omitidos} ya existían (omitidos)` : ""}{result.actualizados > 0 ? ` · ${result.actualizados} actualizados` : ""}</div>
           {result.errores.length > 0 && (
             <div className="mt-2">
               <div className="font-semibold text-red-700">{result.errores.length} fila(s) con error:</div>
@@ -2155,8 +2181,8 @@ function InsumosView() {
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
       {bulk === "products" && (
         <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
-          hint="Da de alta o actualiza muchos insumos/productos a la vez. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga al proveedor (opcional)."
-          templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} />
+          hint="Da de alta muchos insumos/productos a la vez. Los que YA existen no se modifican ni se duplican: solo se cargan los faltantes. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga (o precarga) al proveedor."
+          templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} previewFn={(f) => api.bulkPreview("products", f)} />
       )}
       {bulk === "bom" && (
         <CargaMasivaModal title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
