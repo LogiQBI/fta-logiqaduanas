@@ -225,14 +225,28 @@ def log_product_changes(*, product, before, after, source, user=None):
 
     `before`/`after` son dicts con claves opcionales `unit_cost`, `currency`,
     `country_of_origin`. Si una clave no viene en ambos, ese aspecto se ignora
-    (p. ej. el proveedor solo cambia el país). Devuelve los logs creados."""
-    from decimal import Decimal, InvalidOperation
+    (p. ej. el proveedor solo cambia el país). Solo registra cuando hay un cambio
+    REAL: el precio se compara a la precisión del campo (4 decimales), de modo que
+    11.2070 y 11.207008 NO cuentan como cambio. Devuelve los logs creados."""
+    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+    # Precisión real con la que se guarda el precio (decimales del campo unit_cost).
+    try:
+        dp = product._meta.get_field("unit_cost").decimal_places
+    except Exception:
+        dp = 4
+    quantum = Decimal(1).scaleb(-dp)  # p. ej. Decimal("0.0001")
 
     def _dec(v):
         try:
-            return Decimal(str(v)) if v not in (None, "") else None
+            d = Decimal(str(v)) if v not in (None, "") else None
         except (InvalidOperation, ValueError):
             return None
+        return d.quantize(quantum, rounding=ROUND_HALF_UP) if d is not None else None
+
+    def _money(d):
+        # "11.2070" sin notación científica ni ceros engañosos.
+        return format(d, "f") if d is not None else ""
 
     logs = []
     ob, oa = _dec(before.get("unit_cost")), _dec(after.get("unit_cost"))
@@ -241,7 +255,7 @@ def log_product_changes(*, product, before, after, source, user=None):
         logs.append(ProductChangeLog(
             tenant_id=product.tenant_id, product=product, kind=ProductChangeLog.Kind.PRICE,
             old_price=ob, new_price=oa, currency=acur or bcur,
-            old_value=f"{ob} {bcur}".strip(), new_value=f"{oa} {acur}".strip(),
+            old_value=f"{_money(ob)} {bcur}".strip(), new_value=f"{_money(oa)} {acur}".strip(),
             source=source, changed_by=user))
     if "country_of_origin" in before and "country_of_origin" in after:
         bco, aco = (before.get("country_of_origin") or ""), (after.get("country_of_origin") or "")
