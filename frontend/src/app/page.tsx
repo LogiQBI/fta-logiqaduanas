@@ -10,7 +10,7 @@ import {
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
   BulkPreview, BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
-  OriginCalcResult, OriginRule, Party, Product, Qualification, Solicitation,
+  OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification, Solicitation,
   SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
@@ -1086,6 +1086,67 @@ function HsLogModal({ product, onClose }: { product: Product; onClose: () => voi
     </Modal>
   );
 }
+// Modal: histórico de cambios de precio y de país de origen de un número de parte.
+function PriceHistoryModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [logs, setLogs] = useState<ProductChangeLog[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let alive = true;
+    api.productHistory(product.id)
+      .then((d) => { if (alive) setLogs(d); })
+      .catch((e) => { if (alive) setErr((e as Error).message); });
+    return () => { alive = false; };
+  }, [product.id]);
+  const srcStyle: Record<string, string> = {
+    manual: "bg-blue-100 text-blue-700", bulk: "bg-violet-100 text-violet-700",
+    supplier: "bg-amber-100 text-amber-700",
+  };
+  return (
+    <Modal title={`Histórico de precio y origen — ${product.sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">{product.description}</p>
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {!logs && !err && <p className="text-sm text-zinc-400">Cargando…</p>}
+      {logs && logs.length === 0 && (
+        <p className="text-sm text-zinc-400">Sin cambios registrados. El histórico se irá llenando conforme actualices el precio o el país de origen (manualmente, por carga masiva o cuando el proveedor lo defina).</p>
+      )}
+      {logs && logs.length > 0 && (
+        <ul className="space-y-2 text-sm">
+          {logs.map((l, i) => (
+            <li key={i} className="rounded-lg border border-zinc-200 p-2 dark:border-zinc-700">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
+                  l.kind === "price" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700")}>
+                  {l.kind_display}
+                </span>
+                <span className="font-mono">{l.old_value || "—"} → <strong>{l.new_value || "—"}</strong></span>
+                {l.kind === "price" && l.old_price != null && l.new_price != null && (
+                  <PriceDelta from={Number(l.old_price)} to={Number(l.new_price)} />
+                )}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <span className={cx("rounded px-1.5 py-0.5", srcStyle[l.source] ?? "bg-zinc-100 text-zinc-600")}>{l.source_display}</span>
+                <span>{l.created_at?.slice(0, 10)}</span>
+                {l.changed_by && <span>· {l.changed_by}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
+// Variación porcentual entre dos precios (verde si baja, rojo si sube).
+function PriceDelta({ from, to }: { from: number; to: number }) {
+  if (!from) return null;
+  const pct = ((to - from) / from) * 100;
+  const up = to > from;
+  return (
+    <span className={cx("text-xs font-medium", up ? "text-red-600" : "text-emerald-600")}>
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
 const RULE_TYPES = [
   { value: "CTC", label: "Cambio de clasificación arancelaria (CTC)" },
   { value: "RVC", label: "Valor de contenido regional (VCR)" },
@@ -2086,6 +2147,7 @@ function InsumosView() {
   const parties = useList<Party>(() => api.parties());
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [logFor, setLogFor] = useState<Product | null>(null);
+  const [histFor, setHistFor] = useState<Product | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   const [q, setQ] = useState("");
@@ -2153,7 +2215,13 @@ function InsumosView() {
               )}
             </td>
             <td className="px-4 py-3">{p.country_of_origin || <span className="text-zinc-400">—</span>}</td>
-            <td className="px-4 py-3 font-mono text-xs">{p.unit_cost} {p.currency}</td>
+            <td className="px-4 py-3 font-mono text-xs">
+              {p.unit_cost} {p.currency}
+              {(p.change_log_count ?? 0) > 0 && (
+                <button onClick={() => setHistFor(p)} title="Ver histórico de precio y origen"
+                  className="ml-2 font-sans text-[11px] text-blue-600 hover:underline">histórico</button>
+              )}
+            </td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
                 p.is_active ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-600")}>
@@ -2178,6 +2246,7 @@ function InsumosView() {
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
       {logFor && <HsLogModal product={logFor} onClose={() => setLogFor(null)} />}
+      {histFor && <PriceHistoryModal product={histFor} onClose={() => setHistFor(null)} />}
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
       {bulk === "products" && (
         <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
@@ -3559,6 +3628,7 @@ function ProveedorProductosView() {
   const { data, count, loading, reload } = useList<Product>(() => api.products());
   const [suggest, setSuggest] = useState<Product | null>(null);
   const [country, setCountry] = useState<Product | null>(null);
+  const [histFor, setHistFor] = useState<Product | null>(null);
   return (
     <div>
       <PageTitle title="Productos" desc="Lo que tus clientes te compran. Tú defines el país de origen; si una fracción es incorrecta, puedes sugerir la correcta." />
@@ -3578,6 +3648,9 @@ function ProveedorProductosView() {
               {p.country_of_origin
                 ? <span>{p.country_of_origin} <button onClick={() => setCountry(p)} className="ml-1 text-[11px] text-blue-600 hover:underline">editar</button></span>
                 : <Btn size="sm" variant="ghost" onClick={() => setCountry(p)}>Poner país</Btn>}
+              {(p.change_log_count ?? 0) > 0 && (
+                <button onClick={() => setHistFor(p)} className="ml-2 text-[11px] text-blue-600 hover:underline">histórico</button>
+              )}
             </td>
             <td className="px-4 py-3">
               <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium",
@@ -3597,6 +3670,7 @@ function ProveedorProductosView() {
         onClose={() => setSuggest(null)} onSaved={async () => { setSuggest(null); await reload(); }} />}
       {country && <CountryModal product={country}
         onClose={() => setCountry(null)} onSaved={async () => { setCountry(null); await reload(); }} />}
+      {histFor && <PriceHistoryModal product={histFor} onClose={() => setHistFor(null)} />}
     </div>
   );
 }

@@ -10,7 +10,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import ProtectedError, Q
+from django.db.models import Count, ProtectedError, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
@@ -21,9 +21,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import (
-    BOMComponent, CompanyProfile, HsChangeLog, Party, Product, RuleDisplay,
-    SolicitationBOM, SolicitationBOMLine, SolicitationLog, SolicitationRequest,
-    SupplierDeclaration, SupplierProfile,
+    BOMComponent, CompanyProfile, HsChangeLog, Party, Product, ProductChangeLog,
+    RuleDisplay, SolicitationBOM, SolicitationBOMLine, SolicitationLog,
+    SolicitationRequest, SupplierDeclaration, SupplierProfile, log_product_changes,
 )
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
@@ -329,6 +329,11 @@ class ProductViewSet(TenantScopedViewSet):
     serializer_class = s.ProductSerializer
     supplier_field = "supplier_id"  # productos que ese proveedor surte
 
+    def get_queryset(self):
+        # Cuenta de cambios de precio/origen para el badge "historial" en la lista.
+        return super().get_queryset().annotate(
+            _change_log_count=Count("change_logs", distinct=True))
+
     def perform_create(self, serializer):
         """El alta de productos es solo para usuarios de empresa.
         El tenant se toma de la membresía (no se confía en el cliente)."""
@@ -341,7 +346,15 @@ class ProductViewSet(TenantScopedViewSet):
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo usuarios de empresa pueden editar productos.")
-        serializer.save()
+        product = serializer.instance
+        before = {"unit_cost": product.unit_cost, "currency": product.currency,
+                  "country_of_origin": product.country_of_origin}
+        obj = serializer.save()
+        log_product_changes(
+            product=obj, before=before,
+            after={"unit_cost": obj.unit_cost, "currency": obj.currency,
+                   "country_of_origin": obj.country_of_origin},
+            source=ProductChangeLog.Source.MANUAL, user=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         m = self.membership()
@@ -366,9 +379,34 @@ class ProductViewSet(TenantScopedViewSet):
         if not m or not m.is_supplier:
             raise PermissionDenied("Solo el proveedor puede definir el país de origen.")
         product = self.get_object()  # acotado a productos de su Party
+        old_country = product.country_of_origin
         product.country_of_origin = (request.data.get("country_of_origin") or "").strip().upper()[:2]
         product.save(update_fields=["country_of_origin", "updated_at"])
+        log_product_changes(
+            product=product,
+            before={"country_of_origin": old_country},
+            after={"country_of_origin": product.country_of_origin},
+            source=ProductChangeLog.Source.SUPPLIER, user=request.user)
         return Response(s.ProductSerializer(product).data)
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        """Histórico de cambios de precio y país de origen del número de parte.
+        Disponible tanto para la empresa como para el proveedor (acotado por
+        get_object al alcance del usuario)."""
+        product = self.get_object()
+        logs = product.change_logs.select_related("changed_by").all()[:200]
+        data = [{
+            "kind": l.kind, "kind_display": l.get_kind_display(),
+            "old_value": l.old_value, "new_value": l.new_value,
+            "old_price": str(l.old_price) if l.old_price is not None else None,
+            "new_price": str(l.new_price) if l.new_price is not None else None,
+            "currency": l.currency,
+            "source": l.source, "source_display": l.get_source_display(),
+            "changed_by": l.changed_by.username if l.changed_by_id else None,
+            "created_at": l.created_at,
+        } for l in logs]
+        return Response(data)
 
     @action(detail=True, methods=["post"], url_path="suggest-hs")
     def suggest_hs(self, request, pk=None):

@@ -79,6 +79,13 @@ export type HsLog = {
   old_hs: string; new_hs: string; action: string;
   suggested_by: string; note: string; created_at: string;
 };
+export type ProductChangeLog = {
+  kind: "price" | "origin"; kind_display: string;
+  old_value: string; new_value: string;
+  old_price: string | null; new_price: string | null; currency: string;
+  source: "manual" | "bulk" | "supplier"; source_display: string;
+  changed_by: string | null; created_at: string;
+};
 export type Product = {
   id: number; sku: string; description: string; kind: string;
   kind_display?: string; hs_code: string; unit_cost: string;
@@ -87,7 +94,7 @@ export type Product = {
   is_active: boolean;
   hs_suggested?: string; hs_suggestion_status?: string;
   hs_suggestion_note?: string; hs_suggested_by_name?: string | null;
-  hs_logs?: HsLog[];
+  hs_logs?: HsLog[]; change_log_count?: number;
 };
 export type Treaty = { id: number; code: string; name: string };
 export type ComponentDeclaration = {
@@ -234,6 +241,8 @@ export const api = {
     req(`/products/${productId}/set-country/`, {
       method: "POST", body: JSON.stringify({ country_of_origin }),
     }),
+  productHistory: (productId: number): Promise<ProductChangeLog[]> =>
+    req(`/products/${productId}/history/`),
   treaties: () => req("/treaties/"),
   qualifications: () => req("/qualifications/"),
   bomComponents: (parentId: number) => req(`/bom-components/?parent=${parentId}`),

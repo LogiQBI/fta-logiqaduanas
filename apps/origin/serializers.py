@@ -77,11 +77,17 @@ class ProductSerializer(serializers.ModelSerializer):
     supplier_code = serializers.CharField(source="supplier.code", read_only=True, default=None)
     hs_suggested_by_name = serializers.CharField(source="hs_suggested_by.name", read_only=True, default=None)
     hs_logs = serializers.SerializerMethodField()
+    change_log_count = serializers.SerializerMethodField()
 
     def get_hs_logs(self, obj):
         return [{"old_hs": l.old_hs, "new_hs": l.new_hs, "action": l.action,
                  "suggested_by": l.suggested_by, "note": l.note,
                  "created_at": l.created_at} for l in obj.hs_logs.all()[:10]]
+
+    def get_change_log_count(self, obj):
+        # Anotado por ProductViewSet.get_queryset; fallback para otros usos.
+        n = getattr(obj, "_change_log_count", None)
+        return n if n is not None else obj.change_logs.count()
 
     class Meta:
         model = Product

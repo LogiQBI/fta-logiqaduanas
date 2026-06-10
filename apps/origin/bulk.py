@@ -44,7 +44,7 @@ def import_products(tenant, rows, user):
     """Carga/actualiza números de parte. Si el SKU ya existe NO se duplica: se
     actualizan los campos que el Excel trae con valor (precio, descripción, HS,
     país, proveedor…), dejando intactos los que vengan vacíos. Si no existe, se crea."""
-    from apps.catalog.models import Party, Product
+    from apps.catalog.models import Party, Product, ProductChangeLog, log_product_changes
     res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": []}
     for i, r in enumerate(rows, start=2):
         sku = str(r.get("sku") or "").strip()
@@ -66,6 +66,9 @@ def import_products(tenant, rows, user):
 
                 existing = Product.objects.filter(tenant=tenant, sku=sku).first()
                 if existing:
+                    # Snapshot para registrar el histórico de precio/origen.
+                    before = {"unit_cost": existing.unit_cost, "currency": existing.currency,
+                              "country_of_origin": existing.country_of_origin}
                     # Actualiza SOLO lo que venga con valor (no pisa con vacíos).
                     if _has(r.get("descripcion")):
                         existing.description = str(r.get("descripcion")).strip()
@@ -82,6 +85,11 @@ def import_products(tenant, rows, user):
                     if supplier:
                         existing.supplier = supplier
                     existing.save()
+                    log_product_changes(
+                        product=existing, before=before,
+                        after={"unit_cost": existing.unit_cost, "currency": existing.currency,
+                               "country_of_origin": existing.country_of_origin},
+                        source=ProductChangeLog.Source.BULK, user=user)
                     res["actualizados"] += 1
                 else:
                     kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")

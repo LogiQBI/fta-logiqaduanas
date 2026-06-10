@@ -176,6 +176,83 @@ class HsChangeLog(TenantOwnedModel):
         return f"{self.product.sku}: {self.old_hs} -> {self.new_hs} ({self.action})"
 
 
+class ProductChangeLog(TenantOwnedModel):
+    """Histórico de cambios de PRECIO y de PAÍS DE ORIGEN de un número de parte.
+    Los precios cambian de manera recurrente; cada cambio (manual, por carga masiva
+    o por el proveedor) queda registrado con valor anterior → nuevo, fuente y autor,
+    para auditoría y para ver la evolución en el catálogo (empresa y proveedor)."""
+
+    class Kind(models.TextChoices):
+        PRICE = "price", "Precio"
+        ORIGIN = "origin", "País de origen"
+
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Edición manual"
+        BULK = "bulk", "Carga masiva"
+        SUPPLIER = "supplier", "Proveedor"
+
+    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE,
+                                related_name="change_logs")
+    kind = models.CharField("Tipo de cambio", max_length=10, choices=Kind.choices)
+    # Representación legible (para ambos tipos); ej. "30.00 USD" o "KR".
+    old_value = models.CharField("Valor anterior", max_length=60, blank=True)
+    new_value = models.CharField("Valor nuevo", max_length=60, blank=True)
+    # Solo para kind=PRICE: valores numéricos + moneda (para ordenar/graficar).
+    old_price = models.DecimalField("Precio anterior", max_digits=14, decimal_places=4,
+                                    null=True, blank=True)
+    new_price = models.DecimalField("Precio nuevo", max_digits=14, decimal_places=4,
+                                    null=True, blank=True)
+    currency = models.CharField("Moneda", max_length=3, blank=True)
+    source = models.CharField("Origen del cambio", max_length=10, choices=Source.choices,
+                              default=Source.MANUAL)
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Cambio de precio/origen"
+        verbose_name_plural = "Cambios de precio/origen"
+        indexes = [models.Index(fields=["product", "kind", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.product.sku} [{self.get_kind_display()}]: {self.old_value} → {self.new_value}"
+
+
+def log_product_changes(*, product, before, after, source, user=None):
+    """Compara los valores ANTES/DESPUÉS de un producto y registra en
+    ProductChangeLog los cambios de precio y/o país de origen.
+
+    `before`/`after` son dicts con claves opcionales `unit_cost`, `currency`,
+    `country_of_origin`. Si una clave no viene en ambos, ese aspecto se ignora
+    (p. ej. el proveedor solo cambia el país). Devuelve los logs creados."""
+    from decimal import Decimal, InvalidOperation
+
+    def _dec(v):
+        try:
+            return Decimal(str(v)) if v not in (None, "") else None
+        except (InvalidOperation, ValueError):
+            return None
+
+    logs = []
+    ob, oa = _dec(before.get("unit_cost")), _dec(after.get("unit_cost"))
+    bcur, acur = (before.get("currency") or ""), (after.get("currency") or "")
+    if ob is not None and oa is not None and (ob != oa or bcur != acur):
+        logs.append(ProductChangeLog(
+            tenant_id=product.tenant_id, product=product, kind=ProductChangeLog.Kind.PRICE,
+            old_price=ob, new_price=oa, currency=acur or bcur,
+            old_value=f"{ob} {bcur}".strip(), new_value=f"{oa} {acur}".strip(),
+            source=source, changed_by=user))
+    if "country_of_origin" in before and "country_of_origin" in after:
+        bco, aco = (before.get("country_of_origin") or ""), (after.get("country_of_origin") or "")
+        if bco != aco:
+            logs.append(ProductChangeLog(
+                tenant_id=product.tenant_id, product=product, kind=ProductChangeLog.Kind.ORIGIN,
+                old_value=bco, new_value=aco, source=source, changed_by=user))
+    if logs:
+        ProductChangeLog.objects.bulk_create(logs)
+    return logs
+
+
 class BOMComponent(TenantOwnedModel):
     """Línea de lista de materiales: un producto padre se compone de componentes.
     Como el componente es a su vez un Product, el BOM puede ser multinivel.
