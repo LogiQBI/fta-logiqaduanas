@@ -135,9 +135,21 @@ STORAGES = {
 # Si existe, WhiteNoise la sirve en la raíz del sitio ("/", "/_next/...", logos)
 # y un catch-all en urls.py devuelve index.html para el resto (SPA).
 FRONTEND_BUILD_DIR = BASE_DIR / "frontend_build"
+
+
+def _whitenoise_headers(headers, path, url):
+    """El HTML (index.html) NO se cachea: cada deploy se ve de inmediato sin
+    recargar a mano. Los chunks /_next con hash sí se cachean (inmutables)."""
+    if path.endswith(".html"):
+        headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        headers["Pragma"] = "no-cache"
+        headers["Expires"] = "0"
+
+
 if FRONTEND_BUILD_DIR.exists():
     WHITENOISE_ROOT = str(FRONTEND_BUILD_DIR)
     WHITENOISE_INDEX_FILE = True
+    WHITENOISE_ADD_HEADERS_FUNCTION = _whitenoise_headers
 
 
 # --- Django REST Framework ---
