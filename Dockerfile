@@ -37,4 +37,4 @@ RUN SECRET_KEY=build-only DEBUG=False python manage.py collectstatic --noinput
 # Railway inyecta $PORT. Migrar, sembrar (idempotente) y arrancar gunicorn.
 CMD python manage.py migrate --noinput && \
     python manage.py bootstrap_prod && \
-    gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 3
+    gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 3 --timeout 180

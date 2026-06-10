@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 import openpyxl
+from django.db import transaction
 from openpyxl.styles import Font, PatternFill
 
 
@@ -41,30 +42,35 @@ def import_products(tenant, rows, user):
         sku = str(r.get("sku") or "").strip()
         if not sku:
             res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
-        kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")
-        supplier = None
-        scode = str(r.get("proveedor_codigo") or "").strip()
-        if scode:
-            supplier = Party.objects.filter(
-                tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
-            if not supplier:
-                # Precarga: si el proveedor no existe, se crea automáticamente con
-                # ese código (queda como ficha por completar en Proveedores).
-                supplier = Party.objects.create(
-                    tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
-                res["advertencias"].append({"fila": i,
-                    "error": f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."})
-        defaults = {
-            "description": str(r.get("descripcion") or "").strip(),
-            "kind": kind,
-            "hs_code": _digits(r.get("hs_code"), 8),
-            "unit_cost": _dec(r.get("costo_unitario")),
-            "currency": (str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
-            "country_of_origin": _iso2(r.get("pais_origen")),
-            "supplier": supplier,
-        }
-        _, created = Product.objects.update_or_create(tenant=tenant, sku=sku, defaults=defaults)
-        res["creados" if created else "actualizados"] += 1
+        try:
+            adv = None
+            with transaction.atomic():
+                kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")
+                supplier = None
+                scode = str(r.get("proveedor_codigo") or "").strip()
+                if scode:
+                    supplier = Party.objects.filter(
+                        tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
+                    if not supplier:
+                        # Precarga: si el proveedor no existe, se crea con ese código.
+                        supplier = Party.objects.create(
+                            tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
+                        adv = f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."
+                defaults = {
+                    "description": str(r.get("descripcion") or "").strip(),
+                    "kind": kind,
+                    "hs_code": _digits(r.get("hs_code"), 8),
+                    "unit_cost": _dec(r.get("costo_unitario")),
+                    "currency": (str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
+                    "country_of_origin": _iso2(r.get("pais_origen")),
+                    "supplier": supplier,
+                }
+                _, created = Product.objects.update_or_create(tenant=tenant, sku=sku, defaults=defaults)
+            res["creados" if created else "actualizados"] += 1
+            if adv:
+                res["advertencias"].append({"fila": i, "error": adv})
+        except Exception as e:
+            res["errores"].append({"fila": i, "error": f"No se pudo guardar “{sku}”: {str(e)[:120]}"})
     return res
 
 
@@ -147,19 +153,25 @@ def import_supplier_assign(tenant, rows, user):
         scode = str(r.get("codigo_proveedor") or "").strip()
         if not sku or not scode:
             res["errores"].append({"fila": i, "error": "Falta num_parte o codigo_proveedor."}); continue
-        product = Product.objects.filter(tenant=tenant, sku=sku).first()
-        if not product:
-            res["errores"].append({"fila": i, "error": f"Número de parte '{sku}' no existe."}); continue
-        supplier = Party.objects.filter(
-            tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
-        if not supplier:
-            supplier = Party.objects.create(
-                tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
-            res["advertencias"].append({"fila": i,
-                "error": f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."})
-        product.supplier = supplier
-        product.save(update_fields=["supplier", "updated_at"])
-        res["actualizados"] += 1
+        try:
+            adv = None
+            with transaction.atomic():
+                product = Product.objects.filter(tenant=tenant, sku=sku).first()
+                if not product:
+                    res["errores"].append({"fila": i, "error": f"Número de parte '{sku}' no existe."}); continue
+                supplier = Party.objects.filter(
+                    tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
+                if not supplier:
+                    supplier = Party.objects.create(
+                        tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
+                    adv = f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."
+                product.supplier = supplier
+                product.save(update_fields=["supplier", "updated_at"])
+            res["actualizados"] += 1
+            if adv:
+                res["advertencias"].append({"fila": i, "error": adv})
+        except Exception as e:
+            res["errores"].append({"fila": i, "error": f"No se pudo asignar “{sku}”: {str(e)[:120]}"})
     return res
 
 
