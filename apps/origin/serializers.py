@@ -111,7 +111,7 @@ class BOMComponentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BOMComponent
-        fields = ["id", "parent", "component", "quantity", "origin_mode",
+        fields = ["id", "parent", "component", "quantity", "uom", "origin_mode",
                   "origin_as_of", "manual_is_originating", "manual_country",
                   "component_sku", "component_description", "component_hs",
                   "component_unit_cost", "component_supplier_name",
@@ -235,7 +235,7 @@ class SolicitationBOMLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolicitationBOMLine
         fields = ["id", "part_number", "description", "hs_code", "unit_price",
-                  "quantity", "country", "has_origin_evidence", "total"]
+                  "quantity", "uom", "country", "has_origin_evidence", "total"]
 
 
 class SolicitationBOMSerializer(serializers.ModelSerializer):

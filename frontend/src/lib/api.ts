@@ -102,7 +102,7 @@ export type ComponentDeclaration = {
   is_originating: boolean; country: string;
 };
 export type BomComponent = {
-  id: number; parent: number; component: number; quantity: string;
+  id: number; parent: number; component: number; quantity: string; uom?: string;
   origin_mode: "supplier" | "manual"; origin_as_of: string | null;
   manual_is_originating: boolean; manual_country: string;
   component_sku?: string; component_description?: string; component_hs?: string;
@@ -145,7 +145,7 @@ export type Me = {
 };
 export type BomLine = {
   id?: number; part_number: string; description: string; hs_code: string;
-  unit_price: string; quantity: string; country: string;
+  unit_price: string; quantity: string; uom: string; country: string;
   has_origin_evidence: boolean; total?: string;
 };
 export type SubmittedBom = {

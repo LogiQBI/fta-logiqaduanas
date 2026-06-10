@@ -3,6 +3,7 @@ from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
+from apps.catalog.uom import UOM_CHOICES
 from apps.tenants.models import TenantOwnedModel, TimeStampedModel, Tenant
 
 
@@ -271,6 +272,8 @@ class BOMComponent(TenantOwnedModel):
     parent = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="bom_components")
     component = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="used_in")
     quantity = models.DecimalField("Cantidad", max_digits=14, decimal_places=4, default=1)
+    uom = models.CharField("Unidad de medida", max_length=2, blank=True, choices=UOM_CHOICES,
+                           help_text="Código de 2 caracteres (ej. PZ, KG, MT).")
 
     origin_mode = models.CharField("Fuente de origen", max_length=20,
                                    choices=OriginMode.choices, default=OriginMode.SUPPLIER)
@@ -456,6 +459,8 @@ class SolicitationBOMLine(TenantOwnedModel):
                                help_text="Necesaria para evaluar el salto arancelario (CTH).")
     unit_price = models.DecimalField("Precio unitario", max_digits=14, decimal_places=4, default=0)
     quantity = models.DecimalField("Cantidad utilizada", max_digits=14, decimal_places=4, default=0)
+    uom = models.CharField("Unidad de medida", max_length=2, blank=True, choices=UOM_CHOICES,
+                           help_text="Código de 2 caracteres (ej. PZ, KG, MT).")
     country = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)
     has_origin_evidence = models.BooleanField(
         "¿Tiene certificado/evidencia de origen?", default=False,

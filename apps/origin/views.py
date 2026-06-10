@@ -25,6 +25,7 @@ from apps.catalog.models import (
     RuleDisplay, SolicitationBOM, SolicitationBOMLine, SolicitationLog,
     SolicitationRequest, SupplierDeclaration, SupplierProfile, log_product_changes,
 )
+from apps.catalog.uom import clean_uom
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin import automotive as auto
@@ -798,6 +799,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                     hs_code=(ln.get("hs_code") or "").strip(),
                     unit_price=ln.get("unit_price") or 0,
                     quantity=ln.get("quantity") or 0,
+                    uom=clean_uom(ln.get("uom")),
                     country=(ln.get("country") or "").strip().upper()[:2],
                     has_origin_evidence=bool(ln.get("has_origin_evidence")))
         # Guardar el BOM NO responde la solicitud; eso lo hace "enviar".
@@ -851,6 +853,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
                     hs_code="".join(c for c in str(r.get("hs_code") or "") if c.isdigit())[:10],
                     unit_price=r.get("precio_unitario") or 0,
                     quantity=r.get("cantidad") or 0,
+                    uom=clean_uom(r.get("uom")),
                     country="".join(c for c in str(r.get("pais") or "") if c.isalpha()).upper()[:2],
                     has_origin_evidence=_truthy(r.get("evidencia")))
                 n += 1
@@ -873,7 +876,7 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
             lines = [{
                 "part_number": l.part_number, "description": l.description,
                 "hs_code": l.hs_code, "unit_price": str(l.unit_price),
-                "quantity": str(l.quantity), "country": l.country,
+                "quantity": str(l.quantity), "uom": l.uom, "country": l.country,
                 "has_origin_evidence": l.has_origin_evidence,
             } for l in prev.lines.all()]
             src = prev.solicitation
@@ -1164,11 +1167,14 @@ def bulk_template(request):
     t = request.query_params.get("type", "")
     if t == "bom_response":
         cols, sheet, fname = bulk.BOM_RESPONSE_COLUMNS, "Respuesta BOM", "plantilla_respuesta_bom.xlsx"
+        instructions, col_help = bulk.BOM_RESPONSE_INSTRUCTIONS, bulk.BOM_RESPONSE_HELP
     elif t in bulk.SPECS:
-        cols, sheet, fname = bulk.SPECS[t]["columns"], bulk.SPECS[t]["sheet"], f"plantilla_{t}.xlsx"
+        spec = bulk.SPECS[t]
+        cols, sheet, fname = spec["columns"], spec["sheet"], f"plantilla_{t}.xlsx"
+        instructions, col_help = spec.get("instructions", ""), spec.get("help", {})
     else:
         return Response({"error": "Tipo de plantilla inválido."}, status=status.HTTP_400_BAD_REQUEST)
-    content = bulk.make_template(cols, sheet)
+    content = bulk.make_template(cols, sheet, instructions=instructions, col_help=col_help)
     resp = HttpResponse(content, content_type=(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'

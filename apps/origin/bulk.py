@@ -9,7 +9,10 @@ from io import BytesIO
 
 import openpyxl
 from django.db import transaction
-from openpyxl.styles import Font, PatternFill
+from openpyxl.comments import Comment
+from openpyxl.styles import Alignment, Font, PatternFill
+
+from apps.catalog.uom import clean_uom
 
 
 def _dec(v):
@@ -185,6 +188,9 @@ def import_bom(tenant, rows, user):
             res["errores"].append({"fila": i, "error": "El producto no puede ser su propio insumo."}); continue
         pais = _iso2(r.get("pais_origen"))
         defaults = {"quantity": _dec(r.get("cantidad")) or Decimal("1")}
+        uom = clean_uom(r.get("uom"))
+        if uom:
+            defaults["uom"] = uom
         if pais:
             defaults["origin_mode"] = "manual"
             defaults["manual_country"] = pais
@@ -226,7 +232,15 @@ def import_supplier_assign(tenant, rows, user):
     return res
 
 
-# Definición de cada tipo de carga: hoja, columnas (clave, etiqueta, ejemplo) e importador.
+# Texto de ayuda reutilizable.
+_UOM_HELP = ("Unidad de medida: código de 2 caracteres del catálogo "
+             "(PZ pieza, UN unidad, KG, GR, TN, MT, CM, MM, M2, M3, LT, ML, "
+             "PR par, JG juego, CJ caja, RL rollo, HJ hoja…). Déjalo vacío si no aplica.")
+_HS_HELP = "Fracción arancelaria; 6 a 8 dígitos (puedes escribir solo números, ej. 720839)."
+_ISO2_HELP = "País en código ISO de 2 letras (MX, US, CN, KR…)."
+
+# Definición de cada tipo de carga: hoja, columnas (clave, etiqueta, ejemplo),
+# importador, instrucciones generales y ayuda por columna ({req, help}).
 SPECS = {
     "supplier_assign": {
         "sheet": "Asignar proveedor",
@@ -235,6 +249,15 @@ SPECS = {
             ("codigo_proveedor", "Código de proveedor", "ST01"),
         ],
         "importer": import_supplier_assign,
+        "instructions": (
+            "Asigna (o reasigna) el proveedor de números de parte que YA existen en tu catálogo.\n"
+            "El número de parte debe existir; el proveedor se busca por su código y, si no existe, "
+            "se precarga automáticamente para que lo completes después en Proveedores.\n"
+            "Una fila por número de parte. La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
+        "help": {
+            "num_parte": {"req": True, "help": "SKU del número de parte tal como está en tu catálogo."},
+            "codigo_proveedor": {"req": True, "help": "Código del proveedor (ej. ST01). Si no existe, se precarga."},
+        },
     },
     "products": {
         "sheet": "Insumos y productos",
@@ -249,6 +272,22 @@ SPECS = {
             ("proveedor_codigo", "Código de proveedor (opcional)", "ST01"),
         ],
         "importer": import_products,
+        "instructions": (
+            "Da de alta o ACTUALIZA números de parte (insumos y productos).\n"
+            "Si el SKU ya existe NO se duplica: se actualizan los datos que traiga el archivo "
+            "(precio, descripción, HS, país…) y se respetan las celdas que dejes vacías.\n"
+            "Cada cambio de precio o de país queda en el histórico del número de parte.\n"
+            "Una fila por número de parte. La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
+        "help": {
+            "sku": {"req": True, "help": "Clave única del número de parte. Si ya existe, se actualiza."},
+            "descripcion": {"req": False, "help": "Nombre o descripción del insumo/producto."},
+            "tipo": {"req": False, "help": "material, subensamble o terminado. Si se omite, queda como material."},
+            "hs_code": {"req": False, "help": _HS_HELP},
+            "costo_unitario": {"req": False, "help": "Costo unitario; solo número (ej. 30.00)."},
+            "moneda": {"req": False, "help": "Moneda de 3 letras (USD, MXN…). Por defecto USD."},
+            "pais_origen": {"req": False, "help": _ISO2_HELP},
+            "proveedor_codigo": {"req": False, "help": "Código del proveedor que surte este número de parte. Si no existe, se precarga."},
+        },
     },
     "suppliers": {
         "sheet": "Proveedores",
@@ -261,6 +300,18 @@ SPECS = {
             ("telefono", "Teléfono", "8181818181"),
         ],
         "importer": import_suppliers,
+        "instructions": (
+            "Da de alta o actualiza tu padrón de PROVEEDORES.\n"
+            "Se busca por código (si lo traes) o por nombre dentro de tu empresa; si coincide, se actualiza.\n"
+            "Una fila por proveedor. La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
+        "help": {
+            "nombre": {"req": True, "help": "Razón social o nombre del proveedor."},
+            "codigo": {"req": False, "help": "Clave que tú le asignas (ej. CMX01). Sirve para ligar números de parte."},
+            "pais": {"req": False, "help": _ISO2_HELP},
+            "rfc": {"req": False, "help": "RFC o Tax ID del proveedor."},
+            "email": {"req": False, "help": "Correo de contacto."},
+            "telefono": {"req": False, "help": "Teléfono de contacto."},
+        },
     },
     "customers": {
         "sheet": "Clientes",
@@ -273,6 +324,18 @@ SPECS = {
             ("telefono", "Teléfono", "+1 555 0100"),
         ],
         "importer": import_customers,
+        "instructions": (
+            "Da de alta o actualiza tu padrón de CLIENTES.\n"
+            "Se busca por código (si lo traes) o por nombre dentro de tu empresa; si coincide, se actualiza.\n"
+            "Una fila por cliente. La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
+        "help": {
+            "nombre": {"req": True, "help": "Razón social o nombre del cliente."},
+            "codigo": {"req": False, "help": "Clave opcional que tú le asignas (ej. CLI01)."},
+            "pais": {"req": False, "help": _ISO2_HELP},
+            "rfc": {"req": False, "help": "RFC o Tax ID del cliente."},
+            "email": {"req": False, "help": "Correo de contacto."},
+            "telefono": {"req": False, "help": "Teléfono de contacto."},
+        },
     },
     "bom": {
         "sheet": "Lista de materiales (BOM)",
@@ -280,9 +343,23 @@ SPECS = {
             ("producto_sku", "SKU del producto (padre)", "FG-AUTO-01"),
             ("insumo_sku", "SKU del insumo (componente)", "MAT-001"),
             ("cantidad", "Cantidad", "1"),
+            ("uom", "Unidad de medida (PZ, KG, MT…)", "PZ"),
             ("pais_origen", "País de origen manual (opcional, ISO-2)", "MX"),
         ],
         "importer": import_bom,
+        "instructions": (
+            "Arma las listas de materiales (BOM): cada fila liga un PRODUCTO (padre) con uno de "
+            "sus INSUMOS (componente), ambos por SKU. Ambos deben existir ya en tu catálogo.\n"
+            "Repite el SKU del producto en varias filas para agregarle varios insumos.\n"
+            "El país de origen es opcional (deja el componente en modo manual con ese país).\n"
+            "La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
+        "help": {
+            "producto_sku": {"req": True, "help": "SKU del producto terminado o subensamble (el padre del BOM)."},
+            "insumo_sku": {"req": True, "help": "SKU del insumo/componente que lo integra."},
+            "cantidad": {"req": False, "help": "Cantidad del insumo por unidad del producto (ej. 1, 2.5). Por defecto 1."},
+            "uom": {"req": False, "help": _UOM_HELP},
+            "pais_origen": {"req": False, "help": "Opcional. " + _ISO2_HELP + " Fija el origen manual del componente."},
+        },
     },
 }
 
@@ -293,54 +370,129 @@ BOM_RESPONSE_COLUMNS = [
     ("hs_code", "Fracción HS (6 díg.)", "853321"),
     ("precio_unitario", "Precio unitario", "1.50"),
     ("cantidad", "Cantidad", "10"),
+    ("uom", "Unidad de medida (PZ, KG, MT…)", "PZ"),
     ("pais", "País de origen (ISO-2)", "CN"),
     ("evidencia", "¿Tiene evidencia? (si/no)", "no"),
 ]
 
+BOM_RESPONSE_INSTRUCTIONS = (
+    "Responde la solicitud de tu cliente subiendo la lista de materiales (BOM) del número de parte.\n"
+    "Una fila por componente. Indica para cada uno su fracción HS, precio, cantidad, unidad de medida, "
+    "país de origen y si cuentas con documento/evidencia de origen.\n"
+    "Al importar se reemplazan las líneas actuales del BOM; después revisas, calculas el origen y envías.\n"
+    "La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla.")
 
-def make_template(columns, sheet_name):
-    """Crea un .xlsx con encabezados (resaltados) + una fila de ejemplo. Devuelve bytes."""
+BOM_RESPONSE_HELP = {
+    "num_parte": {"req": True, "help": "Número de parte del componente."},
+    "descripcion": {"req": False, "help": "Descripción del componente."},
+    "hs_code": {"req": False, "help": _HS_HELP + " Necesaria para evaluar el salto arancelario (CTH)."},
+    "precio_unitario": {"req": False, "help": "Precio unitario del componente; solo número (ej. 1.50)."},
+    "cantidad": {"req": False, "help": "Cantidad utilizada del componente; solo número (ej. 10)."},
+    "uom": {"req": False, "help": _UOM_HELP},
+    "pais": {"req": False, "help": _ISO2_HELP},
+    "evidencia": {"req": False, "help": "¿Tienes documento/certificado que respalde el origen? Escribe sí o no."},
+}
+
+
+def make_template(columns, sheet_name, instructions="", col_help=None):
+    """Crea un .xlsx con: (1) una hoja "Instrucciones" de llenado y (2) la hoja de
+    datos con encabezados resaltados + fila de ejemplo. Cada encabezado lleva un
+    comentario con su ayuda. Devuelve bytes.
+
+    `instructions`: texto general (líneas separadas por \\n).
+    `col_help`: dict {clave: {"req": bool, "help": str}}."""
+    col_help = col_help or {}
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = sheet_name[:31]
     header_font = Font(bold=True, color="FFFFFF")
     fill = PatternFill("solid", fgColor="043A70")
-    for col, (_, label, example) in enumerate(columns, start=1):
+
+    # --- Hoja de datos (la que se llena e importa) ---
+    ws = wb.active
+    ws.title = sheet_name[:31]
+    for col, (key, label, example) in enumerate(columns, start=1):
         c = ws.cell(row=1, column=col, value=label)
         c.font = header_font
         c.fill = fill
         ws.cell(row=2, column=col, value=example)
         ws.column_dimensions[c.column_letter].width = max(14, len(label) + 2)
+        info = col_help.get(key)
+        if info:
+            txt = ("OBLIGATORIO. " if info.get("req") else "Opcional. ") + info.get("help", "")
+            cm = Comment(txt, "FTA")
+            cm.width, cm.height = 300, 130
+            c.comment = cm
+
+    # --- Hoja de instrucciones (primera y visible al abrir) ---
+    ins = wb.create_sheet("Instrucciones", 0)
+    ins["A1"] = "LogiQ Aduanas | FTA — Instrucciones de llenado"
+    ins["A1"].font = Font(bold=True, size=14, color="043A70")
+    ins["A2"] = f"Plantilla: {sheet_name}. Captura los datos en la pestaña «{sheet_name[:31]}»."
+    ins["A2"].font = Font(italic=True, color="6B7280")
+    r = 4
+    for para in (instructions or "").split("\n"):
+        cell = ins.cell(row=r, column=1, value=para)
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        r += 1
+    r += 1
+    for j, h in enumerate(["Columna", "¿Obligatoria?", "Cómo llenarla", "Ejemplo"], start=1):
+        c = ins.cell(row=r, column=j, value=h)
+        c.font = header_font
+        c.fill = fill
+    r += 1
+    for key, label, example in columns:
+        info = col_help.get(key, {})
+        ins.cell(row=r, column=1, value=label)
+        ins.cell(row=r, column=2, value="Sí" if info.get("req") else "No")
+        hc = ins.cell(row=r, column=3, value=info.get("help", ""))
+        hc.alignment = Alignment(wrap_text=True, vertical="top")
+        ins.cell(row=r, column=4, value=str(example))
+        r += 1
+    ins.column_dimensions["A"].width = 36
+    ins.column_dimensions["B"].width = 13
+    ins.column_dimensions["C"].width = 66
+    ins.column_dimensions["D"].width = 18
+    wb.active = 0  # abrir mostrando las instrucciones
+
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
 def read_rows(file, columns):
-    """Lee el .xlsx subido. La primera fila son encabezados (deben coincidir con
-    las ETIQUETAS de la plantilla); devuelve una lista de dicts con las CLAVES."""
-    wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
-    ws = wb.active
-    rows_iter = ws.iter_rows(values_only=True)
-    try:
-        header = next(rows_iter)
-    except StopIteration:
-        return []
-    # Mapear cada columna del archivo a su clave interna por la etiqueta.
+    """Lee el .xlsx subido. Busca —en cualquier hoja— la fila de ENCABEZADOS que
+    coincide con las ETIQUETAS de la plantilla (ignora la hoja de Instrucciones) y
+    devuelve los renglones de datos como dicts con las CLAVES internas."""
+    wb = openpyxl.load_workbook(file, data_only=True)
     label_to_key = {label.strip().lower(): key for key, label, _ in columns}
-    idx_to_key = {}
-    for idx, h in enumerate(header):
-        if h is None:
-            continue
-        key = label_to_key.get(str(h).strip().lower())
-        if key:
-            idx_to_key[idx] = key
+
+    found = None  # (worksheet, índice_fila_encabezado, idx_to_key)
+    for ws in wb.worksheets:
+        for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+            if not row:
+                continue
+            idx_to_key = {}
+            for idx, h in enumerate(row):
+                if h is None:
+                    continue
+                key = label_to_key.get(str(h).strip().lower())
+                if key is not None:
+                    idx_to_key[idx] = key
+            # La fila de encabezados tiene varias etiquetas conocidas a la vez.
+            if len(idx_to_key) >= min(2, len(columns)):
+                found = (ws, r_idx, idx_to_key)
+                break
+        if found:
+            break
+    if not found:
+        return []
+
+    ws, header_idx, idx_to_key = found
     out = []
-    for row in rows_iter:
+    for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+        if r_idx <= header_idx:
+            continue
         if row is None or all(v in (None, "") for v in row):
             continue
-        d = {}
-        for idx, key in idx_to_key.items():
-            d[key] = row[idx] if idx < len(row) else None
+        d = {idx_to_key[idx]: (row[idx] if idx < len(row) else None) for idx in idx_to_key}
         out.append(d)
     return out

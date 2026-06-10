@@ -14,8 +14,21 @@ import {
   SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
+import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+
+// Desplegable de unidad de medida (UOM) para las líneas de BOM.
+function UomSelect({ value, onChange, className }: {
+  value: string; onChange: (v: string) => void; className?: string;
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={className} aria-label="Unidad de medida">
+      <option value="">U.M.…</option>
+      {UOM_OPTIONS.map((u) => <option key={u.code} value={u.code}>{u.code} — {u.label}</option>)}
+    </select>
+  );
+}
 
 // Etiqueta de tratado en inglés para mostrar (interno se mantiene el código).
 const TREATY_LABELS: Record<string, string> = { TMEC: "USMCA" };
@@ -1430,6 +1443,7 @@ function BomEditorModal({ product, allProducts, onClose }: {
   const { data, reload, loading } = useList<BomComponent>(() => api.bomComponents(product.id));
   const [compId, setCompId] = useState<number | "">("");
   const [qty, setQty] = useState("1");
+  const [uom, setUom] = useState("");
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
   // País por insumo (local, para escribir fluido; se guarda al salir del campo).
   const [pais, setPais] = useState<Record<number, string>>({});
@@ -1442,9 +1456,13 @@ function BomEditorModal({ product, allProducts, onClose }: {
     if (!compId) { setErr("Elige un insumo."); return; }
     setErr(""); setSaving(true);
     try {
-      await api.addBomComponent({ parent: product.id, component: compId, quantity: qty || "1" });
-      setCompId(""); setQty("1"); await reload();
+      await api.addBomComponent({ parent: product.id, component: compId, quantity: qty || "1", uom });
+      setCompId(""); setQty("1"); setUom(""); await reload();
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  async function setUomManual(c: BomComponent, value: string) {
+    try { await api.updateBomComponent(c.id, { uom: value }); await reload(); }
+    catch (e) { setErr((e as Error).message); }
   }
   async function quitar(c: BomComponent) {
     if (!confirm(`¿Quitar “${c.component_sku}” del BOM?`)) return;
@@ -1476,10 +1494,14 @@ function BomEditorModal({ product, allProducts, onClose }: {
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Cantidad</span>
           <input className={inputCls} type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} />
         </div>
+        <div className="w-36">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Unidad de medida</span>
+          <UomSelect value={uom} onChange={setUom} className={inputCls} />
+        </div>
         <Btn onClick={add} disabled={saving}><Plus size={15} className="-mt-0.5 mr-1 inline" />Agregar</Btn>
       </div>
       {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
-      <Table head={["Núm. de parte", "Descripción", "Proveedor", "Cant.", "País de origen", ""]}>
+      <Table head={["Núm. de parte", "Descripción", "Proveedor", "Cant.", "U.M.", "País de origen", ""]}>
         {data.map((c) => {
           const decls = c.component_declarations ?? [];
           const enDeclaracion = c.origin_mode === "supplier";
@@ -1489,6 +1511,10 @@ function BomEditorModal({ product, allProducts, onClose }: {
               <td className="px-4 py-3">{c.component_description}</td>
               <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
               <td className="px-4 py-3 text-xs">{c.quantity}</td>
+              <td className="px-4 py-3">
+                <UomSelect value={c.uom ?? ""} onChange={(v) => setUomManual(c, v)}
+                  className="rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+              </td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <input value={pais[c.id] ?? ""} maxLength={2} placeholder="País"
@@ -3449,7 +3475,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
         <div className="text-xs text-zinc-500">HS {s.product_hs} · Tratado {treatyLabel(s.treaty_code)} · Proveedor {s.supplier_name}</div>
         {b?.rule_description && <div className="mt-1 text-xs">Regla (PSR): <strong>{b.rule_hs}</strong> — {b.rule_description}</div>}
       </div>
-      <Table head={["Núm. de parte", "Descripción", "HS", "Precio", "Cant.", "Total", "País", "Evidencia"]}>
+      <Table head={["Núm. de parte", "Descripción", "HS", "Precio", "Cant.", "U.M.", "Total", "País", "Evidencia"]}>
         {(b?.lines ?? []).map((l, i) => (
           <tr key={i} className={l.has_origin_evidence ? "" : "bg-amber-50/40"}>
             <td className="px-4 py-2 font-mono text-xs">{l.part_number}</td>
@@ -3457,6 +3483,7 @@ function BomViewModal({ s, onClose }: { s: Solicitation; onClose: () => void }) 
             <td className="px-4 py-2 font-mono text-xs">{formatHs(l.hs_code) || "—"}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.unit_price}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.quantity}</td>
+            <td className="px-4 py-2 text-xs" title={l.uom ? uomLabel(l.uom) : ""}>{l.uom || "—"}</td>
             <td className="px-4 py-2 font-mono text-xs">{l.total}</td>
             <td className="px-4 py-2">{l.country}</td>
             <td className="px-4 py-2">
@@ -3985,7 +4012,7 @@ function SolCard({ s, product, onDone }: {
   );
 }
 function emptyBomLine(): BomLine {
-  return { part_number: "", description: "", hs_code: "", unit_price: "", quantity: "", country: "", has_origin_evidence: false };
+  return { part_number: "", description: "", hs_code: "", unit_price: "", quantity: "", uom: "", country: "", has_origin_evidence: false };
 }
 /* Reporte del análisis de origen (CTC / VCR) a partir del detalle calculado. */
 function OriginReport({ bom }: { bom: SubmittedBom }) {
@@ -4044,7 +4071,7 @@ function bomSnapshot(lines: BomLine[], rule: number | ""): string {
     lines: lines.filter((l) => l.part_number.trim()).map((l) => ({
       pn: l.part_number.trim(), d: l.description.trim(), hs: l.hs_code,
       up: String(l.unit_price || "0"), q: String(l.quantity || "0"),
-      c: l.country, e: l.has_origin_evidence,
+      u: l.uom || "", c: l.country, e: l.has_origin_evidence,
     })),
   });
 }
@@ -4102,8 +4129,8 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
       rvc_method: rvcMethod, net_cost: rvcMethod === "net_cost" ? (netCost || "0") : "0",
       lines: valid.map((l) => ({
         part_number: l.part_number, description: l.description, hs_code: l.hs_code,
-        unit_price: l.unit_price || "0", quantity: l.quantity || "0", country: l.country,
-        has_origin_evidence: l.has_origin_evidence,
+        unit_price: l.unit_price || "0", quantity: l.quantity || "0", uom: l.uom || "",
+        country: l.country, has_origin_evidence: l.has_origin_evidence,
       })),
     };
   }
@@ -4229,6 +4256,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
               <th className="px-1 py-1 font-medium">HS</th>
               <th className="px-1 py-1 font-medium">Precio unit.</th>
               <th className="px-1 py-1 font-medium">Cantidad</th>
+              <th className="px-1 py-1 font-medium">U.M.</th>
               <th className="px-1 py-1 font-medium">Total</th>
               <th className="px-1 py-1 font-medium">País</th>
               <th className="px-1 py-1 font-medium">
@@ -4248,6 +4276,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
                 <td className="px-1 py-1"><HsInput value={l.hs_code} onChange={(v) => setLine(i, "hs_code", v)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1"><input type="number" step="0.0001" value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)} className={cx(cell, "w-20")} /></td>
+                <td className="px-1 py-1"><UomSelect value={l.uom} onChange={(v) => setLine(i, "uom", v)} className={cx(cell, "w-24")} /></td>
                 <td className="px-1 py-1 font-mono text-xs text-zinc-600">{lt(l).toFixed(2)}</td>
                 <td className="px-1 py-1"><CountryInput value={l.country} onChange={(v) => setLine(i, "country", v)} className={cx(cell, "w-20")} /></td>
                 <td className="px-1 py-1">
