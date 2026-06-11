@@ -13,6 +13,7 @@ class Qualification(TenantOwnedModel):
         QUALIFIES = "QUALIFIES", "Califica"
         DOES_NOT = "DOES_NOT", "No califica"
         INSUFFICIENT = "INSUFFICIENT", "Datos insuficientes"
+        AUTO_REVIEW = "AUTO_REVIEW", "Requiere régimen automotriz"
 
     product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE,
                                 related_name="qualifications")

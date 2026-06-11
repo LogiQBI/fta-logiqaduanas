@@ -166,6 +166,57 @@ def automotive_note(params, hs_code=""):
     return None
 
 
+# --- Partes esenciales ("core parts") del régimen automotriz T-MEC ---
+# Anexo 4-B (Apéndice), Tabla A.1: partes para las que el SALTO ARANCELARIO NO
+# basta; requieren el régimen automotriz (VCR alto por costo neto + Valor de
+# Contenido Laboral + compra de acero/aluminio originario / super-core).
+# Lista ORIENTATIVA por partida (4 díg.) / subpartida (6 díg.) del SA. Ajustable.
+CORE_PART_CODES = {
+    "840731", "840732", "840733", "840734",  # Motores de chispa (vehículos)
+    "840820",                                  # Motores diésel (vehículos)
+    "840991", "840999",                        # Partes de motores
+    "870840",                                  # Cajas de cambio / transmisiones
+    "8707",                                    # Carrocerías y chasis
+    "870850",                                  # Ejes con diferencial
+    "870880",                                  # Sistemas de suspensión (amortiguadores)
+    "870894",                                  # Volantes, columnas y cajas de dirección
+    "850760",                                  # Baterías avanzadas (ion-litio)
+}
+
+CORE_PART_NOTE = (
+    "PARTE ESENCIAL (core part) del régimen automotriz T-MEC (Anexo 4-B, Apéndice, "
+    "Tabla A.1). Para estas partes el salto arancelario NO es suficiente: deben cumplir "
+    "Valor de Contenido Regional alto por costo neto, Valor de Contenido Laboral (LVC) y "
+    "los requisitos de acero/aluminio originario (super-core). El cálculo por BOM es solo "
+    "informativo; usa el módulo «Automotriz (T-MEC)» para la determinación de origen."
+)
+
+
+def core_part_code(hs_code):
+    """Devuelve el código de 'core part' (Anexo 4-B) que coincide con la fracción
+    por prefijo (subpartida o partida), o None si no es parte esencial."""
+    d = _digits(hs_code)
+    if not d:
+        return None
+    for code in sorted(CORE_PART_CODES, key=len, reverse=True):
+        if d.startswith(code):
+            return code
+    return None
+
+
+def apply_core_part_review(hs_code, result):
+    """Si la fracción del bien es una 'core part', el motor de BOM NO concluye el
+    origen: se marca el resultado como 'AUTO_REVIEW' (requiere régimen automotriz)
+    y se anexa la nota. Conserva la traza CTC/VCR calculada como referencia."""
+    code = core_part_code(hs_code)
+    if not code:
+        return result
+    result.setdefault("detail", {})["automotive_core"] = CORE_PART_NOTE
+    result["detail"]["automotive_core_code"] = code
+    result["status"] = "AUTO_REVIEW"
+    return result
+
+
 def _check_tariff_shift(product, lines, shift_level, de_minimis, total_value,
                         except_codes=()):
     """Cada material NO originario debe cambiar de clasificación al nivel pedido.
@@ -297,7 +348,8 @@ def qualify(product, treaty, as_of=None, _visited=None):
         passed = bool(ctc_pass) and bool(rvc_pass)
         criterion = "CTC_AND_RVC"
 
-    return _result(passed, criterion, rvc_value, rule, detail)
+    result = _result(passed, criterion, rvc_value, rule, detail)
+    return apply_core_part_review(product.hs_code or "", result)
 
 
 def _result(passed, criterion, rvc_value, rule, detail, insufficient=False):

@@ -625,7 +625,7 @@ function ReportToolbar({ q, setQ, onExport, placeholder }: {
 
 const STATUS_PILL: Record<string, string> = {
   QUALIFIES: "bg-green-100 text-green-700", DOES_NOT: "bg-red-100 text-red-700",
-  INSUFFICIENT: "bg-amber-100 text-amber-700",
+  INSUFFICIENT: "bg-amber-100 text-amber-700", AUTO_REVIEW: "bg-amber-100 text-amber-800",
   active: "bg-green-100 text-green-700", suspended: "bg-red-100 text-red-700",
   expired: "bg-zinc-200 text-zinc-600", responded: "bg-green-100 text-green-700",
   pending: "bg-amber-100 text-amber-700", sent: "bg-blue-100 text-blue-700",
@@ -1664,23 +1664,29 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
 // Reporte del resultado del cálculo de origen del producto de la empresa.
 function OriginResultReport({ result }: { result: OriginCalcResult }) {
   const d = (result.detail ?? {}) as {
-    error?: string; rule?: string; automotive_regime?: string;
+    error?: string; rule?: string; automotive_regime?: string; automotive_core?: string;
     bom?: { sku: string; originating: boolean; origin_source: string; line_value: string; country: string }[];
     tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; except_codes?: string[]; components: { sku: string; shifted: boolean; in_exception?: boolean }[] };
     rvc?: { method: string; threshold: string; rvc: string; vnm: string; transaction_value: string };
   };
+  const review = result.status === "AUTO_REVIEW";
   const ok = result.status === "QUALIFIES";
   const insf = result.status === "INSUFFICIENT";
   return (
     <div className="mt-4 rounded-lg border border-zinc-200 p-3">
       <div className="flex items-center gap-2">
         <span className={cx("rounded-full px-2.5 py-0.5 text-sm font-semibold",
-          ok ? "bg-green-100 text-green-700" : insf ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
-          {ok ? "Originario: SÍ" : insf ? "Datos insuficientes" : "Originario: NO"}
+          ok ? "bg-green-100 text-green-700" : (insf || review) ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
+          {ok ? "Originario: SÍ" : review ? "Requiere régimen automotriz" : insf ? "Datos insuficientes" : "Originario: NO"}
         </span>
         {result.criterion && <span className="text-xs text-zinc-500">Criterio: <strong>{result.criterion}</strong></span>}
         {result.rvc_value != null && <span className="text-xs text-zinc-500">VCR: <strong>{result.rvc_value}%</strong></span>}
       </div>
+      {d.automotive_core && (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          🚗 <strong>Parte esencial (core part).</strong> {d.automotive_core}
+        </div>
+      )}
       {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
       {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
       {d.automotive_regime && (
@@ -3039,6 +3045,7 @@ function OrigenCelda({ s }: { s: Solicitation }) {
   let label = "Pendiente", cls = "bg-zinc-100 text-zinc-600", crit = s.submitted_bom?.criterion;
   if (st === "QUALIFIES" || decl === true) { label = "Originario: SÍ"; cls = "bg-green-100 text-green-700"; }
   else if (st === "DOES_NOT" || decl === false) { label = "Originario: NO"; cls = "bg-red-100 text-red-700"; }
+  else if (st === "AUTO_REVIEW") { label = "Requiere régimen automotriz"; cls = "bg-amber-100 text-amber-800"; }
   else if (st === "INSUFFICIENT") { label = "Datos insuficientes"; cls = "bg-amber-100 text-amber-700"; }
   const psr = s.submitted_bom?.rule_hs;
   return (
@@ -4033,22 +4040,31 @@ function emptyBomLine(): BomLine {
 function OriginReport({ bom }: { bom: SubmittedBom }) {
   if (!bom.origin_status) return null;
   const d = (bom.detail ?? {}) as {
-    rule?: string; rule_type?: string; error?: string; automotive_regime?: string;
+    rule?: string; rule_type?: string; error?: string; automotive_regime?: string; automotive_core?: string;
     tariff_shift?: { shift_level: string; violating_value: string; violating_pct: string; de_minimis: string; except_codes?: string[]; components: { sku: string; shifted: boolean; in_exception?: boolean }[] };
     rvc?: { method: string; threshold: string; rvc: string; vnm: string; transaction_value: string };
   };
+  const review = bom.origin_status === "AUTO_REVIEW";
   const ok = bom.origin_status === "QUALIFIES";
   const insf = bom.origin_status === "INSUFFICIENT";
   return (
     <div className="mt-3 rounded-lg border border-zinc-200 p-3">
       <div className="flex items-center gap-2">
         <span className={cx("rounded-full px-2.5 py-0.5 text-sm font-semibold",
-          ok ? "bg-green-100 text-green-700" : insf ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
-          {ok ? "Originario: SÍ" : insf ? "Datos insuficientes" : "Originario: NO"}
+          ok ? "bg-green-100 text-green-700" : (insf || review) ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700")}>
+          {ok ? "Originario: SÍ" : review ? "Requiere régimen automotriz" : insf ? "Datos insuficientes" : "Originario: NO"}
         </span>
+        {d.automotive_core && (
+          <span className="text-[11px] text-amber-800">🚗 parte esencial (core)</span>
+        )}
         {bom.criterion && <span className="text-xs text-zinc-500">Criterio: <strong>{bom.criterion}</strong></span>}
         {bom.rvc_value != null && <span className="text-xs text-zinc-500">VCR: <strong>{bom.rvc_value}%</strong></span>}
       </div>
+      {d.automotive_core && (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          🚗 <strong>Parte esencial (core part).</strong> {d.automotive_core}
+        </div>
+      )}
       {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
       {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
       {d.automotive_regime && (

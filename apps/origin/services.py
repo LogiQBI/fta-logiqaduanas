@@ -97,9 +97,10 @@ def calculate_bom_origin(bom):
         passed = bool(ctc_pass) and bool(rvc_pass)
         criterion = "CTC_AND_RVC"
 
-    return _save_bom_result(bom, rule, {
+    result = engine.apply_core_part_review(product.hs_code or "", {
         "status": "QUALIFIES" if passed else "DOES_NOT",
         "criterion": criterion, "rvc_value": rvc_value, "detail": detail})
+    return _save_bom_result(bom, rule, result)
 
 
 def _save_bom_result(bom, rule, result):
@@ -244,8 +245,10 @@ def _evaluate_product(product, treaty, as_of, visited):
         passed = bool(ctc_pass) and bool(rvc_pass)
         criterion = "CTC_AND_RVC"
 
-    return {"status": "QUALIFIES" if passed else "DOES_NOT", "criterion": criterion,
-            "rvc_value": rvc_value, "detail": detail, "rule": rule}
+    result = {"status": "QUALIFIES" if passed else "DOES_NOT", "criterion": criterion,
+              "rvc_value": rvc_value, "detail": detail, "rule": rule}
+    # Core part (Anexo 4-B): el salto/VCR del BOM no concluye; requiere automotriz.
+    return engine.apply_core_part_review(product.hs_code or "", result)
 
 
 def calculate_product_origin(product, treaty, as_of=None, user=None):
