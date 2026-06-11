@@ -1367,6 +1367,7 @@ function ProductosView() {
   const [busq, setBusq] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
+  const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   useEffect(() => {
     if (!treatyId && treaties.data.length) {
       const tmec = treaties.data.find((t) => t.code === "TMEC");
@@ -1399,7 +1400,11 @@ function ProductosView() {
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm">
           {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
         </select>
-        <div className="ml-auto"><Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo producto</Btn></div>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Btn variant="ghost" onClick={() => setBulk("products")}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
+          <Btn variant="ghost" onClick={() => setBulk("bom")}><Upload size={15} className="-mt-0.5 mr-1 inline" />BOM masivo</Btn>
+          <Btn onClick={() => setEditing("new")}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nuevo producto</Btn>
+        </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (SKU o descripción)" />
@@ -1432,6 +1437,16 @@ function ProductosView() {
           onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />
       )}
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
+      {bulk === "products" && (
+        <CargaMasivaModal title="Carga masiva de productos / números de parte" onClose={() => setBulk(null)} onDone={reload}
+          hint="Da de alta o actualiza muchos productos a la vez (incluye terminados con la columna 'tipo' = terminado). Los que YA existen se actualizan por SKU exacto; los nuevos se crean."
+          templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} previewFn={(f) => api.bulkPreview("products", f)} />
+      )}
+      {bulk === "bom" && (
+        <CargaMasivaModal title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
+          hint="Arma las listas de materiales en lote: cada fila liga un producto (padre) con un insumo (componente) por SKU. Incluye unidad de medida y país de origen opcional."
+          templateFn={() => api.bulkTemplate("bom")} importFn={(f) => api.bulkImport("bom", f)} />
+      )}
     </div>
   );
 }

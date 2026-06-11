@@ -252,7 +252,13 @@ def calculate_product_origin(product, treaty, as_of=None, user=None):
     """Calcula el origen del producto de la EMPRESA a partir de SU BOM, con
     roll-up recursivo de subensambles. Guarda la Qualification y devuelve la traza."""
     result = _evaluate_product(product, treaty, as_of, set())
-    return _save_qual(product, treaty, result.get("rule"), result, user)
+    rule = result.get("rule")
+    _save_qual(product, treaty, rule, result, user)
+    # El resultado se devuelve por la API: no debe contener el objeto OriginRule
+    # (no es JSON-serializable). La descripción de la regla ya va en detail["rule"].
+    result.pop("rule", None)
+    result["rule_id"] = rule.pk if rule else None
+    return result
 
 
 def _save_qual(product, treaty, rule, result, user):
