@@ -63,6 +63,7 @@ export type BulkResult = {
   creados: number; actualizados: number; omitidos?: number;
   errores: { fila: number; error: string }[];
   advertencias?: { fila: number; error: string }[];
+  creados_skus?: string[]; actualizados_skus?: string[]; sin_precio_skus?: string[];
 };
 export type BulkPreview = { total: number; existentes: number; nuevos: number; existentes_skus: string[] };
 export type EmittedCertificate = {

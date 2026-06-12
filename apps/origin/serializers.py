@@ -89,6 +89,11 @@ class ProductSerializer(serializers.ModelSerializer):
         n = getattr(obj, "_change_log_count", None)
         return n if n is not None else obj.change_logs.count()
 
+    def validate_sku(self, value):
+        # Los números de parte se guardan en MAYÚSCULAS (consistencia con la carga
+        # masiva y para que se vean bien).
+        return (value or "").strip().upper()
+
     class Meta:
         model = Product
         fields = "__all__"

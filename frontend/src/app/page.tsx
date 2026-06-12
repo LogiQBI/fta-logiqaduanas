@@ -1654,6 +1654,24 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
               </ul>
             </div>
           )}
+          {(result.sin_precio_skus?.length ?? 0) > 0 && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+              <div className="font-semibold text-amber-800">{result.sin_precio_skus!.length} número(s) de parte quedaron SIN precio (su fila no traía costo):</div>
+              <div className="mt-1 max-h-32 overflow-auto font-mono text-xs text-amber-700">{result.sin_precio_skus!.join(", ")}</div>
+              <div className="mt-1 text-[11px] text-amber-700">Revisa la columna “Costo unitario” de esas filas en tu Excel y vuelve a subir.</div>
+            </div>
+          )}
+          {((result.actualizados_skus?.length ?? 0) > 0 || (result.creados_skus?.length ?? 0) > 0) && (
+            <details className="mt-2 text-xs text-zinc-500">
+              <summary className="cursor-pointer">Ver detalle por número de parte</summary>
+              {(result.actualizados_skus?.length ?? 0) > 0 && (
+                <div className="mt-1"><span className="font-semibold text-zinc-600">Actualizados:</span> <span className="font-mono">{result.actualizados_skus!.join(", ")}</span></div>
+              )}
+              {(result.creados_skus?.length ?? 0) > 0 && (
+                <div className="mt-1"><span className="font-semibold text-zinc-600">Creados:</span> <span className="font-mono">{result.creados_skus!.join(", ")}</span></div>
+              )}
+            </details>
+          )}
         </div>
       )}
       <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
@@ -2079,7 +2097,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     <Modal title={product ? "Editar producto" : "Nuevo producto"} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="SKU / Núm. de parte">
-          <input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={inputCls} placeholder="PT-001" autoFocus />
+          <input value={f.sku} onChange={(e) => set("sku", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} placeholder="PT-001" autoFocus />
         </Field>
         <Field label="Tipo">
           <select value={f.kind} onChange={(e) => set("kind", e.target.value)} className={inputCls}>
@@ -2344,7 +2362,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     <Modal title={insumo ? "Editar número de parte" : "Nuevo número de parte"} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Número de parte">
-          <input value={f.sku} onChange={(e) => set("sku", e.target.value)} className={cx(inputCls, "font-mono")} placeholder="7782-A" autoFocus />
+          <input value={f.sku} onChange={(e) => set("sku", e.target.value.toUpperCase())} className={cx(inputCls, "font-mono uppercase")} placeholder="7782-A" autoFocus />
         </Field>
         <Field label="Tipo">
           <select value={f.kind} onChange={(e) => set("kind", e.target.value)} className={inputCls}>

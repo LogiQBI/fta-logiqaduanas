@@ -48,9 +48,12 @@ def import_products(tenant, rows, user):
     actualizan los campos que el Excel trae con valor (precio, descripción, HS,
     país, proveedor…), dejando intactos los que vengan vacíos. Si no existe, se crea."""
     from apps.catalog.models import Party, Product, ProductChangeLog, log_product_changes
-    res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": []}
+    res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": [],
+           "creados_skus": [], "actualizados_skus": [], "sin_precio_skus": []}
     for i, r in enumerate(rows, start=2):
-        sku = str(r.get("sku") or "").strip()
+        # El número de parte se normaliza a MAYÚSCULAS y el match es sin distinguir
+        # mayúsc/minúsc, para que re-subir actualice aunque cambie el case.
+        sku = str(r.get("sku") or "").strip().upper()
         if not sku:
             res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
         try:
@@ -67,7 +70,7 @@ def import_products(tenant, rows, user):
                             tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
                         adv = f"Proveedor '{scode}' precargado automáticamente; complétalo en Proveedores."
 
-                existing = Product.objects.filter(tenant=tenant, sku=sku).first()
+                existing = Product.objects.filter(tenant=tenant, sku__iexact=sku).first()
                 if existing:
                     # Snapshot para registrar el histórico de precio/origen.
                     before = {"unit_cost": existing.unit_cost, "currency": existing.currency,
@@ -94,9 +97,12 @@ def import_products(tenant, rows, user):
                                "country_of_origin": existing.country_of_origin},
                         source=ProductChangeLog.Source.BULK, user=user)
                     res["actualizados"] += 1
+                    if len(res["actualizados_skus"]) < 200:
+                        res["actualizados_skus"].append(existing.sku)
+                    final = existing
                 else:
                     kind = KIND_MAP.get(str(r.get("tipo") or "material").strip().lower(), "material")
-                    Product.objects.create(
+                    final = Product.objects.create(
                         tenant=tenant, sku=sku,
                         description=str(r.get("descripcion") or "").strip(),
                         kind=kind, hs_code=_digits(r.get("hs_code"), 8),
@@ -104,6 +110,11 @@ def import_products(tenant, rows, user):
                         currency=(str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
                         country_of_origin=_iso2(r.get("pais_origen")), supplier=supplier)
                     res["creados"] += 1
+                    if len(res["creados_skus"]) < 200:
+                        res["creados_skus"].append(final.sku)
+                # Marca los que quedan SIN precio (precio 0): la fila no traía costo.
+                if (not final.unit_cost) and len(res["sin_precio_skus"]) < 200:
+                    res["sin_precio_skus"].append(final.sku)
             if adv:
                 res["advertencias"].append({"fila": i, "error": adv})
         except Exception as e:
@@ -117,11 +128,12 @@ def preview_products(tenant, rows):
     from apps.catalog.models import Product
     skus = []
     for r in rows:
-        s = str(r.get("sku") or "").strip()
+        s = str(r.get("sku") or "").strip().upper()
         if s and s not in skus:
             skus.append(s)
-    existentes = set(Product.objects.filter(tenant=tenant, sku__in=skus)
-                     .values_list("sku", flat=True))
+    # Comparación sin distinguir mayúsc/minúsc: normaliza lo guardado a MAYÚSCULAS.
+    existentes = {sk.upper() for sk in Product.objects.filter(tenant=tenant)
+                  .values_list("sku", flat=True)}
     ex = [s for s in skus if s in existentes]
     nuevos = [s for s in skus if s not in existentes]
     return {"total": len(skus), "existentes": len(ex), "nuevos": len(nuevos),
@@ -174,12 +186,12 @@ def import_bom(tenant, rows, user):
     from apps.catalog.models import BOMComponent, Product
     res = {"creados": 0, "actualizados": 0, "errores": []}
     for i, r in enumerate(rows, start=2):
-        psku = str(r.get("producto_sku") or "").strip()
-        csku = str(r.get("insumo_sku") or "").strip()
+        psku = str(r.get("producto_sku") or "").strip().upper()
+        csku = str(r.get("insumo_sku") or "").strip().upper()
         if not psku or not csku:
             res["errores"].append({"fila": i, "error": "Falta producto_sku o insumo_sku."}); continue
-        parent = Product.objects.filter(tenant=tenant, sku=psku).first()
-        component = Product.objects.filter(tenant=tenant, sku=csku).first()
+        parent = Product.objects.filter(tenant=tenant, sku__iexact=psku).first()
+        component = Product.objects.filter(tenant=tenant, sku__iexact=csku).first()
         if not parent:
             res["errores"].append({"fila": i, "error": f"Producto '{psku}' no existe."}); continue
         if not component:
@@ -206,14 +218,14 @@ def import_supplier_assign(tenant, rows, user):
     from apps.catalog.models import Party, Product
     res = {"creados": 0, "actualizados": 0, "errores": [], "advertencias": []}
     for i, r in enumerate(rows, start=2):
-        sku = str(r.get("num_parte") or "").strip()
+        sku = str(r.get("num_parte") or "").strip().upper()
         scode = str(r.get("codigo_proveedor") or "").strip()
         if not sku or not scode:
             res["errores"].append({"fila": i, "error": "Falta num_parte o codigo_proveedor."}); continue
         try:
             adv = None
             with transaction.atomic():
-                product = Product.objects.filter(tenant=tenant, sku=sku).first()
+                product = Product.objects.filter(tenant=tenant, sku__iexact=sku).first()
                 if not product:
                     res["errores"].append({"fila": i, "error": f"Número de parte '{sku}' no existe."}); continue
                 supplier = Party.objects.filter(
