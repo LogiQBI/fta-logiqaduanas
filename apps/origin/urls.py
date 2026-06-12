@@ -12,6 +12,7 @@ router.register("bom-components", views.BOMComponentViewSet)
 router.register("supplier-declarations", views.SupplierDeclarationViewSet)
 router.register("qualifications", views.QualificationViewSet)
 router.register("certificates", views.CertificateViewSet)
+router.register("solicitation-certificates", views.SolicitationCertificateViewSet)
 router.register("solicitations", views.SolicitationRequestViewSet)
 
 urlpatterns = [
@@ -22,6 +23,7 @@ urlpatterns = [
     path("company-profile/", views.company_profile_view, name="company-profile"),
     path("license/", views.license_view, name="license"),
     path("verify/<str:token>/", views.verify_certificate, name="verify-certificate"),
+    path("verify-origin/<str:token>/", views.verify_solicitation_certificate, name="verify-origin"),
     path("bulk/template/", views.bulk_template, name="bulk-template"),
     path("bulk/import/", views.bulk_import, name="bulk-import"),
 ] + router.urls

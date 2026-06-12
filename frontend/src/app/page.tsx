@@ -11,7 +11,7 @@ import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
   BulkPreview, BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
   OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification, Solicitation,
-  SubmittedBom, SupplierProfile, SupplierUser, Treaty,
+  SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
@@ -3175,8 +3175,172 @@ function generarCertificado(s: Solicitation) {
   win.document.open(); win.document.write(html); win.document.close();
 }
 
+// Certificado de origen del proveedor por solicitud (firmado). Reutiliza el estilo
+// de generarCertificado, pero desde el snapshot del cert + el artefacto de firma.
+// `draft`=true imprime el borrador (firma manual a mano) sin firma embebida.
+function renderOrigenCertHTML(cert: SolicitationCert, draft = false) {
+  const esc = (v?: string | null) => (v ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const d = cert.data || {};
+  const prod = d.product || { sku: "", description: "", hs: "" };
+  const origin = d.origin || { is_originating: null, country: "", criterion: "", rule: "" };
+  const prod2 = d.producer || {};
+  const imp = d.importer || {};
+  const treaty = d.treaty?.label || d.treaty?.code || "—";
+  const isManual = cert.sign_method === "manual" || cert.sign_method === "manual_qr";
+  const win = window.open("", "_blank", "width=900,height=1000");
+  if (!win) { alert("Permite las ventanas emergentes para ver el certificado."); return; }
+
+  // Firma manual ya firmada: mostrar el documento escaneado tal cual.
+  if (cert.signed && isManual && cert.scanned_file && !draft) {
+    if (cert.scanned_file.startsWith("data:application/pdf")) { win.location.href = cert.scanned_file; return; }
+    const qr = cert.qr_data_uri ? `<div style="text-align:center;margin-top:16px"><img src="${cert.qr_data_uri}" style="width:120px;height:120px"/><div style="font-size:11px;color:#6b7280">Verificación pública</div></div>` : "";
+    win.document.open();
+    win.document.write(`<!doctype html><meta charset="utf-8"><title>Certificado firmado — ${esc(cert.folio)}</title>
+      <body style="font-family:Arial;margin:0;padding:24px;text-align:center">
+      <div style="font-weight:bold;color:${NAVY};margin-bottom:10px">LogiQ Aduanas | FTA · Certificado firmado · Folio ${esc(cert.folio)}</div>
+      <img src="${cert.scanned_file}" style="max-width:100%;border:1px solid #e5e7eb"/>${qr}
+      <div class="noprint" style="margin-top:18px"><button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;cursor:pointer">Imprimir / Guardar PDF</button></div>
+      <style>@media print{.noprint{display:none}}</style></body>`);
+    win.document.close(); return;
+  }
+
+  const originario = origin.is_originating === true;
+  const criterio = origin.criterion || (origin.rule ? cleanRuleDesc(origin.rule) : "—");
+  const periodo = (d.period?.from && d.period?.to) ? `${d.period.from} a ${d.period.to}` : "No especificado";
+  const hoy = cert.signed_at
+    ? new Date(cert.signed_at).toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" })
+    : new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long", day: "numeric" });
+  const dirProv = [prod2.direccion].filter(Boolean).join(", ");
+  const showPng = !draft && (cert.sign_method === "png" || cert.sign_method === "png_qr") && cert.signature_png;
+  const firmaImg = showPng
+    ? `<img src="${cert.signature_png}" alt="Firma" style="max-height:70px;max-width:260px"/>`
+    : (draft && isManual
+        ? `<div style="height:48px"></div><span style="font-size:11px;color:#6b7280">(Firma autógrafa)</span>`
+        : `<span style="color:#b91c1c;font-size:12px">Firma pendiente.</span>`);
+  const qrBlock = (!draft && cert.qr_data_uri)
+    ? `<div style="flex:0 0 auto;text-align:center"><img src="${cert.qr_data_uri}" style="width:110px;height:110px"/><div style="font-size:10px;color:#6b7280">Verificación pública</div></div>`
+    : "";
+  const row = (k: string, v: string) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Certificado de Origen ${esc(treaty)} — ${esc(prod.sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:13px}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:18px}
+  .brand{font-size:20px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:12px}
+  h1{font-size:16px;color:${NAVY};margin:0 0 2px} .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
+  .ok{background:#dcfce7;color:#15803d} .no{background:#fee2e2;color:#b91c1c}
+  table{width:100%;border-collapse:collapse;margin:10px 0 18px} td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:top}
+  td.k{background:#f8fafc;font-weight:bold;width:34%;color:#374151} td.v{width:66%}
+  .section{font-size:13px;font-weight:bold;color:${NAVY};margin:18px 0 4px;text-transform:uppercase;letter-spacing:.3px}
+  .sign{display:flex;gap:40px;margin-top:36px;align-items:flex-end} .sign .col{flex:1;border-top:1px solid #9ca3af;padding-top:6px;font-size:12px}
+  .legal{margin-top:24px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
+  @media print{.noprint{display:none} body{padding:16px}}
+</style></head><body>
+  <div class="head">
+    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
+    <div style="text-align:right"><h1>Certificado de Origen${draft ? " (BORRADOR)" : ""}</h1>
+      <div class="sub">Tratado: <b>${esc(treaty)}</b></div><div class="sub">Folio: ${esc(cert.folio)} · ${esc(hoy)}</div></div>
+  </div>
+  <div class="section">Resultado de origen</div>
+  <p><span class="badge ${originario ? "ok" : "no"}">${originario ? "PRODUCTO ORIGINARIO" : "PRODUCTO NO ORIGINARIO"}</span></p>
+  <div class="section">1. Mercancía</div>
+  <table>
+    ${row("Núm. de parte / SKU", esc(prod.sku))}
+    ${row("Descripción", esc(prod.description))}
+    ${row("Clasificación arancelaria (HS)", esc(prod.hs ? formatHs(prod.hs) : "—"))}
+    ${row("Criterio de origen", esc(criterio))}
+    ${row("País de origen", esc(origin.country || "—"))}
+  </table>
+  <div class="section">2. Productor / Exportador (Proveedor)</div>
+  <table>
+    ${row("Razón social", esc(prod2.nombre || "—"))}
+    ${row("RFC / Tax ID", esc(prod2.rfc || "—"))}
+    ${row("Domicilio", esc(dirProv || "—"))}
+    ${row("Contacto", esc([prod2.email, prod2.telefono].filter(Boolean).join(" · ") || "—"))}
+  </table>
+  <div class="section">3. Importador (Empresa cliente)</div>
+  <table>${row("Empresa", esc(imp.nombre || "—"))}${row("RFC / Tax ID", esc(imp.rfc || "—"))}</table>
+  <div class="section">4. Periodo que cubre (blanket period)</div>
+  <table>${row("Vigencia", esc(periodo))}</table>
+  <div class="section">5. Firma autorizada del proveedor</div>
+  <div class="sign">
+    <div class="col">${firmaImg}<br><b>${esc(prod2.firmante || "—")}</b><br>${esc(prod2.cargo || "")}<br>${esc(prod2.nombre || "")}<br>Fecha: ${esc(hoy)}</div>
+    ${qrBlock}
+  </div>
+  <div class="legal">
+    Certificado de origen declarado por el proveedor para el tratado ${esc(treaty)}. La información es responsabilidad de quien la declara;
+    el cálculo es orientativo y no sustituye el criterio de un especialista. Documento generado por LogiQ Aduanas | FTA.
+  </div>
+  <div class="noprint" style="margin-top:24px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+  </div>
+</body></html>`;
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// Celda de certificado en "Declaraciones aceptadas": el proveedor FIRMA según el
+// método que exigió la empresa; la empresa solo VE el certificado firmado.
+function CertificadoCelda({ s, esEmpresa, reload }: {
+  s: Solicitation; esEmpresa: boolean; reload: () => Promise<void> | void;
+}) {
+  const cert = s.certificate;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  if (!cert) {
+    return <Btn size="sm" variant="ghost" onClick={() => generarCertificado(s)}>Certificado</Btn>;
+  }
+  async function ver(draft = false) {
+    setErr("");
+    try { renderOrigenCertHTML(await api.solicitationCert(cert!.id), draft); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  async function firmar(payload: Record<string, unknown> = {}) {
+    setBusy(true); setErr("");
+    try { await api.signSolicitationCert(cert!.id, payload); await reload(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (f.size > 4_000_000) { setErr("Archivo muy grande (máx 4 MB)."); return; }
+    const reader = new FileReader();
+    reader.onload = () => firmar({ scanned_file: reader.result as string });
+    reader.readAsDataURL(f);
+  }
+  const isManual = cert.sign_method === "manual" || cert.sign_method === "manual_qr";
+  if (cert.signed) {
+    return (
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <Btn size="sm" onClick={() => ver()}>Ver certificado firmado</Btn>
+        {err && <span className="text-[11px] text-red-600">{err}</span>}
+      </span>
+    );
+  }
+  if (esEmpresa) {
+    return <span className="text-[11px] text-amber-700">Pendiente de firma del proveedor · {cert.sign_method_display}</span>;
+  }
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      <span className="text-[11px] text-zinc-500">Firma exigida: <strong className="text-zinc-700">{cert.sign_method_display}</strong></span>
+      {isManual ? (
+        <span className="flex items-center gap-1.5">
+          <Btn size="sm" variant="ghost" onClick={() => ver(true)}>Imprimir borrador</Btn>
+          <label className="cursor-pointer text-[11px] font-medium text-blue-600 hover:underline">
+            {busy ? "Subiendo…" : "Subir firmado"}
+            <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onFile} disabled={busy} />
+          </label>
+        </span>
+      ) : (
+        <Btn size="sm" onClick={() => firmar()} disabled={busy}>
+          {busy ? "Firmando…" : (cert.sign_method === "qr" ? "Firmar (generar QR)" : "Firmar con mi firma")}
+        </Btn>
+      )}
+      {err && <span className="text-[11px] text-red-600">{err}</span>}
+    </span>
+  );
+}
 function DeclaracionesAceptadasView({ me }: { me: Me }) {
-  const { data, loading } = useList<Solicitation>(() => api.solicitations());
+  const { data, loading, reload } = useList<Solicitation>(() => api.solicitations());
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
   const [q, setQ] = useState("");
   const esEmpresa = me.role !== "master" && !me.is_supplier;
@@ -3203,7 +3367,7 @@ function DeclaracionesAceptadasView({ me }: { me: Me }) {
             <td className="px-4 py-3"><OrigenCelda s={s} /></td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
               {s.submitted_bom && <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn></span>}
-              <Btn size="sm" onClick={() => generarCertificado(s)}>Certificado</Btn>
+              <CertificadoCelda s={s} esEmpresa={esEmpresa} reload={reload} />
             </td>
           </tr>
         ))}
@@ -3408,16 +3572,47 @@ function RechazoModal({ s, onClose, onSaved }: { s: Solicitation; onClose: () =>
     </Modal>
   );
 }
+// Métodos de firma que la empresa puede exigir al proveedor (5).
+const SIGN_METHODS = [
+  { v: "png", l: "Firma digital (PNG)", d: "El proveedor firma con la firma PNG cargada en su perfil." },
+  { v: "manual", l: "Firma manual (escaneada)", d: "El proveedor imprime el certificado, lo firma a mano, lo escanea y lo sube." },
+  { v: "qr", l: "Firma por QR", d: "El certificado lleva un código QR de verificación pública." },
+  { v: "png_qr", l: "Firma digital + QR", d: "Firma PNG del proveedor más el QR de verificación." },
+  { v: "manual_qr", l: "Firma manual + QR", d: "Escaneado firmado a mano más el QR de verificación." },
+];
+function AceptarFirmaModal({ s, onClose, onAccept }: {
+  s: Solicitation; onClose: () => void; onAccept: (method: string) => void;
+}) {
+  const [method, setMethod] = useState("png");
+  return (
+    <Modal title={`Aceptar — ${s.product_sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">Al aceptar se genera el certificado de origen para que el <strong>proveedor lo firme</strong>. Elige <strong>cómo quieres que lo firme</strong>:</p>
+      <div className="space-y-2">
+        {SIGN_METHODS.map((m) => (
+          <label key={m.v} className={cx("flex cursor-pointer items-start gap-2 rounded-lg border p-2.5", method === m.v ? "border-blue-400 bg-blue-50" : "border-zinc-200")}>
+            <input type="radio" name="signm" checked={method === m.v} onChange={() => setMethod(m.v)} className="mt-0.5" />
+            <span><span className="text-sm font-medium text-zinc-800">{m.l}</span><span className="block text-[11px] text-zinc-500">{m.d}</span></span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => onAccept(method)}>Aceptar y generar certificado</Btn>
+      </div>
+    </Modal>
+  );
+}
 function SolicitudesEmpresaView() {
   const { data, count, reload, loading } = useList<Solicitation>(() => api.solicitations());
   const [open, setOpen] = useState(false);
   const [verBom, setVerBom] = useState<Solicitation | null>(null);
   const [rejecting, setRejecting] = useState<Solicitation | null>(null);
+  const [aceptando, setAceptando] = useState<Solicitation | null>(null);
   const [periodo, setPeriodo] = useState("");
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
-  async function aceptar(s: Solicitation) {
-    setMsg(""); try { await api.acceptSolicitud(s.id); setMsg("Declaración aceptada."); await reload(); }
+  async function aceptar(s: Solicitation, signMethod: string) {
+    setMsg(""); try { await api.acceptSolicitud(s.id, signMethod); setMsg("Declaración aceptada. Se generó el certificado para que el proveedor lo firme."); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
   // Periodos distintos presentes (para el filtro).
@@ -3478,9 +3673,16 @@ function SolicitudesEmpresaView() {
             <td className="px-4 py-3 text-right whitespace-nowrap">
               {s.submitted_bom && <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => setVerBom(s)}>Ver BOM</Btn></span>}
               {s.status === "responded" && <>
-                <span className="mr-1 inline-block"><Btn size="sm" onClick={() => aceptar(s)}>Aceptar</Btn></span>
+                <span className="mr-1 inline-block"><Btn size="sm" onClick={() => setAceptando(s)}>Aceptar</Btn></span>
                 <Btn size="sm" variant="danger" onClick={() => setRejecting(s)}>Rechazar</Btn>
               </>}
+              {s.status === "accepted" && s.certificate && (
+                <span className="text-[11px] text-zinc-500">
+                  {s.certificate.signed
+                    ? <button onClick={async () => { try { renderOrigenCertHTML(await api.solicitationCert(s.certificate!.id)); } catch (e) { setMsg((e as Error).message); } }} className="text-blue-600 hover:underline">Ver certificado firmado</button>
+                    : <>Certificado pendiente de firma · <span className="text-amber-700">{s.certificate.sign_method_display}</span></>}
+                </span>
+              )}
             </td>
           </tr>
           );
@@ -3490,6 +3692,8 @@ function SolicitudesEmpresaView() {
       {verBom && <BomViewModal s={verBom} onClose={() => setVerBom(null)} />}
       {rejecting && <RechazoModal s={rejecting} onClose={() => setRejecting(null)}
         onSaved={async () => { setRejecting(null); setMsg("Declaración rechazada."); await reload(); }} />}
+      {aceptando && <AceptarFirmaModal s={aceptando} onClose={() => setAceptando(null)}
+        onAccept={async (method) => { const s = aceptando; setAceptando(null); await aceptar(s, method); }} />}
       {open && <SolicitudForm onClose={() => setOpen(false)}
         onSaved={async (r) => {
           setOpen(false);

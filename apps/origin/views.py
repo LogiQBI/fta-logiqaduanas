@@ -29,10 +29,12 @@ from apps.catalog.uom import clean_uom
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin import automotive as auto
-from apps.origin.models import AutomotiveAssessment, Certificate, Qualification
+from apps.origin.models import (
+    AutomotiveAssessment, Certificate, Qualification, SolicitationCertificate,
+)
 from apps.origin.services import (
     calculate_bom_origin, calculate_product_origin, certificate_elements,
-    issue_certificate, qualify_and_save,
+    ensure_solicitation_certificate, issue_certificate, qualify_and_save,
 )
 from apps.tenants.models import Membership, Tenant, UserSecurity
 from apps.treaties.models import OriginRule, Treaty
@@ -720,6 +722,57 @@ class CertificateViewSet(TenantScopedViewSet):
                         status=status.HTTP_201_CREATED)
 
 
+class SolicitationCertificateViewSet(TenantScopedViewSet):
+    """Certificado de origen del PROVEEDOR por solicitud. La empresa lo ve (por
+    tenant); el proveedor ve los suyos y es quien FIRMA, cumpliendo el método que
+    la empresa exigió al aceptar. La empresa NO puede firmar (solo lectura)."""
+    queryset = SolicitationCertificate.objects.select_related("solicitation").all()
+    serializer_class = s.SolicitationCertificateSerializer
+    supplier_field = "solicitation__supplier_id"
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["request"] = self.request
+        return ctx
+
+    @action(detail=True, methods=["post"], url_path="sign")
+    def sign(self, request, pk=None):
+        """El proveedor firma cumpliendo el método EXIGIDO por la empresa.
+        Body: {scanned_file?} (data URI, solo para métodos manuales)."""
+        m = self.membership()
+        if not m or not m.is_supplier:
+            raise PermissionDenied("Solo el proveedor puede firmar el certificado.")
+        cert = self.get_object()  # ya acotado a su Party
+        if cert.needs_png:
+            prof = getattr(cert.solicitation.supplier, "profile", None)
+            firma = prof.signature_png if prof else ""
+            if not firma:
+                return Response({"error": "No tienes una firma digital cargada. Súbela en "
+                                 "“Datos del proveedor” antes de firmar."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            cert.signature_png = firma
+        if cert.needs_scan:
+            scanned = (request.data.get("scanned_file") or "").strip()
+            if not scanned.startswith("data:"):
+                return Response({"error": "Sube el certificado firmado (imagen o PDF)."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if len(scanned) > 6_000_000:
+                return Response({"error": "El archivo es muy grande (máx ~4 MB)."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            cert.scanned_file = scanned
+        if cert.needs_qr and not cert.verify_token:
+            import secrets
+            cert.verify_token = secrets.token_urlsafe(16)[:32]
+        cert.signed = True
+        cert.signed_at = timezone.now()
+        cert.signed_by = request.user
+        cert.save()
+        _log_sol(cert.solicitation, "cert_signed", cert.get_sign_method_display(), request.user)
+        return Response(s.SolicitationCertificateSerializer(
+            cert, context=self.get_serializer_context()).data)
+
+
 class SolicitationRequestViewSet(TenantScopedViewSet):
     queryset = SolicitationRequest.objects.select_related(
         "product", "supplier", "treaty").all()
@@ -937,10 +990,16 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         if sr.status != SolicitationRequest.Status.RESPONDED:
             return Response({"error": "Solo puedes aceptar solicitudes respondidas."},
                             status=status.HTTP_400_BAD_REQUEST)
+        # La empresa elige CÓMO debe firmar el proveedor el certificado.
+        sign_method = (request.data.get("sign_method") or "png").strip()
+        if sign_method not in SolicitationCertificate.Method.values:
+            return Response({"error": "Método de firma inválido."},
+                            status=status.HTTP_400_BAD_REQUEST)
         sr.status = SolicitationRequest.Status.ACCEPTED
         sr.rejection_reason = ""
         sr.save(update_fields=["status", "rejection_reason", "updated_at"])
-        _log_sol(sr, "accepted", "", request.user)
+        cert = ensure_solicitation_certificate(sr, request.user, sign_method)
+        _log_sol(sr, "accepted", f"firma exigida: {cert.get_sign_method_display()}", request.user)
         return Response(s.SolicitationRequestSerializer(sr).data)
 
     @action(detail=True, methods=["post"])
@@ -1155,6 +1214,58 @@ def verify_certificate(request, token):
             f'.brand{{color:{navy};font-weight:bold;font-size:18px;text-align:center}}</style></head>'
             f'<body><div class="brand">LogiQ Aduanas | FTA</div>{body}</body></html>')
     return HttpResponse(html)
+
+
+def _verify_page(body):
+    from django.http import HttpResponse
+    navy = "#043a70"
+    return HttpResponse(
+        f'<!doctype html><html lang="es"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>Verificar certificado — LogiQ Aduanas</title><style>'
+        f'body{{font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;margin:0;padding:24px;color:#1f2937}}'
+        f'.card{{max-width:560px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;'
+        f'box-shadow:0 1px 3px rgba(0,0,0,.1)}} h1{{font-size:20px;margin:0 0 16px}}'
+        f'.ok{{color:#15803d}} .bad{{color:#b91c1c}} table{{width:100%;border-collapse:collapse}}'
+        f'td{{border-bottom:1px solid #eee;padding:8px 6px;font-size:14px;vertical-align:top}}'
+        f'td.k{{color:#6b7280;width:42%}} .note{{margin-top:16px;font-size:12px;color:#9ca3af}}'
+        f'.brand{{color:{navy};font-weight:bold;font-size:18px;text-align:center}}</style></head>'
+        f'<body><div class="brand">LogiQ Aduanas | FTA</div>{body}</body></html>')
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_solicitation_certificate(request, token):
+    """Página pública (QR) de verificación de un certificado de origen del proveedor."""
+    from django.utils.html import escape
+    cert = (SolicitationCertificate.objects.filter(verify_token=token).first()
+            if token else None)
+    if not cert or not cert.signed or not cert.needs_qr:
+        return _verify_page(
+            '<div class="card"><h1 class="bad">Certificado no encontrado</h1>'
+            '<p>El código no corresponde a ningún certificado de origen firmado.</p></div>')
+    d = cert.data or {}
+    prod = d.get("product") or {}
+    origin = d.get("origin") or {}
+    producer = d.get("producer") or {}
+    treaty = (d.get("treaty") or {}).get("label", "")
+    io = origin.get("is_originating")
+    orig_txt = "Originario" if io else ("No originario" if io is not None else "—")
+    rows = "".join(
+        f'<tr><td class="k">{escape(k)}</td><td>{escape(str(v))}</td></tr>' for k, v in [
+            ("Folio", cert.folio),
+            ("Producto", f"{prod.get('sku', '')} — {prod.get('description', '')}"),
+            ("Fracción (HS)", prod.get("hs") or "—"),
+            ("Tratado", treaty),
+            ("Origen declarado", orig_txt),
+            ("Criterio", origin.get("criterion") or "—"),
+            ("Proveedor (productor)", producer.get("nombre", "")),
+            ("Firmado", cert.signed_at.strftime("%Y-%m-%d") if cert.signed_at else "—"),
+        ])
+    return _verify_page(
+        f'<div class="card"><h1 class="ok">✓ Certificado de origen válido</h1>'
+        f'<table>{rows}</table>'
+        f'<p class="note">Verificación pública de autenticidad. LogiQ Aduanas | FTA.</p></div>')
 
 
 @api_view(["GET"])

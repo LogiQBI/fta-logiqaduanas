@@ -201,6 +201,24 @@ export type Solicitation = {
   declaration_detail?: DeclarationDetail | null;
   supplier_profile?: SupplierProfile | null;
   rejection_reason?: string;
+  certificate?: SolCertLite | null;
+};
+export type SolCertLite = {
+  id: number; signed: boolean; sign_method: string;
+  sign_method_display: string; folio: string; signed_at: string | null;
+};
+export type SolicitationCert = {
+  id: number; solicitation: number; folio: string; verify_token: string;
+  data: {
+    producer?: Record<string, string>; importer?: Record<string, string>;
+    product?: { sku: string; description: string; hs: string };
+    treaty?: { code: string; label: string };
+    origin?: { is_originating: boolean | null; country: string; criterion: string; rule: string };
+    period?: { from: string | null; to: string | null };
+  };
+  sign_method: string; sign_method_display: string;
+  signature_png: string; scanned_file: string; signed: boolean;
+  signed_at: string | null; verify_url?: string; qr_data_uri?: string;
 };
 
 export const api = {
@@ -336,8 +354,12 @@ export const api = {
     }),
   copyPrevious: (solicitationId: number) =>
     req(`/solicitations/${solicitationId}/copy-previous/`, { method: "POST" }),
-  acceptSolicitud: (id: number) =>
-    req(`/solicitations/${id}/accept/`, { method: "POST" }),
+  acceptSolicitud: (id: number, sign_method: string) =>
+    req(`/solicitations/${id}/accept/`, { method: "POST", body: JSON.stringify({ sign_method }) }),
+  solicitationCert: (id: number): Promise<SolicitationCert> =>
+    req(`/solicitation-certificates/${id}/`),
+  signSolicitationCert: (id: number, payload: Record<string, unknown>): Promise<SolicitationCert> =>
+    req(`/solicitation-certificates/${id}/sign/`, { method: "POST", body: JSON.stringify(payload) }),
   rejectSolicitud: (id: number, reason: string) =>
     req(`/solicitations/${id}/reject/`, { method: "POST", body: JSON.stringify({ reason }) }),
   supplierProfile: (): Promise<SupplierProfile> => req("/supplier-profile/"),

@@ -118,6 +118,60 @@ class Certificate(TenantOwnedModel):
         return f"Certificado {self.folio} — {self.qualification.product.sku}"
 
 
+class SolicitationCertificate(TenantOwnedModel):
+    """Certificado de origen que el PROVEEDOR firma para la EMPRESA, ligado a una
+    solicitud aceptada. La empresa elige AL ACEPTAR cómo debe firmar el proveedor
+    (`sign_method`); el proveedor solo cumple ese método. Visible para ambos
+    tenants (la empresa por tenant, el proveedor por su Party)."""
+
+    class Method(models.TextChoices):
+        PNG = "png", "Firma digital (PNG)"
+        MANUAL = "manual", "Firma manual (escaneada)"
+        QR = "qr", "Firma por QR"
+        PNG_QR = "png_qr", "Firma digital + QR"
+        MANUAL_QR = "manual_qr", "Firma manual + QR"
+
+    solicitation = models.OneToOneField("catalog.SolicitationRequest",
+                                        on_delete=models.CASCADE, related_name="certificate")
+    folio = models.CharField("Folio", max_length=40)
+    verify_token = models.CharField("Token de verificación", max_length=32, blank=True,
+                                    db_index=True)
+    # Snapshot de los datos del certificado al momento de aceptar (estable).
+    data = models.JSONField("Datos del certificado", default=dict, blank=True)
+    sign_method = models.CharField("Método de firma exigido", max_length=12,
+                                   choices=Method.choices, default=Method.PNG)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                     on_delete=models.SET_NULL, related_name="+")
+    # Artefactos de firma (base64 en BD; Railway tiene almacenamiento efímero).
+    signature_png = models.TextField("Firma (PNG base64)", blank=True)
+    scanned_file = models.TextField("Escaneado firmado (data URI)", blank=True)
+    signed = models.BooleanField("Firmado", default=False)
+    signed_at = models.DateTimeField("Firmado el", null=True, blank=True)
+    signed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        unique_together = [("tenant", "folio")]
+        ordering = ["-created_at"]
+        verbose_name = "Certificado de solicitud"
+        verbose_name_plural = "Certificados de solicitud"
+
+    @property
+    def needs_png(self):
+        return self.sign_method in (self.Method.PNG, self.Method.PNG_QR)
+
+    @property
+    def needs_scan(self):
+        return self.sign_method in (self.Method.MANUAL, self.Method.MANUAL_QR)
+
+    @property
+    def needs_qr(self):
+        return self.sign_method in (self.Method.QR, self.Method.PNG_QR, self.Method.MANUAL_QR)
+
+    def __str__(self):
+        return f"Certificado {self.folio} (solicitud {self.solicitation_id})"
+
+
 class ExpedienteDocument(TenantOwnedModel):
     """Documento de soporte del expediente. Retención mínima 5 años (T-MEC)."""
 

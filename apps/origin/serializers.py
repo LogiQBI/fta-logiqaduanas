@@ -4,7 +4,9 @@ from apps.catalog.models import (
     BOMComponent, CompanyProfile, Party, Product, SolicitationBOM,
     SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
-from apps.origin.models import AutomotiveAssessment, Certificate, Qualification
+from apps.origin.models import (
+    AutomotiveAssessment, Certificate, Qualification, SolicitationCertificate,
+)
 from apps.treaties.models import OriginRule, Treaty
 
 
@@ -234,6 +236,34 @@ class CertificateSerializer(serializers.ModelSerializer):
         return segno.make(self.get_verify_url(obj), error="m").png_data_uri(scale=3, border=2)
 
 
+class SolicitationCertificateSerializer(serializers.ModelSerializer):
+    """Certificado de origen del proveedor por solicitud (firmado)."""
+    sign_method_display = serializers.CharField(source="get_sign_method_display", read_only=True)
+    verify_url = serializers.SerializerMethodField()
+    qr_data_uri = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitationCertificate
+        fields = ["id", "solicitation", "folio", "verify_token", "data", "sign_method",
+                  "sign_method_display", "signature_png", "scanned_file", "signed",
+                  "signed_at", "verify_url", "qr_data_uri"]
+        read_only_fields = fields
+
+    def get_verify_url(self, obj):
+        if not obj.needs_qr or not obj.verify_token:
+            return ""
+        path = f"/api/verify-origin/{obj.verify_token}/"
+        req = self.context.get("request")
+        return req.build_absolute_uri(path) if req else path
+
+    def get_qr_data_uri(self, obj):
+        url = self.get_verify_url(obj)
+        if not url:
+            return ""
+        import segno
+        return segno.make(url, error="m").png_data_uri(scale=3, border=2)
+
+
 class SolicitationBOMLineSerializer(serializers.ModelSerializer):
     total = serializers.DecimalField(max_digits=18, decimal_places=4, read_only=True)
 
@@ -278,6 +308,16 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
     declared_originating = serializers.SerializerMethodField()
     declaration_detail = serializers.SerializerMethodField()
     supplier_profile = serializers.SerializerMethodField()
+    certificate = serializers.SerializerMethodField()
+
+    def get_certificate(self, obj):
+        try:
+            cert = obj.certificate
+        except SolicitationCertificate.DoesNotExist:
+            return None
+        return {"id": cert.id, "signed": cert.signed, "sign_method": cert.sign_method,
+                "sign_method_display": cert.get_sign_method_display(),
+                "folio": cert.folio, "signed_at": cert.signed_at}
 
     def get_declared_originating(self, obj):
         return obj.declaration.is_originating if obj.declaration_id else None

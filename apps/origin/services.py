@@ -372,3 +372,84 @@ def certificate_elements(certificate):
             "fecha": certificate.issued_at,
         },
     }
+
+
+# --- Certificado de origen del PROVEEDOR por solicitud (firmado) ---
+
+_TREATY_LABELS = {"TMEC": "USMCA"}
+
+
+def _cert_party_block(prof, fallback_name="", fallback_country=""):
+    """Bloque de datos de una parte (productor/importador) desde su perfil."""
+    if not prof:
+        return {"nombre": fallback_name, "rfc": "", "direccion": "", "pais": fallback_country,
+                "email": "", "telefono": "", "firmante": "", "cargo": ""}
+    direccion = ", ".join(p for p in [prof.address, prof.city, prof.state, prof.postal_code] if p)
+    return {"nombre": prof.legal_name or fallback_name, "rfc": prof.tax_id,
+            "direccion": direccion, "pais": prof.country or fallback_country,
+            "email": prof.contact_email, "telefono": prof.contact_phone,
+            "firmante": prof.signatory_name, "cargo": prof.signatory_title}
+
+
+def build_solicitation_cert_data(sr):
+    """Snapshot de los datos del certificado a partir de la solicitud aceptada.
+    El origen viene de la declaración manual o, si es por BOM, del cálculo del BOM."""
+    from apps.catalog.models import SolicitationBOM
+    supplier = sr.supplier
+    sup_prof = getattr(supplier, "profile", None)
+    comp_prof = getattr(sr.tenant, "profile", None)
+
+    origin = {"is_originating": None, "country": "", "criterion": "", "rule": ""}
+    decl = sr.declaration
+    if decl:
+        origin = {
+            "is_originating": decl.is_originating,
+            "country": decl.country_of_origin or "",
+            "criterion": (decl.rule.rule_type if decl.rule_id else ""),
+            "rule": (decl.rule.description if decl.rule_id else ""),
+        }
+    else:
+        bom = SolicitationBOM.objects.filter(solicitation=sr).select_related("rule").first()
+        if bom:
+            origin = {
+                "is_originating": bom.origin_status == "QUALIFIES",
+                "country": "",
+                "criterion": bom.criterion or bom.origin_status or "",
+                "rule": (bom.rule.description if bom.rule_id else ""),
+            }
+
+    return {
+        "producer": _cert_party_block(sup_prof, supplier.name, supplier.country),
+        "importer": _cert_party_block(comp_prof, sr.tenant.name),
+        "product": {"sku": sr.product.sku, "description": sr.product.description,
+                    "hs": sr.product.hs_code or ""},
+        "treaty": {"code": sr.treaty.code, "label": _TREATY_LABELS.get(sr.treaty.code, sr.treaty.code)},
+        "origin": origin,
+        "period": {"from": sr.period_from.isoformat() if sr.period_from else None,
+                   "to": sr.period_to.isoformat() if sr.period_to else None},
+    }
+
+
+def _next_cert_folio(tenant):
+    from apps.origin.models import SolicitationCertificate
+    n = SolicitationCertificate.objects.filter(tenant=tenant).count() + 1
+    return f"FTA-DO-{tenant.id}-{n:05d}"
+
+
+def ensure_solicitation_certificate(sr, user, sign_method):
+    """Crea (o actualiza, si aún no se firma) el certificado de la solicitud con el
+    método de firma EXIGIDO por la empresa. Idempotente."""
+    import secrets
+    from apps.origin.models import SolicitationCertificate
+    cert, created = SolicitationCertificate.objects.get_or_create(
+        solicitation=sr,
+        defaults={"tenant": sr.tenant, "folio": _next_cert_folio(sr.tenant),
+                  "verify_token": secrets.token_urlsafe(16)[:32],
+                  "data": build_solicitation_cert_data(sr),
+                  "sign_method": sign_method, "requested_by": user})
+    if not created and not cert.signed:
+        cert.sign_method = sign_method
+        cert.requested_by = user
+        cert.data = build_solicitation_cert_data(sr)
+        cert.save(update_fields=["sign_method", "requested_by", "data", "updated_at"])
+    return cert
