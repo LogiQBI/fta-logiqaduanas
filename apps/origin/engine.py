@@ -211,8 +211,11 @@ def apply_core_part_review(hs_code, result):
     code = core_part_code(hs_code)
     if not code:
         return result
-    result.setdefault("detail", {})["automotive_core"] = CORE_PART_NOTE
-    result["detail"]["automotive_core_code"] = code
+    detail = result.setdefault("detail", {})
+    detail["automotive_core"] = CORE_PART_NOTE
+    detail["automotive_core_code"] = code
+    # El aviso de core part es más específico: reemplaza al aviso genérico de cap. 87.
+    detail.pop("automotive_regime", None)
     result["status"] = "AUTO_REVIEW"
     return result
 

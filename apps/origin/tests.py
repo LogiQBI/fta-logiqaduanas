@@ -65,6 +65,8 @@ class OriginEngineTest(TestCase):
         result = calculate_product_origin(p, self.treaty, user=None)
         self.assertEqual(result["status"], "AUTO_REVIEW")
         self.assertIn("automotive_core", result["detail"])
+        # El aviso de core part reemplaza al genérico de cap. 87 (no se duplican).
+        self.assertNotIn("automotive_regime", result["detail"])
         self.assertNotIn("rule", result)  # el objeto OriginRule no debe estar en el payload
         JSONRenderer().render(result)     # no debe lanzar TypeError
 
