@@ -1,3 +1,125 @@
-from django.test import TestCase
+"""Tests de regresión de los arreglos del motor de origen y la carga masiva.
 
-# Create your tests here.
+Cubren bugs concretos resueltos: el 500 por OriginRule no serializable, el
+régimen automotriz (core parts → AUTO_REVIEW), el histórico de precio sin falsos
+positivos por precisión, y la normalización/match de SKU en la carga masiva.
+"""
+from decimal import Decimal
+
+from django.test import TestCase
+from rest_framework.renderers import JSONRenderer
+
+from apps.catalog.models import (
+    BOMComponent, Product, ProductChangeLog, log_product_changes,
+)
+from apps.catalog.uom import clean_uom
+from apps.origin import engine
+from apps.origin.bulk import import_products
+from apps.origin.services import calculate_product_origin
+from apps.tenants.models import Tenant
+from apps.treaties.models import OriginRule, Treaty
+
+
+class PureHelpersTest(TestCase):
+    def test_core_part_code(self):
+        self.assertEqual(engine.core_part_code("870880"), "870880")   # suspensión
+        self.assertEqual(engine.core_part_code("8708.80"), "870880")  # con punto
+        self.assertEqual(engine.core_part_code("870710"), "8707")     # carrocería (partida)
+        self.assertIsNone(engine.core_part_code("830230"))            # no automotriz core
+        self.assertIsNone(engine.core_part_code(""))
+
+    def test_clean_uom(self):
+        self.assertEqual(clean_uom("kg"), "KG")
+        self.assertEqual(clean_uom(" Pz "), "PZ")
+        self.assertEqual(clean_uom("ZZ"), "")   # fuera del catálogo
+        self.assertEqual(clean_uom(None), "")
+
+
+class OriginEngineTest(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="ACME", slug="acme")
+        self.treaty = Treaty.objects.create(
+            code="TMEC", name="USMCA", member_countries=["MX", "US", "CA"])
+        OriginRule.objects.create(treaty=self.treaty, hs_pattern="870880",
+                                  rule_type="CTC", params={"shift_level": "CTH"})
+        OriginRule.objects.create(treaty=self.treaty, hs_pattern="940360",
+                                  rule_type="CTC", params={"shift_level": "CTH"})
+
+    def _product_with_bom(self, hs):
+        p = Product.objects.create(tenant=self.tenant, sku="FG", description="x",
+                                   kind="finished", hs_code=hs, unit_cost=Decimal("24.26"))
+        for i, (chs, cost, q, country) in enumerate([
+            ("401699", "0", 2, "PL"), ("830230", "2.0040", 2, "US"),
+            ("730459", "1.3880", 1, "KR")]):
+            comp = Product.objects.create(tenant=self.tenant, sku=f"C{i}", description="c",
+                                          kind="material", hs_code=chs, unit_cost=Decimal(cost))
+            BOMComponent.objects.create(tenant=self.tenant, parent=p, component=comp,
+                                        quantity=Decimal(q), origin_mode="manual",
+                                        manual_country=country)
+        return p
+
+    def test_core_part_marks_auto_review_and_is_json_serializable(self):
+        """8708.80 (suspensión) NO debe 'Calificar' por CTH: AUTO_REVIEW.
+        Y el resultado debe poder serializarse a JSON (regresión del 500)."""
+        p = self._product_with_bom("870880")
+        result = calculate_product_origin(p, self.treaty, user=None)
+        self.assertEqual(result["status"], "AUTO_REVIEW")
+        self.assertIn("automotive_core", result["detail"])
+        self.assertNotIn("rule", result)  # el objeto OriginRule no debe estar en el payload
+        JSONRenderer().render(result)     # no debe lanzar TypeError
+
+    def test_non_core_part_qualifies(self):
+        p = self._product_with_bom("940360")  # mueble: no es core part
+        result = calculate_product_origin(p, self.treaty, user=None)
+        self.assertEqual(result["status"], "QUALIFIES")
+        self.assertNotIn("automotive_core", result["detail"])
+        JSONRenderer().render(result)
+
+
+class PriceHistoryTest(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="ACME", slug="acme")
+        self.product = Product.objects.create(
+            tenant=self.tenant, sku="MAT-1", description="x", kind="material",
+            hs_code="720839", unit_cost=Decimal("11.2070"), currency="USD")
+
+    def test_no_log_on_precision_only_difference(self):
+        """11.2070 vs 11.207008 NO es un cambio real (4 decimales)."""
+        before = {"unit_cost": Decimal("11.2070"), "currency": "USD"}
+        logs = log_product_changes(
+            product=self.product, before=before,
+            after={"unit_cost": Decimal("11.207008"), "currency": "USD"},
+            source="bulk")
+        self.assertEqual(len(logs), 0)
+
+    def test_logs_real_price_change(self):
+        logs = log_product_changes(
+            product=self.product,
+            before={"unit_cost": Decimal("11.2070"), "currency": "USD"},
+            after={"unit_cost": Decimal("12.5000"), "currency": "USD"}, source="manual")
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0].kind, ProductChangeLog.Kind.PRICE)
+
+
+class BulkImportTest(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="ACME", slug="acme")
+
+    def test_sku_uppercased_and_sin_precio_reported(self):
+        res = import_products(self.tenant, [
+            {"sku": "tst-a", "descripcion": "A", "costo_unitario": ""},
+            {"sku": "TST-B", "descripcion": "B", "costo_unitario": "5.50"},
+        ], user=None)
+        self.assertEqual(res["creados"], 2)
+        self.assertIn("TST-A", res["creados_skus"])          # guardado en mayúsculas
+        self.assertIn("TST-A", res["sin_precio_skus"])       # fila sin precio
+        self.assertNotIn("TST-B", res["sin_precio_skus"])
+        self.assertTrue(Product.objects.filter(tenant=self.tenant, sku="TST-A").exists())
+
+    def test_case_insensitive_update_does_not_duplicate(self):
+        import_products(self.tenant, [{"sku": "tst-a", "costo_unitario": ""}], user=None)
+        res = import_products(self.tenant, [{"sku": "TST-A", "costo_unitario": "9.99"}], user=None)
+        self.assertEqual(res["actualizados"], 1)
+        self.assertEqual(Product.objects.filter(tenant=self.tenant, sku__iexact="TST-A").count(), 1)
+        self.assertEqual(
+            Product.objects.get(tenant=self.tenant, sku="TST-A").unit_cost, Decimal("9.9900"))
