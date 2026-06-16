@@ -80,6 +80,43 @@ class AutomotiveAssessment(TenantOwnedModel):
         return f"Automotriz {self.product.sku} / {self.treaty.code}: {'SI' if self.qualifies else 'NO'}"
 
 
+class OriginAnalysis(TenantOwnedModel):
+    """Histórico de un análisis de origen. A diferencia de Qualification (un solo
+    registro vigente por producto×tratado), aquí se GUARDA UN SNAPSHOT por cada vez
+    que se corre el cálculo: si cambian precios del producto terminado o de los
+    insumos del BOM y se recalcula, queda un nuevo registro con su fecha. Se pueden
+    consultar y borrar; no afecta a la calificación vigente."""
+
+    class Kind(models.TextChoices):
+        BOM = "bom", "Cálculo por BOM"
+        AUTOMOTIVE = "automotive", "Evaluación automotriz"
+
+    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE,
+                                related_name="analyses")
+    treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE,
+                               related_name="analyses")
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.BOM)
+    status = models.CharField("Resultado", max_length=20, blank=True)
+    criterion = models.CharField("Criterio aplicado", max_length=20, blank=True)
+    rvc_value = models.DecimalField("VCR (%)", max_digits=6, decimal_places=2,
+                                    null=True, blank=True)
+    total_value = models.DecimalField("Valor total del BOM", max_digits=16,
+                                      decimal_places=4, null=True, blank=True)
+    vnm = models.DecimalField("Valor no originario", max_digits=16,
+                              decimal_places=4, null=True, blank=True)
+    detail = models.JSONField("Traza del cálculo", default=dict, blank=True)
+    computed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Análisis de origen (histórico)"
+        verbose_name_plural = "Análisis de origen (histórico)"
+
+    def __str__(self):
+        return f"{self.product.sku} / {self.treaty.code} @ {self.created_at:%Y-%m-%d %H:%M}: {self.status}"
+
+
 class Certificate(TenantOwnedModel):
     """Certificado de origen emitido al cliente.
     Guarda los elementos mínimos del T-MEC (Anexo 5-A).

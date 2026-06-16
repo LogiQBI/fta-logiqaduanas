@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from apps.origin import engine
-from apps.origin.models import Certificate, Qualification
+from apps.origin.models import Certificate, OriginAnalysis, Qualification
 
 # Datos mínimos del certificador (parte del Anexo 5-A del T-MEC).
 REQUIRED_PARTY_FIELDS = ["nombre", "direccion", "pais", "email", "telefono"]
@@ -217,7 +217,8 @@ def _evaluate_product(product, treaty, as_of, visited):
         de_minimis = 0
     except_codes = params.get("ctc_except", [])
     fake_product = SimpleNamespace(hs_code=product.hs_code or "")
-    detail = {"rule": str(rule), "rule_type": rt, "bom": lines, "total_value": str(total)}
+    detail = {"rule": str(rule), "rule_type": rt, "bom": lines,
+              "total_value": str(total), "vnm": str(vnm)}
 
     ctc_pass = rvc_pass = None
     rvc_value = None
@@ -257,11 +258,33 @@ def calculate_product_origin(product, treaty, as_of=None, user=None):
     result = _evaluate_product(product, treaty, as_of, set())
     rule = result.get("rule")
     _save_qual(product, treaty, rule, result, user)
+    # Snapshot en el histórico: cada corrida queda guardada con su fecha, para poder
+    # comparar resultados cuando cambian precios del producto o de los insumos del BOM.
+    save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.BOM, result, user)
     # El resultado se devuelve por la API: no debe contener el objeto OriginRule
     # (no es JSON-serializable). La descripción de la regla ya va en detail["rule"].
     result.pop("rule", None)
     result["rule_id"] = rule.pk if rule else None
     return result
+
+
+def save_analysis_snapshot(product, treaty, kind, result, user):
+    """Guarda un registro del histórico de análisis de origen (no toca la
+    Qualification vigente). `result` es la traza del motor (BOM o automotriz)."""
+    detail = result.get("detail") or {}
+
+    def _dec(v):
+        try:
+            return Decimal(str(v))
+        except Exception:
+            return None
+    return OriginAnalysis.objects.create(
+        tenant=product.tenant, product=product, treaty=treaty, kind=kind,
+        status=result.get("status") or "", criterion=result.get("criterion") or "",
+        rvc_value=_dec(result.get("rvc_value")) if result.get("rvc_value") is not None else None,
+        total_value=_dec(detail.get("total_value")),
+        vnm=_dec(detail.get("vnm")),
+        detail=detail, computed_by=user)
 
 
 def _save_qual(product, treaty, rule, result, user):

@@ -175,6 +175,13 @@ export type OriginCalcResult = {
   status: string; criterion: string; rvc_value: string | number | null;
   detail: Record<string, unknown>;
 };
+export type OriginAnalysis = {
+  id: number; product: number; treaty: number; treaty_code?: string;
+  kind: string; kind_display?: string; status: string; status_display?: string;
+  criterion: string; rvc_value: string | null; total_value: string | null;
+  vnm: string | null; computed_by?: string | null; created_at: string;
+};
+export type OriginAnalysisDetail = OriginAnalysis & { detail: Record<string, unknown> };
 export type AutoPillar = {
   key: string; label: string; value: string | null; threshold: string; ok: boolean; detail: string;
 };
@@ -344,6 +351,12 @@ export const api = {
     req(`/products/${id}/calc-bom-origin/`, {
       method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null }),
     }),
+  originAnalyses: (productId: number, treaty: number): Promise<{ results: OriginAnalysis[] } | OriginAnalysis[]> =>
+    req(`/origin-analyses/?product=${productId}&treaty=${treaty}`),
+  originAnalysis: (id: number): Promise<OriginAnalysisDetail> =>
+    req(`/origin-analyses/${id}/`),
+  deleteOriginAnalysis: (id: number): Promise<null> =>
+    req(`/origin-analyses/${id}/`, { method: "DELETE" }),
   automotive: (id: number, treaty: number): Promise<AutomotiveSaved> =>
     req(`/products/${id}/automotive/?treaty=${treaty}`),
   calcAutomotive: (id: number, payload: Record<string, unknown>): Promise<AutomotiveResult> =>

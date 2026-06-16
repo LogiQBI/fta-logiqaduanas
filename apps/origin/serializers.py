@@ -5,8 +5,8 @@ from apps.catalog.models import (
     SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, ClientOriginLayout, Qualification,
-    SolicitationCertificate,
+    AutomotiveAssessment, Certificate, ClientOriginLayout, OriginAnalysis,
+    Qualification, SolicitationCertificate,
 )
 from apps.treaties.models import OriginRule, Treaty
 
@@ -207,6 +207,33 @@ class AutomotiveAssessmentSerializer(serializers.ModelSerializer):
         fields = ["id", "product", "product_sku", "treaty", "treaty_code", "vehicle_class",
                   "as_of", "net_cost", "vnm", "lvc_pct", "wage_usd_h", "steel_na_pct",
                   "aluminum_na_pct", "core_parts_originating", "qualifies", "detail", "computed_at"]
+
+
+class OriginAnalysisSerializer(serializers.ModelSerializer):
+    """Lista ligera del histórico (sin la traza pesada)."""
+    status_display = serializers.SerializerMethodField()
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+    computed_by = serializers.CharField(source="computed_by.username", read_only=True, default=None)
+
+    STATUS_LABELS = {"QUALIFIES": "Califica", "DOES_NOT": "No califica",
+                     "INSUFFICIENT": "Datos insuficientes",
+                     "AUTO_REVIEW": "Requiere régimen automotriz"}
+
+    class Meta:
+        model = OriginAnalysis
+        fields = ["id", "product", "treaty", "treaty_code", "kind", "kind_display",
+                  "status", "status_display", "criterion", "rvc_value", "total_value",
+                  "vnm", "computed_by", "created_at"]
+
+    def get_status_display(self, obj):
+        return self.STATUS_LABELS.get(obj.status, obj.status)
+
+
+class OriginAnalysisDetailSerializer(OriginAnalysisSerializer):
+    """Igual que la lista pero incluye la traza completa del cálculo."""
+    class Meta(OriginAnalysisSerializer.Meta):
+        fields = OriginAnalysisSerializer.Meta.fields + ["detail"]
 
 
 class CertificateSerializer(serializers.ModelSerializer):

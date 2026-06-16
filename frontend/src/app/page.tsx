@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
@@ -11,7 +11,8 @@ import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
   BulkPreview, BulkResult, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
   getAsTenant, getToken, LicenseInfo, setAsTenant,
-  MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification,
+  MasterTenant, Me, OriginAnalysis, OriginAnalysisDetail, OriginCalcResult, OriginRule, Party,
+  Product, ProductChangeLog, Qualification,
   Solicitation, SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
@@ -1840,8 +1841,9 @@ function AutoInstructivoModal({ onClose }: { onClose: () => void }) {
 // Panel del régimen automotriz para AUTOPARTES (core), INTEGRADO en "Cálculo de
 // origen": solo pide el VCR (costo neto o valor de transacción). NO pide LVC ni
 // acero/aluminio (son requisitos del vehículo, no de la parte).
-function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm }: {
+function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone }: {
   productId: number; treatyId: number; suggestNet: string; autoVnm: string;
+  onCalcDone?: () => void;
 }) {
   const [method, setMethod] = useState<"net_cost" | "transaction">("net_cost");
   const [netCost, setNetCost] = useState(suggestNet);
@@ -1876,6 +1878,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm }: {
         treaty: treatyId, vehicle_class: "autopart", as_of: asOf, rvc_method: method,
         net_cost: netCost || "0", transaction_value: txValue || "0", vnm: vnm || "0",
       }));
+      onCalcDone?.();
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   }
   return (
@@ -1992,6 +1995,7 @@ function CalculoOrigenView() {
   const [result, setResult] = useState<OriginCalcResult | null>(null);
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
   const [ayuda, setAyuda] = useState(false);
+  const [histKey, setHistKey] = useState(0);  // refresca el histórico tras cada cálculo
   const productos = productsL.data.filter((p) => p.kind !== "material");
   const automotive = !!product?.is_automotive_core;
   // Total y VNM (valor de materiales NO originarios) los calcula el BACKEND según el
@@ -2025,7 +2029,10 @@ function CalculoOrigenView() {
   async function calcular() {
     if (!productId || !treatyId) return;
     setCalc(true); setMsg("");
-    try { setResult(await api.calcBomOrigin(Number(productId), Number(treatyId))); }
+    try {
+      setResult(await api.calcBomOrigin(Number(productId), Number(treatyId)));
+      setHistKey((k) => k + 1);
+    }
     catch (e) { setMsg((e as Error).message); }
     finally { setCalc(false); }
   }
@@ -2185,10 +2192,119 @@ function CalculoOrigenView() {
       )}
       {comps.length > 0 && automotive && (
         <AutomotivePanel productId={Number(productId)} treatyId={Number(treatyId)}
-          suggestNet={bomTotal} autoVnm={bomVnm} />
+          suggestNet={bomTotal} autoVnm={bomVnm} onCalcDone={() => setHistKey((k) => k + 1)} />
       )}
       {result && !automotive && <OriginResultReport result={result} />}
+      {productId && treatyId && comps.length > 0 && (
+        <HistorialAnalisis productId={Number(productId)} treatyId={Number(treatyId)} reloadKey={histKey} />
+      )}
     </div>
+  );
+}
+
+/* Histórico de análisis de origen: cada cálculo se guarda con su fecha. Se puede
+   consultar la traza y borrar registros. No afecta la calificación vigente. */
+function HistorialAnalisis({ productId, treatyId, reloadKey }: {
+  productId: number; treatyId: number; reloadKey: number;
+}) {
+  const [items, setItems] = useState<OriginAnalysis[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<OriginAnalysisDetail | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setMsg("");
+    try {
+      const r = await api.originAnalyses(productId, treatyId);
+      setItems(Array.isArray(r) ? r : r.results);
+    } catch (e) { setMsg((e as Error).message); }
+    finally { setLoading(false); }
+  }, [productId, treatyId]);
+  useEffect(() => { load(); }, [load, reloadKey]);
+
+  async function ver(id: number) {
+    if (openId === id) { setOpenId(null); setDetail(null); return; }
+    setOpenId(id); setDetail(null);
+    try { setDetail(await api.originAnalysis(id)); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function borrar(id: number) {
+    if (!confirm("¿Borrar este análisis del histórico? La calificación vigente no cambia.")) return;
+    try {
+      await api.deleteOriginAnalysis(id);
+      if (openId === id) { setOpenId(null); setDetail(null); }
+      await load();
+    } catch (e) { setMsg((e as Error).message); }
+  }
+
+  const fmt = (s: string) => new Date(s).toLocaleString("es-MX",
+    { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const STATUS_STYLE: Record<string, string> = {
+    QUALIFIES: "bg-emerald-100 text-emerald-700", DOES_NOT: "bg-red-100 text-red-700",
+    INSUFFICIENT: "bg-zinc-100 text-zinc-600", AUTO_REVIEW: "bg-amber-100 text-amber-700",
+  };
+
+  return (
+    <Card className="mt-5 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-800">Histórico de análisis</h3>
+        <button onClick={load} className="text-xs font-medium text-blue-600 hover:underline">Actualizar</button>
+      </div>
+      <p className="mb-3 text-xs text-zinc-500">
+        Cada vez que corres un cálculo se guarda aquí con su fecha. Útil para comparar resultados cuando cambian los precios del producto o de los insumos del BOM.
+      </p>
+      {msg && <p className="mb-2 text-sm text-amber-600">{msg}</p>}
+      {loading && items.length === 0 ? (
+        <p className="text-sm text-zinc-400">Cargando…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-zinc-400">Aún no hay análisis guardados para este producto y tratado.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500">
+                <th className="py-2 pr-3">Fecha</th><th className="py-2 pr-3">Tipo</th>
+                <th className="py-2 pr-3">Resultado</th><th className="py-2 pr-3">Criterio</th>
+                <th className="py-2 pr-3 text-right">VCR</th><th className="py-2 pr-3 text-right">Valor total</th>
+                <th className="py-2 pr-3 text-right">VNM</th><th className="py-2 pr-3">Por</th><th className="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((a) => (
+                <Fragment key={a.id}>
+                  <tr className="border-b border-zinc-100">
+                    <td className="py-2 pr-3 whitespace-nowrap">{fmt(a.created_at)}</td>
+                    <td className="py-2 pr-3 text-xs text-zinc-500">{a.kind_display}</td>
+                    <td className="py-2 pr-3">
+                      <span className={cx("rounded-full px-2 py-0.5 text-xs font-semibold", STATUS_STYLE[a.status] ?? "bg-zinc-100 text-zinc-600")}>
+                        {a.status_display}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-xs">{a.criterion || "—"}</td>
+                    <td className="py-2 pr-3 text-right font-mono text-xs">{a.rvc_value != null ? `${a.rvc_value}%` : "—"}</td>
+                    <td className="py-2 pr-3 text-right font-mono text-xs">{a.total_value != null ? Number(a.total_value).toLocaleString("es-MX") : "—"}</td>
+                    <td className="py-2 pr-3 text-right font-mono text-xs">{a.vnm != null ? Number(a.vnm).toLocaleString("es-MX") : "—"}</td>
+                    <td className="py-2 pr-3 text-xs text-zinc-500">{a.computed_by || "—"}</td>
+                    <td className="py-2 text-right whitespace-nowrap">
+                      <button onClick={() => ver(a.id)} className="mr-2 text-xs font-medium text-blue-600 hover:underline">{openId === a.id ? "Ocultar" : "Ver"}</button>
+                      <button onClick={() => borrar(a.id)} className="text-xs font-medium text-red-600 hover:underline">Borrar</button>
+                    </td>
+                  </tr>
+                  {openId === a.id && (
+                    <tr className="bg-zinc-50">
+                      <td colSpan={9} className="px-3 py-3">
+                        {detail ? <OriginResultReport result={{ status: a.status, criterion: a.criterion, rvc_value: a.rvc_value, detail: detail.detail }} /> : <span className="text-xs text-zinc-400">Cargando traza…</span>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

@@ -31,12 +31,13 @@ from apps.origin import serializers as s
 from apps.origin import automotive as auto
 from apps.origin import layouts as client_layouts
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, ClientOriginLayout, Qualification,
-    SolicitationCertificate,
+    AutomotiveAssessment, Certificate, ClientOriginLayout, OriginAnalysis,
+    Qualification, SolicitationCertificate,
 )
 from apps.origin.services import (
     calculate_bom_origin, calculate_product_origin, certificate_elements,
     ensure_solicitation_certificate, issue_certificate, qualify_and_save,
+    save_analysis_snapshot,
 )
 from apps.tenants.models import Membership, Tenant, UserSecurity
 from apps.treaties.models import OriginRule, Treaty
@@ -631,6 +632,12 @@ class ProductViewSet(TenantScopedViewSet):
                       "criterion": "Automotriz (T-MEC)",
                       "rvc_value": (result.get("rvc_value") or None),
                       "detail": {"automotive": result}, "computed_by": request.user})
+        # Snapshot en el histórico de análisis (con la fecha de esta corrida).
+        snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
+                "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),
+                "detail": {**result, "total_value": str(d.get("net_cost") or ""),
+                           "vnm": str(d.get("vnm") or "")}}
+        save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.AUTOMOTIVE, snap, request.user)
         return Response(result)
 
     @action(detail=True, methods=["post"], url_path="calc-bom-origin")
@@ -723,6 +730,31 @@ class QualificationViewSet(TenantScopedViewSet):
         except ValidationError as e:
             return Response({"error": e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
         return Response(s.CertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
+
+
+class OriginAnalysisViewSet(TenantScopedViewSet):
+    """Histórico de análisis de origen (un snapshot por cada cálculo corrido).
+    Solo la empresa: consultar (lista/detalle) y borrar. No se crea por API
+    (se genera al correr el cálculo). Filtra por ?product= y ?treaty=."""
+    queryset = OriginAnalysis.objects.select_related(
+        "product", "treaty", "computed_by").all()
+    serializer_class = s.OriginAnalysisSerializer
+    # supplier_field = None (heredado): los proveedores no ven el histórico.
+    http_method_names = ["get", "delete", "head", "options"]
+
+    def get_serializer_class(self):
+        return s.OriginAnalysisDetailSerializer if self.action == "retrieve" \
+            else s.OriginAnalysisSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        pid = self.request.query_params.get("product")
+        tid = self.request.query_params.get("treaty")
+        if pid:
+            qs = qs.filter(product_id=pid)
+        if tid:
+            qs = qs.filter(treaty_id=tid)
+        return qs
 
 
 class CertificateViewSet(TenantScopedViewSet):
