@@ -1825,17 +1825,19 @@ function AutoInstructivoModal({ onClose }: { onClose: () => void }) {
 // Panel del régimen automotriz para AUTOPARTES (core), INTEGRADO en "Cálculo de
 // origen": solo pide el VCR (costo neto o valor de transacción). NO pide LVC ni
 // acero/aluminio (son requisitos del vehículo, no de la parte).
-function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
-  productId: number; treatyId: number; suggestNet: string; suggestVnm: string;
+function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm }: {
+  productId: number; treatyId: number; suggestNet: string; autoVnm: string;
 }) {
   const [method, setMethod] = useState<"net_cost" | "transaction">("net_cost");
   const [netCost, setNetCost] = useState(suggestNet);
   const [txValue, setTxValue] = useState(suggestNet);
-  const [vnm, setVnm] = useState(suggestVnm);
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
   const [result, setResult] = useState<AutomotiveResult | null>(null);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
   const [ayuda, setAyuda] = useState(false);
+  // El VNM (materiales NO originarios) lo determina el sistema desde el BOM según el
+  // tratado; NO se captura a mano.
+  const vnm = autoVnm;
   // Carga evaluación previa guardada (si existe).
   useEffect(() => {
     let alive = true;
@@ -1844,7 +1846,6 @@ function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
         const a: AutomotiveSaved & { rvc_method?: string } = await api.automotive(productId, treatyId);
         if (!alive || !a || !a.vehicle_class) return;
         if (a.net_cost) setNetCost(a.net_cost);
-        if (a.vnm) setVnm(a.vnm);
         if (a.as_of) setAsOf(a.as_of);
         if (a.detail) { setResult(a.detail); if (a.detail.rvc_method) setMethod(a.detail.rvc_method === "transaction" ? "transaction" : "net_cost"); }
       } catch { /* sin guardado */ }
@@ -1870,7 +1871,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
           <div className="text-sm font-semibold text-amber-900">🚗 Autoparte esencial (core) — Valor de Contenido Regional</div>
           <Btn variant="ghost" size="sm" onClick={() => setAyuda(true)}>¿Cómo se calcula?</Btn>
         </div>
-        <p className="mb-3 text-xs text-amber-800">Para una autoparte el origen se determina por el <strong>VCR</strong>. No se piden LVC ni acero/aluminio (esos son del vehículo). La base y el valor no originario se pre-llenaron desde el BOM; ajústalos a tu costeo real.</p>
+        <p className="mb-3 text-xs text-amber-800">Para una autoparte el origen se determina por el <strong>VCR</strong>. No se piden LVC ni acero/aluminio (esos son del vehículo). El <strong>VNM se detecta automáticamente</strong> del BOM según el tratado; tú solo capturas el costo neto / valor de transacción del bien final.</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Método de VCR">
             <select value={method} onChange={(e) => setMethod(e.target.value as "net_cost" | "transaction")} className={inputCls}>
@@ -1879,11 +1880,16 @@ function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
             </select>
           </Field>
           {method === "net_cost" ? (
-            <Field label="Costo neto del bien"><input type="number" step="any" className={inputCls} value={netCost} onChange={(e) => setNetCost(e.target.value)} /></Field>
+            <Field label="Costo neto del bien final"><input type="number" step="any" className={inputCls} value={netCost} onChange={(e) => setNetCost(e.target.value)} /></Field>
           ) : (
-            <Field label="Valor de transacción del bien"><input type="number" step="any" className={inputCls} value={txValue} onChange={(e) => setTxValue(e.target.value)} /></Field>
+            <Field label="Valor de transacción del bien final"><input type="number" step="any" className={inputCls} value={txValue} onChange={(e) => setTxValue(e.target.value)} /></Field>
           )}
-          <Field label="Valor de materiales NO originarios (VNM)"><input type="number" step="any" className={inputCls} value={vnm} onChange={(e) => setVnm(e.target.value)} /></Field>
+          <Field label="Materiales NO originarios (VNM) — automático">
+            <div className={cx(inputCls, "flex items-center bg-zinc-100 text-zinc-600")}>
+              <span className="font-mono">{vnm}</span>
+              <span className="ml-2 text-[11px] text-zinc-400">detectado del BOM</span>
+            </div>
+          </Field>
           <Field label="Fecha"><input type="date" className={inputCls} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
         </div>
         <p className="mt-3 text-xs text-amber-800">Umbral requerido: <strong>VCR ≥ {threshold}%</strong> ({method === "transaction" ? "valor de transacción" : "costo neto"}).</p>
@@ -1963,7 +1969,8 @@ function CalculoOrigenView() {
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [comps, setComps] = useState<BomOriginComponent[]>([]);
   const [product, setProduct] = useState<Product | null>(null);
-  const [members, setMembers] = useState<string[]>([]);
+  const [bomTotal, setBomTotal] = useState("0");
+  const [bomVnm, setBomVnm] = useState("0");
   const [loadingBom, setLoadingBom] = useState(false);
   const [bomError, setBomError] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
@@ -1971,14 +1978,8 @@ function CalculoOrigenView() {
   const [ayuda, setAyuda] = useState(false);
   const productos = productsL.data.filter((p) => p.kind !== "material");
   const automotive = !!product?.is_automotive_core;
-  // Estimación para pre-llenar el régimen automotriz desde el BOM.
-  const lineVal = (c: BomOriginComponent) => Number(c.component_unit_cost || 0) * Number(c.quantity || 0);
-  const totalBom = comps.reduce((a, c) => a + lineVal(c), 0);
-  const memberSet = members.map((x) => x.toUpperCase());
-  const vnmBom = comps.reduce((a, c) => {
-    const orig = !!c.manual_country && memberSet.includes((c.manual_country || "").toUpperCase());
-    return a + (orig ? 0 : lineVal(c));
-  }, 0);
+  // Total y VNM (valor de materiales NO originarios) los calcula el BACKEND según el
+  // tratado (origen real de cada insumo): aquí solo se muestran/usan.
 
   useEffect(() => {
     if (treatyId === "" && treatiesL.data.length) {
@@ -1992,7 +1993,8 @@ function CalculoOrigenView() {
     setLoadingBom(true); setResult(null); setBomError(false); setMsg("");
     try {
       const r = await api.productBomOrigin(Number(productId), Number(treatyId));
-      setComps(r.components); setProduct(r.product); setMembers(r.treaty_members ?? []);
+      setComps(r.components); setProduct(r.product);
+      setBomTotal(r.total_value ?? "0"); setBomVnm(r.vnm ?? "0");
     } catch (e) { setBomError(true); setComps([]); setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
@@ -2075,6 +2077,12 @@ function CalculoOrigenView() {
                       <div className="font-mono text-xs">{c.component_sku}</div>
                       <div className="text-xs text-zinc-500">{c.component_description}</div>
                       <div className="text-[11px] text-zinc-400">HS {c.component_hs ? formatHs(c.component_hs) : "—"}</div>
+                      {c.originating != null && (
+                        <span className={cx("mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium",
+                          c.originating ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                          {c.originating ? "originario" : "no originario (cuenta en VNM)"}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
                     <td className="px-4 py-3 text-right font-mono text-xs">{pu.toFixed(4)}</td>
@@ -2133,7 +2141,7 @@ function CalculoOrigenView() {
       )}
       {comps.length > 0 && automotive && (
         <AutomotivePanel productId={Number(productId)} treatyId={Number(treatyId)}
-          suggestNet={totalBom.toFixed(2)} suggestVnm={vnmBom.toFixed(2)} />
+          suggestNet={bomTotal} autoVnm={bomVnm} />
       )}
       {result && !automotive && <OriginResultReport result={result} />}
     </div>

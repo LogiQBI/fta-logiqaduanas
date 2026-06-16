@@ -507,9 +507,14 @@ class ProductViewSet(TenantScopedViewSet):
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo la empresa puede ver el cálculo de origen.")
+        from decimal import Decimal
+        from apps.origin.services import _resolve_component_origin
         product = self.get_object()
         treaty_id = request.query_params.get("treaty")
+        treaty = Treaty.objects.filter(pk=treaty_id).first() if treaty_id else None
         comps = []
+        total = Decimal("0")
+        vnm = Decimal("0")   # valor de materiales NO originarios (automático, por tratado)
         for bc in product.bom_components.select_related("component", "component__supplier").all():
             decls = []
             if treaty_id:
@@ -518,10 +523,18 @@ class ProductViewSet(TenantScopedViewSet):
                 decls = [{"valid_from": d.valid_from, "valid_to": d.valid_to,
                           "is_originating": d.is_originating,
                           "country": d.country_of_origin} for d in qs]
-            comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls})
-        treaty = Treaty.objects.filter(pk=treaty_id).first() if treaty_id else None
+            originating = None
+            if treaty:
+                info = _resolve_component_origin(bc, treaty, None, set())
+                total += info["value"]
+                if not info["originating"]:
+                    vnm += info["value"]
+                originating = info["originating"]
+            comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls,
+                          "originating": originating})
         return Response({"product": s.ProductSerializer(product).data, "components": comps,
-                         "treaty_members": (treaty.member_countries if treaty else [])})
+                         "treaty_members": (treaty.member_countries if treaty else []),
+                         "total_value": str(total), "vnm": str(vnm)})
 
     @action(detail=True, methods=["get"], url_path="automotive")
     def automotive_get(self, request, pk=None):

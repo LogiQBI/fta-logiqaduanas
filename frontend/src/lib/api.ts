@@ -148,8 +148,11 @@ export type BomComponent = {
   component_unit_cost?: string; component_supplier_name?: string | null;
   component_declarations?: ComponentDeclaration[];
 };
-export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[] };
-export type BomOriginResponse = { product: Product; components: BomOriginComponent[]; treaty_members?: string[] };
+export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[]; originating?: boolean | null };
+export type BomOriginResponse = {
+  product: Product; components: BomOriginComponent[]; treaty_members?: string[];
+  total_value?: string; vnm?: string;
+};
 export type OriginCalcResult = {
   status: string; criterion: string; rvc_value: string | number | null;
   detail: Record<string, unknown>;
