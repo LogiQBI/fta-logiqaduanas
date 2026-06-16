@@ -337,7 +337,6 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
     { label: "Origen", items: [
       { key: "productos", label: "Productos", icon: Boxes },
       { key: "calculo-origen", label: "Cálculo de origen", icon: Calculator },
-      { key: "automotriz", label: "Automotriz (T-MEC)", icon: Truck },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Emitir certificados", icon: BadgeCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
@@ -478,7 +477,6 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "reglas": return <ReglasView me={me} />;
     case "productos": return <ProductosView />;
     case "calculo-origen": return <CalculoOrigenView />;
-    case "automotriz": return <AutomotivoView />;
     case "insumos": return <InsumosView />;
     case "asignar-proveedor": return <AsignarProveedorView />;
     case "calificaciones": return <CalificacionesView />;
@@ -654,13 +652,14 @@ function AutoReviewBox() {
       <div className="mt-2">
         <div className="font-semibold text-amber-900">¿Qué hay que hacer?</div>
         <ul className="ml-4 mt-1 list-disc space-y-0.5 text-amber-800">
-          <li>Ve al módulo <strong>“Automotriz (T-MEC)”</strong> y evalúa el producto ahí.</li>
-          <li>Debe cumplir además: <strong>Valor de Contenido Regional (VCR)</strong> alto por costo
-            neto, <strong>Valor de Contenido Laboral (LVC)</strong> y compra de <strong>acero/aluminio</strong>
+          <li>Entra a <strong>“Cálculo de origen”</strong> y elige este producto: ahí mismo aparecerán
+            los campos del <strong>régimen automotriz</strong> para completarlo.</li>
+          <li>Debe cumplir: <strong>Valor de Contenido Regional (VCR)</strong> alto por costo neto,
+            <strong> Valor de Contenido Laboral (LVC)</strong> y compra de <strong>acero/aluminio</strong>
             originario (super-core).</li>
-          <li>Mientras esté en este estado <strong>no se puede emitir el certificado</strong> de origen.</li>
+          <li>Al completarlo, el sistema determina el origen (y si califica, ya se puede certificar).</li>
         </ul>
-        <p className="mt-1 text-[11px] text-amber-700">El cálculo por BOM es solo informativo; la determinación formal la hace el módulo automotriz, con apoyo de un especialista.</p>
+        <p className="mt-1 text-[11px] text-amber-700">El cálculo por BOM es solo informativo; la determinación formal usa el régimen automotriz, con apoyo de un especialista.</p>
       </div>
     </div>
   );
@@ -1793,42 +1792,42 @@ const EMPTY_AUTO = {
   net_cost: "", vnm: "", lvc_pct: "", wage_usd_h: "16", steel_na_pct: "", aluminum_na_pct: "",
   core_parts_originating: false,
 };
-function AutomotivoView() {
-  const productsL = useList<Product>(() => api.products());
-  const treatiesL = useList<Treaty>(() => api.treaties());
-  const [productId, setProductId] = useState<number | "">("");
-  const [treatyId, setTreatyId] = useState<number | "">("");
-  const [f, setF] = useState({ ...EMPTY_AUTO });
+// Panel del régimen automotriz, INTEGRADO en "Cálculo de origen": aparece cuando la
+// fracción es una parte esencial (core part). Pide los datos extra (VCR costo neto,
+// LVC, acero/aluminio, core) y da el veredicto, que ES la determinación de origen.
+function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
+  productId: number; treatyId: number; suggestNet: string; suggestVnm: string;
+}) {
+  const [f, setF] = useState({ ...EMPTY_AUTO, net_cost: suggestNet, vnm: suggestVnm });
   const [result, setResult] = useState<AutomotiveResult | null>(null);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
-  const productos = productsL.data.filter((p) => p.kind !== "material");
   const set = (k: keyof typeof f, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+  // Carga la evaluación previa guardada (o pre-llena con la estimación del BOM).
   useEffect(() => {
-    if (treatyId === "" && treatiesL.data.length) {
-      const t = treatiesL.data.find((x) => x.code === "TMEC"); setTreatyId(t ? t.id : treatiesL.data[0].id);
-    }
-  }, [treatiesL.data, treatyId]);
-  const loadSaved = useCallback(async () => {
-    setResult(null);
-    if (!productId || !treatyId) return;
-    try {
-      const a: AutomotiveSaved = await api.automotive(Number(productId), Number(treatyId));
-      if (a && a.vehicle_class) {
-        setF({
-          vehicle_class: a.vehicle_class, as_of: a.as_of || EMPTY_AUTO.as_of,
-          net_cost: a.net_cost ?? "", vnm: a.vnm ?? "", lvc_pct: a.lvc_pct ?? "",
-          wage_usd_h: a.wage_usd_h ?? "16", steel_na_pct: a.steel_na_pct ?? "",
-          aluminum_na_pct: a.aluminum_na_pct ?? "", core_parts_originating: !!a.core_parts_originating,
-        });
-        if (a.detail) setResult(a.detail);
-      } else { setF({ ...EMPTY_AUTO }); }
-    } catch { /* sin guardado */ }
+    let alive = true;
+    (async () => {
+      try {
+        const a: AutomotiveSaved = await api.automotive(productId, treatyId);
+        if (!alive) return;
+        if (a && a.vehicle_class) {
+          setF({
+            vehicle_class: a.vehicle_class, as_of: a.as_of || EMPTY_AUTO.as_of,
+            net_cost: a.net_cost ?? suggestNet, vnm: a.vnm ?? suggestVnm, lvc_pct: a.lvc_pct ?? "",
+            wage_usd_h: a.wage_usd_h ?? "16", steel_na_pct: a.steel_na_pct ?? "",
+            aluminum_na_pct: a.aluminum_na_pct ?? "", core_parts_originating: !!a.core_parts_originating,
+          });
+          if (a.detail) setResult(a.detail);
+        } else {
+          setF({ ...EMPTY_AUTO, net_cost: suggestNet, vnm: suggestVnm });
+        }
+      } catch { /* sin guardado */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId, treatyId]);
-  useEffect(() => { loadSaved(); }, [loadSaved]);
   async function evaluar() {
-    if (!productId || !treatyId) { setMsg("Elige producto y tratado."); return; }
     setBusy(true); setMsg("");
-    try { setResult(await api.calcAutomotive(Number(productId), { treaty: treatyId, ...f })); }
+    try { setResult(await api.calcAutomotive(productId, { treaty: treatyId, ...f })); }
     catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   }
   const numField = (k: keyof typeof f, label: string, suffix = "") => (
@@ -1840,30 +1839,18 @@ function AutomotivoView() {
     </Field>
   );
   return (
-    <div className="max-w-4xl">
-      <PageTitle title="Régimen automotriz (T-MEC)" desc="Evalúa los requisitos automotrices del USMCA: VCR por costo neto (phase-in), Valor de Contenido Laboral, acero/aluminio y core parts. Califica solo si pasan todos." />
-      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        ⚠️ Herramienta <strong>orientativa</strong>. Los umbrales y fechas del T-MEC deben confirmarse contra la normativa vigente y validarse con un especialista antes de uso formal ante la autoridad. Además se requieren 3 certificaciones a CBP (LVC, acero, aluminio).
-      </div>
-      <Card className="p-5">
+    <div className="mt-4">
+      <Card className="border-amber-300 bg-amber-50/40 p-5">
+        <div className="mb-1 text-sm font-semibold text-amber-900">🚗 Régimen automotriz (parte esencial)</div>
+        <p className="mb-3 text-xs text-amber-800">Esta fracción es una <strong>parte esencial (core part)</strong> del T-MEC: el salto arancelario no basta. Completa estos datos para determinar el origen. El <strong>costo neto</strong> y el <strong>valor no originario</strong> se pre-llenaron desde el BOM (ajústalos si aplica).</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Producto">
-            <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
-              <option value="">Elige…</option>
-              {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
-            </select>
-          </Field>
-          <Field label="Tratado">
-            <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
-              {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
-            </select>
-          </Field>
           <Field label="Clase de vehículo">
             <select value={f.vehicle_class} onChange={(e) => set("vehicle_class", e.target.value)} className={inputCls}>
               {VCLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
             </select>
           </Field>
           <Field label="Fecha (phase-in)"><input type="date" className={inputCls} value={f.as_of} onChange={(e) => set("as_of", e.target.value)} /></Field>
+          <div />
           {numField("net_cost", "Costo neto del bien")}
           {numField("vnm", "Valor materiales NO originarios")}
           {numField("lvc_pct", "LVC (%)", "%")}
@@ -1877,15 +1864,16 @@ function AutomotivoView() {
             </label>
           </Field>
         </div>
-        {msg && <p className="mt-3 text-sm text-amber-600">{msg}</p>}
-        <div className="mt-5"><Btn onClick={evaluar} disabled={busy || !productId || !treatyId}>{busy ? "Evaluando…" : "Evaluar régimen automotriz"}</Btn></div>
+        <p className="mt-3 text-[11px] text-amber-700">⚠️ Orientativo: confirma umbrales/fechas del T-MEC con la normativa vigente. Se requieren 3 certificaciones a CBP (LVC, acero, aluminio).</p>
+        {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
+        <div className="mt-4"><Btn onClick={evaluar} disabled={busy}>{busy ? "Calculando…" : "Calcular origen (régimen automotriz)"}</Btn></div>
       </Card>
 
       {result && (
-        <div className="mt-4 rounded-lg border border-zinc-200 p-4">
+        <div className="mt-3 rounded-lg border border-zinc-200 p-4">
           <div className="mb-3 flex items-center gap-2">
             <span className={cx("rounded-full px-3 py-1 text-sm font-bold", result.qualifies ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-              {result.qualifies ? "CALIFICA (todos los pilares)" : "NO CALIFICA"}
+              {result.qualifies ? "Originario: SÍ (cumple el régimen automotriz)" : "Originario: NO"}
             </span>
             <span className="text-xs text-zinc-500">{result.class_label}{result.as_of ? ` · ${result.as_of}` : ""}</span>
           </div>
@@ -1953,11 +1941,22 @@ function CalculoOrigenView() {
   const [productId, setProductId] = useState<number | "">("");
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [comps, setComps] = useState<BomOriginComponent[]>([]);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [members, setMembers] = useState<string[]>([]);
   const [loadingBom, setLoadingBom] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
   const [ayuda, setAyuda] = useState(false);
   const productos = productsL.data.filter((p) => p.kind !== "material");
+  const automotive = !!product?.is_automotive_core;
+  // Estimación para pre-llenar el régimen automotriz desde el BOM.
+  const lineVal = (c: BomOriginComponent) => Number(c.component_unit_cost || 0) * Number(c.quantity || 0);
+  const totalBom = comps.reduce((a, c) => a + lineVal(c), 0);
+  const memberSet = members.map((x) => x.toUpperCase());
+  const vnmBom = comps.reduce((a, c) => {
+    const orig = !!c.manual_country && memberSet.includes((c.manual_country || "").toUpperCase());
+    return a + (orig ? 0 : lineVal(c));
+  }, 0);
 
   useEffect(() => {
     if (treatyId === "" && treatiesL.data.length) {
@@ -1967,10 +1966,12 @@ function CalculoOrigenView() {
   }, [treatiesL.data, treatyId]);
 
   const loadBom = useCallback(async () => {
-    if (!productId || !treatyId) { setComps([]); return; }
+    if (!productId || !treatyId) { setComps([]); setProduct(null); return; }
     setLoadingBom(true); setResult(null);
-    try { const r = await api.productBomOrigin(Number(productId), Number(treatyId)); setComps(r.components); }
-    catch (e) { setMsg((e as Error).message); }
+    try {
+      const r = await api.productBomOrigin(Number(productId), Number(treatyId));
+      setComps(r.components); setProduct(r.product); setMembers(r.treaty_members ?? []);
+    } catch (e) { setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
   useEffect(() => { loadBom(); }, [loadBom]);
@@ -2009,9 +2010,11 @@ function CalculoOrigenView() {
             {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
           </select>
         </div>
-        <Btn onClick={calcular} disabled={!productId || !treatyId || comps.length === 0 || calc}>
-          {calc ? "Calculando…" : "Calcular origen"}
-        </Btn>
+        {!automotive && (
+          <Btn onClick={calcular} disabled={!productId || !treatyId || comps.length === 0 || calc}>
+            {calc ? "Calculando…" : "Calcular origen"}
+          </Btn>
+        )}
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
 
@@ -2100,7 +2103,11 @@ function CalculoOrigenView() {
           </table>
         </Card>
       )}
-      {result && <OriginResultReport result={result} />}
+      {comps.length > 0 && automotive && (
+        <AutomotivePanel productId={Number(productId)} treatyId={Number(treatyId)}
+          suggestNet={totalBom.toFixed(2)} suggestVnm={vnmBom.toFixed(2)} />
+      )}
+      {result && !automotive && <OriginResultReport result={result} />}
     </div>
   );
 }

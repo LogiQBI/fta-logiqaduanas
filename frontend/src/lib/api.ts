@@ -133,7 +133,7 @@ export type Product = {
   is_active: boolean;
   hs_suggested?: string; hs_suggestion_status?: string;
   hs_suggestion_note?: string; hs_suggested_by_name?: string | null;
-  hs_logs?: HsLog[]; change_log_count?: number;
+  hs_logs?: HsLog[]; change_log_count?: number; is_automotive_core?: boolean;
 };
 export type Treaty = { id: number; code: string; name: string };
 export type ComponentDeclaration = {
@@ -149,7 +149,7 @@ export type BomComponent = {
   component_declarations?: ComponentDeclaration[];
 };
 export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[] };
-export type BomOriginResponse = { product: Product; components: BomOriginComponent[] };
+export type BomOriginResponse = { product: Product; components: BomOriginComponent[]; treaty_members?: string[] };
 export type OriginCalcResult = {
   status: string; criterion: string; rvc_value: string | number | null;
   detail: Record<string, unknown>;

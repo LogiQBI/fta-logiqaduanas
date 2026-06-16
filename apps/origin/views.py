@@ -519,7 +519,9 @@ class ProductViewSet(TenantScopedViewSet):
                           "is_originating": d.is_originating,
                           "country": d.country_of_origin} for d in qs]
             comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls})
-        return Response({"product": s.ProductSerializer(product).data, "components": comps})
+        treaty = Treaty.objects.filter(pk=treaty_id).first() if treaty_id else None
+        return Response({"product": s.ProductSerializer(product).data, "components": comps,
+                         "treaty_members": (treaty.member_countries if treaty else [])})
 
     @action(detail=True, methods=["get"], url_path="automotive")
     def automotive_get(self, request, pk=None):
@@ -568,6 +570,14 @@ class ProductViewSet(TenantScopedViewSet):
                       "aluminum_na_pct": d.get("aluminum_na_pct") or 0,
                       "core_parts_originating": core, "qualifies": result["qualifies"],
                       "detail": result, "computed_by": request.user})
+        # La evaluación automotriz ES la determinación de origen para core parts:
+        # actualiza la calificación (sale de AUTO_REVIEW) para que pueda certificarse.
+        Qualification.objects.update_or_create(
+            tenant=m.tenant, product=product, treaty=treaty,
+            defaults={"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
+                      "criterion": "Automotriz (T-MEC)",
+                      "rvc_value": (result.get("rvc_value") or None),
+                      "detail": {"automotive": result}, "computed_by": request.user})
         return Response(result)
 
     @action(detail=True, methods=["post"], url_path="calc-bom-origin")

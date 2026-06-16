@@ -81,6 +81,11 @@ class ProductSerializer(serializers.ModelSerializer):
     hs_suggested_by_name = serializers.CharField(source="hs_suggested_by.name", read_only=True, default=None)
     hs_logs = serializers.SerializerMethodField()
     change_log_count = serializers.SerializerMethodField()
+    is_automotive_core = serializers.SerializerMethodField()
+
+    def get_is_automotive_core(self, obj):
+        from apps.origin.engine import core_part_code
+        return bool(core_part_code(obj.hs_code or ""))
 
     def get_hs_logs(self, obj):
         return [{"old_hs": l.old_hs, "new_hs": l.new_hs, "action": l.action,
