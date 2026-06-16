@@ -29,8 +29,10 @@ from apps.catalog.uom import clean_uom
 from apps.catalog.services import generate_solicitations
 from apps.origin import serializers as s
 from apps.origin import automotive as auto
+from apps.origin import layouts as client_layouts
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, Qualification, SolicitationCertificate,
+    AutomotiveAssessment, Certificate, ClientOriginLayout, Qualification,
+    SolicitationCertificate,
 )
 from apps.origin.services import (
     calculate_bom_origin, calculate_product_origin, certificate_elements,
@@ -771,6 +773,126 @@ class SolicitationCertificateViewSet(TenantScopedViewSet):
         _log_sol(cert.solicitation, "cert_signed", cert.get_sign_method_display(), request.user)
         return Response(s.SolicitationCertificateSerializer(
             cert, context=self.get_serializer_context()).data)
+
+
+class ClientLayoutViewSet(TenantScopedViewSet):
+    """Plantillas del portal de origen de cada CLIENTE (una por tratado).
+    Solo la empresa las gestiona; los proveedores no las ven."""
+    queryset = ClientOriginLayout.objects.select_related("client", "treaty").all()
+    serializer_class = s.ClientOriginLayoutSerializer
+    supplier_field = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        client = self.request.query_params.get("client")
+        if client:
+            qs = qs.filter(client_id=client)
+        return qs
+
+    def _require_company(self):
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa gestiona los layouts de cliente.")
+        return m
+
+    def create(self, request, *args, **kwargs):
+        """Sube (o reemplaza) la plantilla del cliente para un tratado.
+        Multipart: {file, client, treaty, name?}. Detecta hoja y encabezados;
+        conserva el mapeo previo de las columnas que sigan existiendo."""
+        import base64
+        m = self._require_company()
+        client = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.CUSTOMER,
+                                      pk=request.data.get("client")).first()
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        f = request.FILES.get("file")
+        if not (client and treaty and f):
+            return Response({"error": "Faltan cliente, tratado o el archivo .xlsx."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        content = f.read()
+        if len(content) > 2_000_000:
+            return Response({"error": "La plantilla es muy grande (máx 2 MB)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            sheet, header_row, headers = client_layouts.read_template(content)
+        except Exception:
+            return Response({"error": "No se pudo leer el archivo. ¿Es un .xlsx válido?"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not headers:
+            return Response({"error": "No se encontraron encabezados en la plantilla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        layout, created = ClientOriginLayout.objects.get_or_create(
+            tenant=m.tenant, client=client, treaty=treaty)
+        # Conserva el mapeo de columnas que siguen existiendo en la nueva plantilla.
+        old_mapping = layout.mapping or {}
+        layout.mapping = {col: k for col, k in old_mapping.items() if col in headers}
+        layout.name = (request.data.get("name") or layout.name or "").strip()[:120]
+        layout.filename = f.name[:200]
+        layout.file_b64 = base64.b64encode(content).decode()
+        layout.sheet_name = sheet
+        layout.header_row = header_row
+        layout.headers = headers
+        layout.save()
+        return Response(s.ClientOriginLayoutSerializer(layout).data,
+                        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    def perform_update(self, serializer):
+        self._require_company()
+        # Solo el mapeo y el nombre son editables; valida los campos del mapeo.
+        mapping = serializer.validated_data.get("mapping")
+        if mapping is not None:
+            bad = [k for k in mapping.values() if k and k not in client_layouts.LAYOUT_FIELD_KEYS]
+            if bad:
+                from rest_framework.exceptions import ValidationError as DRFValidationError
+                raise DRFValidationError({"mapping": f"Campos inválidos: {', '.join(bad)}"})
+            serializer.validated_data["mapping"] = {
+                col: k for col, k in mapping.items() if k}
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_company()
+        instance.delete()
+
+    @action(detail=True, methods=["post"])
+    def generate(self, request, pk=None):
+        """Genera el archivo del portal del cliente con los cálculos de origen.
+        Body: {products: [ids], period_from?, period_to?}. Descarga el .xlsx."""
+        from django.http import HttpResponse
+        m = self._require_company()
+        layout = self.get_object()
+        if not layout.mapping:
+            return Response({"error": "Primero mapea las columnas de la plantilla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = request.data.get("products") or []
+        products = list(Product.objects.filter(tenant=m.tenant, id__in=ids)
+                        .select_related("supplier").order_by("sku"))
+        if not products:
+            return Response({"error": "Selecciona al menos un producto."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        quals = {q.product_id: q for q in Qualification.objects.filter(
+            tenant=m.tenant, treaty=layout.treaty, product_id__in=ids)}
+        prof = getattr(m.tenant, "profile", None)
+        ctx = {
+            "treaty_label": client_layouts._TREATY_LABELS.get(layout.treaty.code, layout.treaty.code),
+            "period_from": (request.data.get("period_from") or ""),
+            "period_to": (request.data.get("period_to") or ""),
+            "date": timezone.localdate().isoformat(),
+            "company_name": (prof.legal_name if prof and prof.legal_name else m.tenant.name),
+            "company_tax_id": (prof.tax_id if prof else ""),
+            "company_country": (prof.country if prof else ""),
+            "client_name": layout.client.name,
+        }
+        try:
+            content = client_layouts.generate_layout(
+                layout, [(p, quals.get(p.id)) for p in products], ctx)
+        except Exception:
+            return Response({"error": "No se pudo generar el archivo. Vuelve a subir la "
+                             "plantilla e intenta de nuevo."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        fname = f"layout_{layout.client.name}_{layout.treaty.code}.xlsx".replace(" ", "_")
+        resp = HttpResponse(content, content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+        return resp
 
 
 class SolicitationRequestViewSet(TenantScopedViewSet):

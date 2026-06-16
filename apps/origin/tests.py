@@ -231,3 +231,79 @@ class SolicitationCertificateTest(TestCase):
         resp = SolicitationCertificateViewSet.as_view({"get": "list"})(req)
         results = resp.data.get("results", resp.data)
         self.assertEqual(len(results), 0)
+
+
+class ClientLayoutTest(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.tenant = Tenant.objects.create(name="ACME", slug="acme")
+        self.treaty = Treaty.objects.create(code="TMEC", name="USMCA",
+                                            member_countries=["MX", "US", "CA"])
+        self.client_party = Party.objects.create(tenant=self.tenant, kind="customer",
+                                                 name="STELLANTIS", country="US")
+        self.user = User.objects.create(username="emp")
+        Membership.objects.create(user=self.user, tenant=self.tenant,
+                                  role=Membership.Role.ADMIN)
+        self.f = APIRequestFactory()
+
+    def _template_bytes(self):
+        import openpyxl
+        from io import BytesIO
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Origin"
+        ws.append(["Part Number", "Description", "HTS", "Qualified Y/N", "Criterion"])
+        buf = BytesIO(); wb.save(buf); return buf.getvalue()
+
+    def _upload(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.origin.views import ClientLayoutViewSet
+        up = SimpleUploadedFile("stellantis.xlsx", self._template_bytes())
+        req = self.f.post("/api/client-layouts/", {
+            "file": up, "client": self.client_party.id, "treaty": self.treaty.id,
+            "name": "Portal STELLANTIS"}, format="multipart")
+        force_authenticate(req, user=self.user)
+        return ClientLayoutViewSet.as_view({"post": "create"})(req)
+
+    def test_upload_detects_headers(self):
+        resp = self._upload()
+        self.assertIn(resp.status_code, (200, 201))
+        self.assertEqual(resp.data["headers"]["A"], "Part Number")
+        self.assertEqual(resp.data["headers"]["D"], "Qualified Y/N")
+        self.assertEqual(resp.data["header_row"], 1)
+
+    def test_mapping_validation_and_generate(self):
+        from apps.origin.views import ClientLayoutViewSet
+        from apps.origin.models import ClientOriginLayout, Qualification
+        import openpyxl
+        from io import BytesIO
+        self._upload()
+        layout = ClientOriginLayout.objects.get(tenant=self.tenant)
+        # mapeo inválido rechazado
+        req = self.f.patch(f"/api/client-layouts/{layout.id}/",
+                           {"mapping": {"A": "no_existe"}}, format="json")
+        force_authenticate(req, user=self.user)
+        resp = ClientLayoutViewSet.as_view({"patch": "partial_update"})(req, pk=layout.id)
+        self.assertEqual(resp.status_code, 400)
+        # mapeo válido
+        req = self.f.patch(f"/api/client-layouts/{layout.id}/", {"mapping": {
+            "A": "sku", "B": "description", "C": "hs_formatted",
+            "D": "origin_yn", "E": "criterion"}}, format="json")
+        force_authenticate(req, user=self.user)
+        resp = ClientLayoutViewSet.as_view({"patch": "partial_update"})(req, pk=layout.id)
+        self.assertEqual(resp.status_code, 200)
+        # producto calificado + generar
+        prod = Product.objects.create(tenant=self.tenant, sku="P-1", description="Suspensión",
+                                      kind="finished", hs_code="940360")
+        Qualification.objects.create(tenant=self.tenant, product=prod, treaty=self.treaty,
+                                     status="QUALIFIES", criterion="CTC")
+        req = self.f.post(f"/api/client-layouts/{layout.id}/generate/",
+                          {"products": [prod.id], "period_from": "2026-01-01",
+                           "period_to": "2026-12-31"}, format="json")
+        force_authenticate(req, user=self.user)
+        resp = ClientLayoutViewSet.as_view({"post": "generate"})(req, pk=layout.id)
+        self.assertEqual(resp.status_code, 200)
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Origin"]
+        self.assertEqual(ws["A2"].value, "P-1")
+        self.assertEqual(ws["C2"].value, "9403.60")
+        self.assertEqual(ws["D2"].value, "Y")
+        self.assertEqual(ws["E2"].value, "CTC")

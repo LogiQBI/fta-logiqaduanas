@@ -59,6 +59,40 @@ async function uploadFile(path: string, file: File) {
   return data;
 }
 
+// Envía un formulario multipart (archivo + campos) y devuelve el JSON.
+async function uploadForm(path: string, fields: Record<string, string | number | File>) {
+  const token = getToken();
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v instanceof File ? v : String(v)));
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Token ${token}` } : {},
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+// POST que descarga un archivo binario (ej. el layout del cliente generado).
+async function downloadPost(path: string, body: Record<string, unknown>, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Token ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
 export type BulkResult = {
   creados: number; actualizados: number; omitidos?: number;
   errores: { fila: number; error: string }[];
@@ -206,6 +240,11 @@ export type Solicitation = {
 export type SolCertLite = {
   id: number; signed: boolean; sign_method: string;
   sign_method_display: string; folio: string; signed_at: string | null;
+};
+export type ClientLayout = {
+  id: number; client: number; client_name?: string; treaty: number; treaty_code?: string;
+  name: string; filename: string; sheet_name: string; header_row: number;
+  headers: Record<string, string>; mapping: Record<string, string>; updated_at?: string;
 };
 export type SolicitationCert = {
   id: number; solicitation: number; folio: string; verify_token: string;
@@ -358,6 +397,16 @@ export const api = {
     req(`/solicitations/${id}/accept/`, { method: "POST", body: JSON.stringify({ sign_method }) }),
   solicitationCert: (id: number): Promise<SolicitationCert> =>
     req(`/solicitation-certificates/${id}/`),
+  clientLayouts: (clientId?: number) =>
+    req(clientId ? `/client-layouts/?client=${clientId}` : "/client-layouts/"),
+  uploadClientLayout: (fields: { client: number; treaty: number; file: File; name?: string }): Promise<ClientLayout> =>
+    uploadForm("/client-layouts/", fields as unknown as Record<string, string | number | File>),
+  updateClientLayout: (id: number, payload: Record<string, unknown>): Promise<ClientLayout> =>
+    req(`/client-layouts/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteClientLayout: (id: number) =>
+    req(`/client-layouts/${id}/`, { method: "DELETE" }),
+  generateClientLayout: (id: number, payload: Record<string, unknown>, filename: string) =>
+    downloadPost(`/client-layouts/${id}/generate/`, payload, filename),
   signSolicitationCert: (id: number, payload: Record<string, unknown>): Promise<SolicitationCert> =>
     req(`/solicitation-certificates/${id}/sign/`, { method: "POST", body: JSON.stringify(payload) }),
   rejectSolicitud: (id: number, reason: string) =>

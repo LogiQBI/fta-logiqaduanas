@@ -13,6 +13,7 @@ router.register("supplier-declarations", views.SupplierDeclarationViewSet)
 router.register("qualifications", views.QualificationViewSet)
 router.register("certificates", views.CertificateViewSet)
 router.register("solicitation-certificates", views.SolicitationCertificateViewSet)
+router.register("client-layouts", views.ClientLayoutViewSet)
 router.register("solicitations", views.SolicitationRequestViewSet)
 
 urlpatterns = [

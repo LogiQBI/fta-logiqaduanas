@@ -5,7 +5,8 @@ from apps.catalog.models import (
     SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, Qualification, SolicitationCertificate,
+    AutomotiveAssessment, Certificate, ClientOriginLayout, Qualification,
+    SolicitationCertificate,
 )
 from apps.treaties.models import OriginRule, Treaty
 
@@ -262,6 +263,21 @@ class SolicitationCertificateSerializer(serializers.ModelSerializer):
             return ""
         import segno
         return segno.make(url, error="m").png_data_uri(scale=3, border=2)
+
+
+class ClientOriginLayoutSerializer(serializers.ModelSerializer):
+    """Plantilla del portal de origen del cliente. El archivo (file_b64) NO se
+    expone por la API (pesado); solo metadatos, encabezados y mapeo."""
+    client_name = serializers.CharField(source="client.name", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+
+    class Meta:
+        model = ClientOriginLayout
+        fields = ["id", "client", "client_name", "treaty", "treaty_code", "name",
+                  "filename", "sheet_name", "header_row", "headers", "mapping",
+                  "updated_at"]
+        read_only_fields = ["client", "treaty", "filename", "sheet_name",
+                            "header_row", "headers"]
 
 
 class SolicitationBOMLineSerializer(serializers.ModelSerializer):

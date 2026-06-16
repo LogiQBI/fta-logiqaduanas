@@ -172,6 +172,40 @@ class SolicitationCertificate(TenantOwnedModel):
         return f"Certificado {self.folio} (solicitud {self.solicitation_id})"
 
 
+class ClientOriginLayout(TenantOwnedModel):
+    """Plantilla del portal de origen del CLIENTE (ej. STELLANTIS), por tratado.
+
+    La empresa sube el .xlsx que le exige su cliente; un MAPEO liga cada columna
+    de la plantilla con un campo de FTA (SKU, HS, resultado de origen, criterio…).
+    Con eso, FTA genera el archivo lleno —una fila por número de parte— listo para
+    subir al portal del cliente. El archivo se guarda en BD (base64; Railway tiene
+    almacenamiento efímero)."""
+
+    client = models.ForeignKey("catalog.Party", on_delete=models.CASCADE,
+                               related_name="origin_layouts",
+                               limit_choices_to={"kind": "customer"})
+    treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE,
+                               related_name="client_layouts")
+    name = models.CharField("Nombre", max_length=120, blank=True)
+    filename = models.CharField("Archivo original", max_length=200, blank=True)
+    file_b64 = models.TextField("Plantilla (.xlsx en base64)", blank=True)
+    sheet_name = models.CharField("Hoja de datos", max_length=64, blank=True)
+    header_row = models.PositiveSmallIntegerField("Fila de encabezados", default=1)
+    # {"A": "Part Number", ...} — encabezados detectados al subir la plantilla.
+    headers = models.JSONField("Encabezados detectados", default=dict, blank=True)
+    # {"A": "sku", "C": "origin_yn", ...} — columna del cliente → campo de FTA.
+    mapping = models.JSONField("Mapeo de columnas", default=dict, blank=True)
+
+    class Meta:
+        unique_together = [("tenant", "client", "treaty")]
+        ordering = ["client__name", "treaty__code"]
+        verbose_name = "Layout de portal de cliente"
+        verbose_name_plural = "Layouts de portal de cliente"
+
+    def __str__(self):
+        return f"{self.client.name} / {self.treaty.code}: {self.name or self.filename}"
+
+
 class ExpedienteDocument(TenantOwnedModel):
     """Documento de soporte del expediente. Retención mínima 5 años (T-MEC)."""
 

@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkPreview, BulkResult, clearToken, EmittedCertificate, getToken, LicenseInfo, MasterTenant, Me,
-  OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification, Solicitation,
-  SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
+  BulkPreview, BulkResult, clearToken, ClientLayout, EmittedCertificate, getToken, LicenseInfo,
+  MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification,
+  Solicitation, SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
@@ -2412,8 +2412,11 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
 function CalificacionesView() {
   const { data, count } = useList<Qualification & { product: number }>(() => api.qualifications());
   const products = useList<Product>(() => api.products());
+  const clientes = useList<Party>(() => api.parties("customer"));
   const name = (pid: number) => products.data.find((p) => p.id === pid)?.sku ?? `#${pid}`;
   const [q, setQ] = useState("");
+  const [layoutCliente, setLayoutCliente] = useState<number | "">("");
+  const [layoutsFor, setLayoutsFor] = useState<Party | null>(null);
   const vis = smartFilter(data, q, (x) => [name(x.product), x.criterion, x.status_display]);
   function exportar() {
     exportCSV("calificaciones", ["Producto", "Criterio", "VCR", "Resultado"],
@@ -2421,7 +2424,23 @@ function CalificacionesView() {
   }
   return (
     <div>
-      <PageTitle title="Calificaciones" desc={`${count} calificaciones registradas.`} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageTitle title="Calificaciones" desc={`${count} calificaciones registradas.`} />
+        <div className="flex items-end gap-2">
+          <div>
+            <span className="mb-1 block text-xs font-semibold text-zinc-700">Layout del portal de un cliente</span>
+            <select value={layoutCliente} onChange={(e) => setLayoutCliente(e.target.value ? Number(e.target.value) : "")}
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
+              <option value="">Elige un cliente…</option>
+              {clientes.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <Btn variant="ghost" disabled={!layoutCliente}
+            onClick={() => { const c = clientes.data.find((x) => x.id === layoutCliente); if (c) setLayoutsFor(c); }}>
+            <Download size={15} className="-mt-0.5 mr-1 inline" />Generar layout
+          </Btn>
+        </div>
+      </div>
       <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
       <Table head={["Producto", "Criterio", "VCR", "Resultado"]}>
         {vis.map((q) => (
@@ -2433,6 +2452,7 @@ function CalificacionesView() {
           </tr>
         ))}
       </Table>
+      {layoutsFor && <ClientLayoutsModal client={layoutsFor} onClose={() => setLayoutsFor(null)} />}
     </div>
   );
 }
@@ -2658,9 +2678,205 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
   );
 }
 // Catálogo de CLIENTES (Party kind=customer) — a quienes se emiten certificados.
+// Campos de FTA que se pueden mapear a una columna del layout del cliente
+// (refleja apps/origin/layouts.py LAYOUT_FIELDS).
+const LAYOUT_FIELDS = [
+  { v: "", l: "— No llenar esta columna —" },
+  { v: "sku", l: "Núm. de parte (SKU)" },
+  { v: "description", l: "Descripción" },
+  { v: "hs", l: "Fracción HS (solo dígitos)" },
+  { v: "hs_formatted", l: "Fracción HS (con punto, ej. 8708.80)" },
+  { v: "origin_yn", l: "¿Originario? (Y/N)" },
+  { v: "origin_sino", l: "¿Originario? (SÍ/NO)" },
+  { v: "status", l: "Resultado de origen (texto)" },
+  { v: "criterion", l: "Criterio de origen" },
+  { v: "rvc", l: "VCR (%)" },
+  { v: "country", l: "País de origen del producto" },
+  { v: "treaty", l: "Tratado" },
+  { v: "period_from", l: "Vigencia desde" },
+  { v: "period_to", l: "Vigencia hasta" },
+  { v: "date", l: "Fecha de generación" },
+  { v: "company_name", l: "Razón social de tu empresa" },
+  { v: "company_tax_id", l: "RFC / Tax ID de tu empresa" },
+  { v: "company_country", l: "País de tu empresa" },
+  { v: "client_name", l: "Nombre del cliente" },
+  { v: "supplier_name", l: "Proveedor del producto" },
+  { v: "unit_cost", l: "Costo unitario" },
+  { v: "currency", l: "Moneda" },
+];
+const colOrder = (a: string, b: string) => a.length - b.length || a.localeCompare(b);
+
+// Plantillas del portal de origen del cliente: subir por tratado, mapear columnas
+// y generar el archivo con los cálculos de origen, listo para su portal.
+function ClientLayoutsModal({ client, onClose }: { client: Party; onClose: () => void }) {
+  const treaties = useList<Treaty>(() => api.treaties());
+  const [layouts, setLayouts] = useState<ClientLayout[]>([]);
+  const [mode, setMode] = useState<{ t: "map" | "gen"; layout: ClientLayout } | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [upTreaty, setUpTreaty] = useState<number | "">("");
+  const [upFile, setUpFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const [genProducts, setGenProducts] = useState<Product[]>([]);
+  const [genQuals, setGenQuals] = useState<Record<number, Qualification>>({});
+  const [genSel, setGenSel] = useState<Set<number>>(new Set());
+  const [genQ, setGenQ] = useState("");
+  const [genFrom, setGenFrom] = useState(""); const [genTo, setGenTo] = useState("");
+
+  const load = useCallback(async () => {
+    const d = await api.clientLayouts(client.id);
+    setLayouts((d as { results?: ClientLayout[] }).results ?? (d as ClientLayout[]));
+  }, [client.id]);
+  useEffect(() => { load().catch((e) => setErr((e as Error).message)); }, [load]);
+
+  async function subir() {
+    if (!upTreaty || !upFile) { setErr("Elige el tratado y el archivo .xlsx de tu cliente."); return; }
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      const l = await api.uploadClientLayout({ client: client.id, treaty: Number(upTreaty), file: upFile });
+      setUpFile(null); setUpTreaty(""); await load();
+      setMode({ t: "map", layout: l }); setMapping(l.mapping ?? {});
+      setMsg("Plantilla cargada. Ahora indica qué dato de FTA va en cada columna.");
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  function abrirMapeo(l: ClientLayout) { setMode({ t: "map", layout: l }); setMapping(l.mapping ?? {}); setMsg(""); setErr(""); }
+  async function guardarMapeo() {
+    if (!mode) return;
+    setBusy(true); setErr("");
+    try { await api.updateClientLayout(mode.layout.id, { mapping }); await load(); setMode(null); setMsg("Mapeo guardado."); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function abrirGen(l: ClientLayout) {
+    setMode({ t: "gen", layout: l }); setMsg(""); setErr(""); setGenQ("");
+    try {
+      const [prods, quals] = await Promise.all([api.products(), api.qualifications()]);
+      const plist: Product[] = (prods as { results?: Product[] }).results ?? (prods as Product[]);
+      const qlist: Qualification[] = (quals as { results?: Qualification[] }).results ?? (quals as Qualification[]);
+      const byProd: Record<number, Qualification> = {};
+      qlist.filter((x) => x.treaty === l.treaty).forEach((x) => { byProd[x.product] = x; });
+      const withQual = plist.filter((p) => byProd[p.id]);
+      setGenProducts(withQual); setGenQuals(byProd);
+      setGenSel(new Set(withQual.filter((p) => byProd[p.id].status === "QUALIFIES").map((p) => p.id)));
+    } catch (e) { setErr((e as Error).message); }
+  }
+  async function generar() {
+    if (!mode || genSel.size === 0) { setErr("Selecciona al menos un producto."); return; }
+    setBusy(true); setErr("");
+    try {
+      await api.generateClientLayout(mode.layout.id,
+        { products: [...genSel], period_from: genFrom || "", period_to: genTo || "" },
+        `layout_${client.name.replace(/\s+/g, "_")}_${mode.layout.treaty_code ?? ""}.xlsx`);
+      setMsg("Archivo generado y descargado: súbelo al portal de tu cliente.");
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function del(l: ClientLayout) {
+    if (!confirm(`¿Eliminar la plantilla ${l.treaty_code} de ${client.name}?`)) return;
+    try { await api.deleteClientLayout(l.id); setMode(null); await load(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  const genVis = smartFilter(genProducts, genQ, (p) => [p.sku, p.description]);
+  return (
+    <Modal title={`Layouts del portal de origen — ${client.name}`} onClose={onClose} wide>
+      <p className="mb-3 text-sm text-zinc-500">Sube la plantilla (.xlsx) que te exige el portal de origen de tu cliente (una por tratado),
+        indica qué dato va en cada columna y genera el archivo lleno con tus cálculos de origen, listo para subir a su portal.</p>
+      <Table head={["Tratado", "Plantilla", "Columnas mapeadas", ""]}>
+        {layouts.map((l) => (
+          <tr key={l.id}>
+            <td className="px-4 py-3">{treatyLabel(l.treaty_code)}</td>
+            <td className="px-4 py-3 text-xs">{l.name || l.filename}<div className="text-[11px] text-zinc-400">{l.filename} · hoja “{l.sheet_name}”</div></td>
+            <td className="px-4 py-3 text-xs">{Object.keys(l.mapping ?? {}).length} de {Object.keys(l.headers ?? {}).length}</td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => abrirMapeo(l)}>Mapear columnas</Btn></span>
+              <span className="mr-1 inline-block"><Btn size="sm" onClick={() => abrirGen(l)} disabled={!Object.keys(l.mapping ?? {}).length}>Generar archivo</Btn></span>
+              <button onClick={() => del(l)} title="Eliminar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
+          </tr>
+        ))}
+        {layouts.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-zinc-400">Aún no hay plantillas de este cliente. Sube la primera abajo.</td></tr>}
+      </Table>
+      <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-zinc-300 p-3">
+        <div>
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</span>
+          <select value={upTreaty} onChange={(e) => setUpTreaty(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+            <option value="">Elige…</option>
+            {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
+          </select>
+        </div>
+        <div className="min-w-[14rem] flex-1">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Plantilla del cliente (.xlsx)</span>
+          <input type="file" accept=".xlsx" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)}
+            className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+        </div>
+        <Btn onClick={subir} disabled={busy}><Upload size={15} className="-mt-0.5 mr-1 inline" />{busy ? "Subiendo…" : "Subir plantilla"}</Btn>
+      </div>
+      {msg && <p className="mt-3 text-sm text-emerald-700">{msg}</p>}
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+
+      {mode?.t === "map" && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-3">
+          <div className="mb-2 text-sm font-semibold text-zinc-700">Mapeo de columnas — {treatyLabel(mode.layout.treaty_code)} (encabezados en la fila {mode.layout.header_row})</div>
+          <p className="mb-2 text-xs text-zinc-500">Por cada columna de la plantilla de tu cliente, elige qué dato de FTA debe llenarla.</p>
+          <div className="grid gap-1.5 md:grid-cols-2">
+            {Object.keys(mode.layout.headers ?? {}).sort(colOrder).map((col) => (
+              <div key={col} className="flex items-center gap-2">
+                <span className="w-44 truncate text-xs" title={mode.layout.headers[col]}>
+                  <code className="rounded bg-zinc-100 px-1 text-[10px]">{col}</code> {mode.layout.headers[col]}
+                </span>
+                <select value={mapping[col] ?? ""} onChange={(e) => setMapping((m) => ({ ...m, [col]: e.target.value }))}
+                  className="flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+                  {LAYOUT_FIELDS.map((f) => <option key={f.v} value={f.v}>{f.l}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => setMode(null)}>Cancelar</Btn>
+            <Btn size="sm" onClick={guardarMapeo} disabled={busy}>{busy ? "Guardando…" : "Guardar mapeo"}</Btn>
+          </div>
+        </div>
+      )}
+
+      {mode?.t === "gen" && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-3">
+          <div className="mb-2 text-sm font-semibold text-zinc-700">Generar archivo — {treatyLabel(mode.layout.treaty_code)}</div>
+          <p className="mb-2 text-xs text-zinc-500">Se incluye una fila por producto con su cálculo de origen. Solo aparecen productos con calificación para este tratado; los que CALIFICAN vienen preseleccionados.</p>
+          <div className="mb-2 flex flex-wrap items-end gap-2">
+            <input value={genQ} onChange={(e) => setGenQ(e.target.value)} placeholder="Filtrar productos…" className={cx(inputCls, "w-56")} />
+            <div><span className="mb-1 block text-[11px] font-semibold text-zinc-600">Vigencia desde</span>
+              <input type="date" value={genFrom} onChange={(e) => setGenFrom(e.target.value)} className={inputCls} /></div>
+            <div><span className="mb-1 block text-[11px] font-semibold text-zinc-600">Vigencia hasta</span>
+              <input type="date" value={genTo} onChange={(e) => setGenTo(e.target.value)} className={inputCls} /></div>
+            <span className="text-xs text-zinc-500">{genSel.size} seleccionados</span>
+          </div>
+          <div className="max-h-56 overflow-auto rounded-lg border border-zinc-100">
+            {genVis.map((p) => {
+              const qual = genQuals[p.id];
+              return (
+                <label key={p.id} className="flex cursor-pointer items-center gap-2 border-b border-zinc-50 px-3 py-1.5 text-xs hover:bg-zinc-50">
+                  <input type="checkbox" checked={genSel.has(p.id)}
+                    onChange={(e) => setGenSel((s) => { const n = new Set(s); if (e.target.checked) n.add(p.id); else n.delete(p.id); return n; })} />
+                  <span className="w-40 font-mono">{p.sku}</span>
+                  <span className="flex-1 truncate text-zinc-500">{p.description}</span>
+                  <Pill k={qual?.status}>{qual?.status_display ?? "Sin calcular"}</Pill>
+                </label>
+              );
+            })}
+            {genProducts.length === 0 && <p className="px-3 py-4 text-center text-xs text-zinc-400">No hay productos con calificación para este tratado. Califícalos primero en “Cálculo de origen”.</p>}
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => setMode(null)}>Cerrar</Btn>
+            <Btn size="sm" onClick={generar} disabled={busy || genSel.size === 0}><Download size={14} className="-mt-0.5 mr-1 inline" />{busy ? "Generando…" : "Generar y descargar"}</Btn>
+          </div>
+        </div>
+      )}
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
 function ClientesView() {
   const { data, reload, loading } = useList<Party>(() => api.parties("customer"));
   const [editing, setEditing] = useState<Party | "new" | null>(null);
+  const [layoutsFor, setLayoutsFor] = useState<Party | null>(null);
   const [bulk, setBulk] = useState(false);
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
@@ -2693,6 +2909,7 @@ function ClientesView() {
             <td className="px-4 py-3 font-mono text-xs">{p.tax_id || "—"}</td>
             <td className="px-4 py-3 text-xs text-zinc-500">{[p.email, p.phone].filter(Boolean).join(" · ") || "—"}</td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
+              <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLayoutsFor(p)}>Layouts portal</Btn></span>
               <button onClick={() => setEditing(p)} title="Editar" className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
               <button onClick={() => del(p)} title="Eliminar" className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
             </td>
@@ -2702,6 +2919,7 @@ function ClientesView() {
       </Table>
       {editing && <ClienteForm party={editing === "new" ? null : editing}
         onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
+      {layoutsFor && <ClientLayoutsModal client={layoutsFor} onClose={() => setLayoutsFor(null)} />}
       {bulk && (
         <CargaMasivaModal title="Carga masiva de clientes" onClose={() => setBulk(false)} onDone={reload}
           hint="Da de alta o actualiza muchos clientes (importadores) a la vez."
