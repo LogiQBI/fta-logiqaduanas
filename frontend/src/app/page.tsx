@@ -1779,118 +1779,139 @@ function OriginResultReport({ result }: { result: OriginCalcResult }) {
   );
 }
 
-// Régimen automotriz T-MEC: evalúa los pilares (VCR net cost, LVC, acero,
-// aluminio, core parts) y da el veredicto combinado.
-const VCLASSES = [
-  { v: "passenger", l: "Automóvil de pasajeros" },
-  { v: "light_truck", l: "Camión ligero" },
-  { v: "heavy", l: "Vehículo pesado" },
-  { v: "autopart", l: "Autoparte (core)" },
-];
-const EMPTY_AUTO = {
-  vehicle_class: "passenger", as_of: new Date().toISOString().slice(0, 10),
-  net_cost: "", vnm: "", lvc_pct: "", wage_usd_h: "16", steel_na_pct: "", aluminum_na_pct: "",
-  core_parts_originating: false,
-};
-// Panel del régimen automotriz, INTEGRADO en "Cálculo de origen": aparece cuando la
-// fracción es una parte esencial (core part). Pide los datos extra (VCR costo neto,
-// LVC, acero/aluminio, core) y da el veredicto, que ES la determinación de origen.
+// Instructivo paso a paso para calcular el origen de una AUTOPARTE (core).
+function AutoInstructivoModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="¿Cómo se determina el origen de una autoparte?" onClose={onClose} wide>
+      <div className="space-y-3 text-sm text-zinc-700">
+        <p>Tu producto es una <strong>parte esencial (core part)</strong> del Anexo 4-B del T-MEC
+          (suspensión, ejes, transmisiones, dirección, carrocerías, motores, baterías). Para una
+          AUTOPARTE el origen se determina por el <strong>Valor de Contenido Regional (VCR)</strong>.</p>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+          <strong>Importante:</strong> el <strong>Valor de Contenido Laboral (LVC)</strong> y la
+          compra de <strong>acero/aluminio (70%)</strong> son requisitos del <strong>fabricante del
+          VEHÍCULO</strong>, NO de la autoparte. Por eso aquí <strong>no se piden</strong>.
+        </div>
+        <div>
+          <div className="font-semibold text-zinc-900">Paso a paso</div>
+          <ol className="ml-5 mt-1 list-decimal space-y-1">
+            <li>Elige el <strong>método de VCR</strong>:
+              <ul className="ml-4 list-disc">
+                <li><strong>Costo neto</strong> — umbral <strong>75%</strong> (suele ser más favorable; úsalo si tienes el costo).</li>
+                <li><strong>Valor de transacción</strong> — umbral <strong>85%</strong> (precio de venta).</li>
+              </ul>
+            </li>
+            <li>Captura la <strong>base</strong> (costo neto o valor de transacción del bien) y el
+              <strong> valor de materiales NO originarios (VNM)</strong>. El sistema los pre-llena
+              desde tu BOM: la base = suma del BOM; el VNM = suma de los insumos de países que NO son
+              miembros del tratado. Ajústalos si tu costeo real difiere.</li>
+            <li>VCR = <strong>(Base − VNM) ÷ Base × 100</strong>. Si <strong>VCR ≥ umbral</strong>, la
+              autoparte es <strong>originaria</strong>.</li>
+            <li><strong>Alternativa (CTC):</strong> muchas autopartes también califican por
+              <strong> salto arancelario</strong> según su regla específica (PSR) — si todos tus
+              insumos no originarios cambian de clasificación, puede calificar aunque no llegue al VCR.
+              El cálculo por BOM normal evalúa eso.</li>
+            <li><strong>De minimis:</strong> si el VNM no supera el <strong>10%</strong> del valor, hay
+              tolerancia para materiales que no cumplan el salto.</li>
+            <li>Si resulta originaria, ya puedes <strong>emitir el certificado</strong>.</li>
+          </ol>
+        </div>
+        <p className="text-xs text-zinc-400">Herramienta orientativa. Umbrales y fechas del T-MEC deben confirmarse contra la normativa vigente (Anexo 4-B y Reglamentaciones Uniformes) y validarse con un especialista antes de uso formal.</p>
+      </div>
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
+// Panel del régimen automotriz para AUTOPARTES (core), INTEGRADO en "Cálculo de
+// origen": solo pide el VCR (costo neto o valor de transacción). NO pide LVC ni
+// acero/aluminio (son requisitos del vehículo, no de la parte).
 function AutomotivePanel({ productId, treatyId, suggestNet, suggestVnm }: {
   productId: number; treatyId: number; suggestNet: string; suggestVnm: string;
 }) {
-  const [f, setF] = useState({ ...EMPTY_AUTO, net_cost: suggestNet, vnm: suggestVnm });
+  const [method, setMethod] = useState<"net_cost" | "transaction">("net_cost");
+  const [netCost, setNetCost] = useState(suggestNet);
+  const [txValue, setTxValue] = useState(suggestNet);
+  const [vnm, setVnm] = useState(suggestVnm);
+  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
   const [result, setResult] = useState<AutomotiveResult | null>(null);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
-  // Carga la evaluación previa guardada (o pre-llena con la estimación del BOM).
+  const [ayuda, setAyuda] = useState(false);
+  // Carga evaluación previa guardada (si existe).
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const a: AutomotiveSaved = await api.automotive(productId, treatyId);
-        if (!alive) return;
-        if (a && a.vehicle_class) {
-          setF({
-            vehicle_class: a.vehicle_class, as_of: a.as_of || EMPTY_AUTO.as_of,
-            net_cost: a.net_cost ?? suggestNet, vnm: a.vnm ?? suggestVnm, lvc_pct: a.lvc_pct ?? "",
-            wage_usd_h: a.wage_usd_h ?? "16", steel_na_pct: a.steel_na_pct ?? "",
-            aluminum_na_pct: a.aluminum_na_pct ?? "", core_parts_originating: !!a.core_parts_originating,
-          });
-          if (a.detail) setResult(a.detail);
-        } else {
-          setF({ ...EMPTY_AUTO, net_cost: suggestNet, vnm: suggestVnm });
-        }
+        const a: AutomotiveSaved & { rvc_method?: string } = await api.automotive(productId, treatyId);
+        if (!alive || !a || !a.vehicle_class) return;
+        if (a.net_cost) setNetCost(a.net_cost);
+        if (a.vnm) setVnm(a.vnm);
+        if (a.as_of) setAsOf(a.as_of);
+        if (a.detail) { setResult(a.detail); if (a.detail.rvc_method) setMethod(a.detail.rvc_method === "transaction" ? "transaction" : "net_cost"); }
       } catch { /* sin guardado */ }
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId, treatyId]);
+  const threshold = method === "transaction" ? "85" : "75";
   async function evaluar() {
     setBusy(true); setMsg("");
-    try { setResult(await api.calcAutomotive(productId, { treaty: treatyId, ...f })); }
-    catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+    try {
+      setResult(await api.calcAutomotive(productId, {
+        treaty: treatyId, vehicle_class: "autopart", as_of: asOf, rvc_method: method,
+        net_cost: netCost || "0", transaction_value: txValue || "0", vnm: vnm || "0",
+      }));
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   }
-  const numField = (k: keyof typeof f, label: string, suffix = "") => (
-    <Field label={label}>
-      <div className="flex items-center gap-1">
-        <input type="number" step="any" className={inputCls} value={f[k] as string} onChange={(e) => set(k, e.target.value)} />
-        {suffix && <span className="text-xs text-zinc-400">{suffix}</span>}
-      </div>
-    </Field>
-  );
   return (
     <div className="mt-4">
+      {ayuda && <AutoInstructivoModal onClose={() => setAyuda(false)} />}
       <Card className="border-amber-300 bg-amber-50/40 p-5">
-        <div className="mb-1 text-sm font-semibold text-amber-900">🚗 Régimen automotriz (parte esencial)</div>
-        <p className="mb-3 text-xs text-amber-800">Esta fracción es una <strong>parte esencial (core part)</strong> del T-MEC: el salto arancelario no basta. Completa estos datos para determinar el origen. El <strong>costo neto</strong> y el <strong>valor no originario</strong> se pre-llenaron desde el BOM (ajústalos si aplica).</p>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-amber-900">🚗 Autoparte esencial (core) — Valor de Contenido Regional</div>
+          <Btn variant="ghost" size="sm" onClick={() => setAyuda(true)}>¿Cómo se calcula?</Btn>
+        </div>
+        <p className="mb-3 text-xs text-amber-800">Para una autoparte el origen se determina por el <strong>VCR</strong>. No se piden LVC ni acero/aluminio (esos son del vehículo). La base y el valor no originario se pre-llenaron desde el BOM; ajústalos a tu costeo real.</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Clase de vehículo">
-            <select value={f.vehicle_class} onChange={(e) => set("vehicle_class", e.target.value)} className={inputCls}>
-              {VCLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
+          <Field label="Método de VCR">
+            <select value={method} onChange={(e) => setMethod(e.target.value as "net_cost" | "transaction")} className={inputCls}>
+              <option value="net_cost">Costo neto (umbral 75%)</option>
+              <option value="transaction">Valor de transacción (umbral 85%)</option>
             </select>
           </Field>
-          <Field label="Fecha (phase-in)"><input type="date" className={inputCls} value={f.as_of} onChange={(e) => set("as_of", e.target.value)} /></Field>
-          <div />
-          {numField("net_cost", "Costo neto del bien")}
-          {numField("vnm", "Valor materiales NO originarios")}
-          {numField("lvc_pct", "LVC (%)", "%")}
-          {numField("wage_usd_h", "Salario base", "USD/h")}
-          {numField("steel_na_pct", "Acero N.A. (%)", "%")}
-          {numField("aluminum_na_pct", "Aluminio N.A. (%)", "%")}
-          <Field label="Core parts">
-            <label className="flex items-center gap-2 text-sm text-zinc-700">
-              <input type="checkbox" checked={f.core_parts_originating} onChange={(e) => set("core_parts_originating", e.target.checked)} />
-              Los 7 sistemas core son originarios
-            </label>
-          </Field>
+          {method === "net_cost" ? (
+            <Field label="Costo neto del bien"><input type="number" step="any" className={inputCls} value={netCost} onChange={(e) => setNetCost(e.target.value)} /></Field>
+          ) : (
+            <Field label="Valor de transacción del bien"><input type="number" step="any" className={inputCls} value={txValue} onChange={(e) => setTxValue(e.target.value)} /></Field>
+          )}
+          <Field label="Valor de materiales NO originarios (VNM)"><input type="number" step="any" className={inputCls} value={vnm} onChange={(e) => setVnm(e.target.value)} /></Field>
+          <Field label="Fecha"><input type="date" className={inputCls} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
         </div>
-        <p className="mt-3 text-[11px] text-amber-700">⚠️ Orientativo: confirma umbrales/fechas del T-MEC con la normativa vigente. Se requieren 3 certificaciones a CBP (LVC, acero, aluminio).</p>
-        {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
-        <div className="mt-4"><Btn onClick={evaluar} disabled={busy}>{busy ? "Calculando…" : "Calcular origen (régimen automotriz)"}</Btn></div>
+        <p className="mt-3 text-xs text-amber-800">Umbral requerido: <strong>VCR ≥ {threshold}%</strong> ({method === "transaction" ? "valor de transacción" : "costo neto"}).</p>
+        {msg && <p className="mt-2 text-sm text-red-600">{msg}</p>}
+        <div className="mt-4"><Btn onClick={evaluar} disabled={busy}>{busy ? "Calculando…" : "Calcular origen"}</Btn></div>
       </Card>
 
       {result && (
         <div className="mt-3 rounded-lg border border-zinc-200 p-4">
           <div className="mb-3 flex items-center gap-2">
             <span className={cx("rounded-full px-3 py-1 text-sm font-bold", result.qualifies ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-              {result.qualifies ? "Originario: SÍ (cumple el régimen automotriz)" : "Originario: NO"}
+              {result.qualifies ? "Originario: SÍ (por VCR)" : "Originario: NO (por VCR)"}
             </span>
-            <span className="text-xs text-zinc-500">{result.class_label}{result.as_of ? ` · ${result.as_of}` : ""}</span>
           </div>
-          {!result.qualifies && result.failing.length > 0 && (
-            <p className="mb-3 text-sm text-red-700">Falla: {result.failing.join(", ")}.</p>
-          )}
-          <Table head={["Pilar", "Valor", "Umbral", "Estado", "Detalle"]}>
+          <Table head={["Criterio", "Valor", "Umbral", "Estado", "Detalle"]}>
             {result.pillars.map((p) => (
               <tr key={p.key}>
                 <td className="px-4 py-3 font-medium">{p.label}</td>
                 <td className="px-4 py-3 text-xs">{p.value ?? "—"}</td>
-                <td className="px-4 py-3 text-xs">{p.threshold}</td>
+                <td className="px-4 py-3 text-xs">{p.threshold}%</td>
                 <td className="px-4 py-3">{p.ok ? <span className="text-green-700">✓</span> : <span className="text-red-700">✗</span>}</td>
                 <td className="px-4 py-3 text-xs text-zinc-500">{p.detail}</td>
               </tr>
             ))}
           </Table>
+          {!result.qualifies && (
+            <p className="mt-2 text-xs text-amber-700">Si no alcanza el VCR, revisa si califica por <strong>salto arancelario (CTC)</strong> con el cálculo por BOM, o ajusta el costeo / origen de tus insumos.</p>
+          )}
           <p className="mt-3 text-xs text-zinc-400">{result.disclaimer}</p>
         </div>
       )}

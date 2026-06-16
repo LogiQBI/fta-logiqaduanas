@@ -160,6 +160,7 @@ export type AutoPillar = {
 export type AutomotiveResult = {
   vehicle_class: string; class_label: string; as_of: string | null; qualifies: boolean;
   pillars: AutoPillar[]; failing: string[]; rvc_value: string | null; disclaimer: string;
+  rvc_method?: string;
 };
 export type AutomotiveSaved = {
   vehicle_class?: string; as_of?: string | null; net_cost?: string; vnm?: string;

@@ -77,10 +77,52 @@ def lvc_threshold(vehicle_class, as_of):
 STEEL_ALUMINUM_PCT = Decimal("70")
 WAGE_MIN_USD_H = Decimal("16")
 
+# VCR de referencia para una AUTOPARTE esencial (core) — Anexo 4-B.
+# Una autoparte se determina SOLO por VCR; el LVC y el acero/aluminio son
+# requisitos del VEHÍCULO, no de la parte.
+PART_RVC = {"net_cost": Decimal("75"), "transaction": Decimal("85")}
+
+
+def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm):
+    """Una AUTOPARTE (core) se determina solo por VCR (costo neto o valor de
+    transacción). NO aplican LVC ni acero/aluminio (esos son del vehículo)."""
+    method = "transaction" if rvc_method == "transaction" else "net_cost"
+    base = _d(transaction_value) if method == "transaction" else _d(net_cost)
+    vnm_d = _d(vnm)
+    thr = PART_RVC[method]
+    base_label = "valor de transacción" if method == "transaction" else "costo neto"
+    if base > 0:
+        rvc = ((base - vnm_d) / base * 100).quantize(Decimal("0.01"))
+        ok = rvc >= thr
+        detail = f"VCR {rvc}% ({base_label} {base}, materiales no originarios {vnm_d})."
+    else:
+        rvc = None
+        ok = False
+        detail = f"Falta el {base_label} del bien para calcular el VCR."
+    pillar = {"key": "rvc", "label": f"VCR ({base_label})",
+              "value": str(rvc) if rvc is not None else None,
+              "threshold": str(thr), "ok": ok, "detail": detail}
+    return {
+        "vehicle_class": "autopart", "class_label": "Autoparte esencial (core)",
+        "as_of": as_of.isoformat() if as_of else None,
+        "qualifies": ok, "pillars": [pillar], "failing": [] if ok else [pillar["label"]],
+        "rvc_value": str(rvc) if rvc is not None else None, "rvc_method": method,
+        "disclaimer": ("Para una AUTOPARTE el origen se determina por el VCR; NO aplican "
+                       "el Valor de Contenido Laboral ni la compra de acero/aluminio (esos son "
+                       "requisitos del fabricante del VEHÍCULO). Umbral de referencia para parte "
+                       "esencial: 75% costo neto / 85% valor de transacción. Muchas autopartes "
+                       "también pueden calificar por salto arancelario (CTC) según su PSR. "
+                       "Orientativo; valida con un especialista."),
+    }
+
 
 def evaluate(*, vehicle_class, as_of, net_cost, vnm, lvc_pct, wage_usd_h,
-             steel_na_pct, aluminum_na_pct, core_parts_originating):
-    """Evalúa los pilares automotrices. Devuelve dict con cada pilar y el veredicto."""
+             steel_na_pct, aluminum_na_pct, core_parts_originating,
+             rvc_method="net_cost", transaction_value=None):
+    """Evalúa el régimen automotriz. Para AUTOPARTE: solo VCR. Para VEHÍCULO: los
+    5 pilares (VCR + LVC + acero + aluminio + core parts)."""
+    if vehicle_class == "autopart":
+        return _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm)
     nc = _d(net_cost)
     vnm_d = _d(vnm)
     pillars = []
