@@ -103,6 +103,34 @@ class CatalogPagination(PageNumberPagination):
     max_page_size = 10000
 
 
+def active_membership(request):
+    """Membresía efectiva del request.
+
+    Para el equipo LogiQ (superusuario) que "abre" una empresa con el header
+    `X-As-Tenant: <id>`, devuelve una membresía SINTÉTICA de administrador de ese
+    tenant (objeto en memoria, NO se guarda en BD). Así el master ve el sistema de
+    esa empresa como admin sin un login aparte. Para usuarios normales devuelve su
+    membresía real (comportamiento sin cambios)."""
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return None
+    if user.is_superuser:
+        tid = request.headers.get("X-As-Tenant")
+        if tid:
+            t = Tenant.objects.filter(pk=tid).first()
+            if t:
+                return Membership(user=user, tenant=t,
+                                  role=Membership.Role.ADMIN, party=None)
+        return None
+    return user.memberships.select_related("party", "tenant").first()
+
+
+def is_impersonating(request):
+    """True si un master está viendo una empresa vía X-As-Tenant."""
+    user = getattr(request, "user", None)
+    return bool(user and user.is_superuser and request.headers.get("X-As-Tenant"))
+
+
 class TenantScopedViewSet(viewsets.ModelViewSet):
     """Acota por tenant y, si el usuario es proveedor, por su Party.
 
@@ -114,7 +142,7 @@ class TenantScopedViewSet(viewsets.ModelViewSet):
     pagination_class = CatalogPagination
 
     def membership(self):
-        return self.request.user.memberships.select_related("party").first()
+        return active_membership(self.request)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -149,7 +177,7 @@ class OriginRuleViewSet(viewsets.ModelViewSet):
     pagination_class = RulesPagination
 
     def _membership(self):
-        return self.request.user.memberships.select_related("tenant").first()
+        return active_membership(self.request)
 
     def _require_master(self):
         if not self.request.user.is_superuser:
@@ -1455,7 +1483,7 @@ def bulk_import(request):
     """Importa un .xlsx para carga masiva (solo empresa). ?type=products|suppliers|
     customers|bom. Devuelve {creados, actualizados, errores}."""
     from apps.origin import bulk
-    m = request.user.memberships.select_related("tenant").first()
+    m = active_membership(request)
     if not m or m.is_supplier:
         raise PermissionDenied("Solo la empresa puede hacer carga masiva de catálogos.")
     t = request.query_params.get("type", "")
@@ -1486,7 +1514,7 @@ def license_view(request):
     """La EMPRESA consulta su propia licencia (vigencia, días restantes, monto de
     renovación) para el dashboard y el módulo de Licencia."""
     from apps.tenants.serializers import LicenseSerializer
-    m = request.user.memberships.select_related("tenant__license").first()
+    m = active_membership(request)
     if not m:
         return Response({})
     lic = getattr(m.tenant, "license", None)
@@ -1500,7 +1528,7 @@ def license_view(request):
 def company_profile_view(request):
     """La EMPRESA consulta y edita los datos de su empresa y su firma (PNG),
     que se usan para emitir/llenar los certificados de origen."""
-    m = request.user.memberships.select_related("tenant").first()
+    m = active_membership(request)
     if not m or m.is_supplier:
         raise PermissionDenied("Solo la empresa puede gestionar los datos de la empresa.")
     prof, created = CompanyProfile.objects.get_or_create(tenant=m.tenant)
@@ -1562,27 +1590,32 @@ def change_password(request):
 @permission_classes([IsAuthenticated])
 def me(request):
     """Identidad del usuario: master, empresa o proveedor."""
-    # El equipo de LogiQ (superusuario) es el perfil MASTER del SaaS.
-    if request.user.is_superuser:
+    impersonating = is_impersonating(request)
+    # El equipo de LogiQ (superusuario) es el perfil MASTER del SaaS. Salvo que
+    # esté "abriendo" una empresa (X-As-Tenant): en ese caso responde como admin
+    # de esa empresa pero conservando is_master + impersonating.
+    if request.user.is_superuser and not impersonating:
         return Response({
             "username": request.user.username,
             "role": "master", "role_display": "Master (LogiQ)",
-            "is_master": True, "is_supplier": False,
+            "is_master": True, "is_supplier": False, "impersonating": False,
             "tenant": None, "supplier": None,
         })
-    m = request.user.memberships.select_related("tenant", "party", "tenant__profile").first()
+    m = active_membership(request)
     if not m:
         return Response({"username": request.user.username, "role": None,
-                         "is_master": False, "tenant": None, "supplier": None})
+                         "is_master": request.user.is_superuser,
+                         "impersonating": False, "tenant": None, "supplier": None})
     # Logo de la empresa (tenant). El proveedor ve el logo de su empresa-cliente.
     tprof = getattr(m.tenant, "profile", None)
     return Response({
         "username": (m.login_name or request.user.username) if m.is_supplier else request.user.username,
         "role": m.role,
         "role_display": m.get_role_display(),
-        "is_master": False,
+        "is_master": request.user.is_superuser,
+        "impersonating": impersonating,
         "is_supplier": m.is_supplier,
-        "must_change_password": m.must_change_password,
+        "must_change_password": getattr(m, "must_change_password", False),
         "tenant": {"id": m.tenant_id, "name": m.tenant.name, "slug": m.tenant.slug,
                    "logo": (tprof.logo_png if tprof else "")},
         "supplier": ({"id": m.party_id, "name": m.party.name, "slug": m.party.slug}

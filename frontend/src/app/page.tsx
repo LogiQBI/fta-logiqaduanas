@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkPreview, BulkResult, clearToken, ClientLayout, EmittedCertificate, getToken, LicenseInfo,
+  BulkPreview, BulkResult, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
+  getAsTenant, getToken, LicenseInfo, setAsTenant,
   MasterTenant, Me, OriginCalcResult, OriginRule, Party, Product, ProductChangeLog, Qualification,
   Solicitation, SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
@@ -59,7 +60,7 @@ export default function Page() {
   if (!me) return <Login onLogin={loadMe} />;
   if (me.must_change_password)
     return <FirstLoginPassword me={me} onDone={loadMe} onLogout={logout} />;
-  if (me.role !== "master" && lic && lic.is_valid === false)
+  if (me.role !== "master" && !me.is_master && lic && lic.is_valid === false)
     return <SuspensionScreen lic={lic} onLogout={logout} />;
   return <Shell me={me} onLogout={logout} />;
 }
@@ -378,7 +379,19 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const headerName = me.is_supplier ? me.supplier?.name : (me.tenant?.name ?? "LogiQ");
 
   return (
-    <div className="flex min-h-screen bg-[#f5f6f8] text-zinc-800">
+    <div className="flex min-h-screen flex-col">
+    {me.impersonating && (
+      <div className="flex items-center justify-between gap-3 bg-indigo-600 px-6 py-2 text-sm text-white">
+        <span className="truncate">
+          Estás viendo <strong>{me.tenant?.name}</strong> como <strong>equipo LogiQ</strong> (administrador).
+        </span>
+        <button onClick={() => { clearAsTenant(); window.location.reload(); }}
+          className="shrink-0 rounded-md bg-white/15 px-3 py-1 font-medium hover:bg-white/25">
+          Salir y volver a LogiQ
+        </button>
+      </div>
+    )}
+    <div className="flex flex-1 bg-[#f5f6f8] text-zinc-800">
       {/* Catálogo de países para autocompletar/validar inputs de país */}
       <datalist id="iso-countries">
         {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
@@ -463,6 +476,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <View view={view} me={me} go={setView} />
         </main>
       </div>
+    </div>
     </div>
   );
 }
@@ -818,6 +832,7 @@ function EmpresasView() {
             <td className="px-4 py-3">{t.license?.plan_display ?? "—"}</td>
             <td className="px-4 py-3"><Pill k={t.license?.status}>{t.license?.status_display ?? "—"}</Pill></td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
+              <span className="mr-2 inline-block"><Btn size="sm" onClick={() => { setAsTenant(t.id); window.location.reload(); }}>Abrir empresa</Btn></span>
               <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
               <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLicFor(t)}>Licencia</Btn></span>
               <Btn size="sm" variant="danger" onClick={() => { if (confirm(`¿Eliminar ${t.name}?`)) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>

@@ -176,6 +176,10 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.up\.railway\.app$",
     r"^https://.*\.logiqaduanas\.com$",
 ]
+# Header custom para "Abrir empresa" (el master ve una empresa como admin).
+# En producción es same-origin (no hay preflight); en dev sí lo necesita.
+from corsheaders.defaults import default_headers as _cors_default_headers  # noqa: E402
+CORS_ALLOW_HEADERS = list(_cors_default_headers) + ["x-as-tenant"]
 
 
 # --- Endurecimiento de seguridad ---

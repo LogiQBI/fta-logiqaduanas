@@ -12,13 +12,33 @@ export function clearToken() {
   localStorage.removeItem("fta_token");
 }
 
-async function req(path: string, opts: RequestInit = {}) {
+// "Abrir empresa": el equipo LogiQ (master) ve una empresa como admin sin login
+// aparte. Se guarda el id del tenant y se manda en cada request (X-As-Tenant).
+export function getAsTenant(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("fta_as_tenant");
+}
+export function setAsTenant(id: number | string) {
+  localStorage.setItem("fta_as_tenant", String(id));
+}
+export function clearAsTenant() {
+  localStorage.removeItem("fta_as_tenant");
+}
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
   const token = getToken();
+  if (token) h["Authorization"] = `Token ${token}`;
+  const as = getAsTenant();
+  if (as) h["X-As-Tenant"] = as;
+  return h;
+}
+
+async function req(path: string, opts: RequestInit = {}) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...authHeaders(),
     ...((opts.headers as Record<string, string>) || {}),
   };
-  if (token) headers["Authorization"] = `Token ${token}`;
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -29,9 +49,8 @@ async function req(path: string, opts: RequestInit = {}) {
 
 // Descarga un archivo (xlsx) autenticado y dispara la descarga en el navegador.
 async function downloadFile(path: string, filename: string) {
-  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
-    headers: token ? { Authorization: `Token ${token}` } : {},
+    headers: authHeaders(),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -46,12 +65,11 @@ async function downloadFile(path: string, filename: string) {
 
 // Sube un archivo (multipart) y devuelve el JSON de respuesta.
 async function uploadFile(path: string, file: File) {
-  const token = getToken();
   const fd = new FormData();
   fd.append("file", file);
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: token ? { Authorization: `Token ${token}` } : {},
+    headers: authHeaders(),
     body: fd,
   });
   const data = await res.json().catch(() => ({}));
@@ -61,12 +79,11 @@ async function uploadFile(path: string, file: File) {
 
 // Envía un formulario multipart (archivo + campos) y devuelve el JSON.
 async function uploadForm(path: string, fields: Record<string, string | number | File>) {
-  const token = getToken();
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v instanceof File ? v : String(v)));
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: token ? { Authorization: `Token ${token}` } : {},
+    headers: authHeaders(),
     body: fd,
   });
   const data = await res.json().catch(() => ({}));
@@ -76,10 +93,9 @@ async function uploadForm(path: string, fields: Record<string, string | number |
 
 // POST que descarga un archivo binario (ej. el layout del cliente generado).
 async function downloadPost(path: string, body: Record<string, unknown>, filename: string) {
-  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Token ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -184,7 +200,8 @@ export type Qualification = {
 };
 export type Me = {
   username: string; role: string | null; role_display?: string;
-  is_supplier?: boolean; must_change_password?: boolean;
+  is_supplier?: boolean; is_master?: boolean; impersonating?: boolean;
+  must_change_password?: boolean;
   tenant: { id: number; name: string; slug: string; logo?: string } | null;
   supplier: { id: number; name: string; slug: string } | null;
 };
