@@ -1998,23 +1998,32 @@ function CalculoOrigenView() {
               <tr>
                 <th className="px-4 py-2.5">Insumo</th>
                 <th className="px-4 py-2.5">Proveedor</th>
-                <th className="px-4 py-2.5">Valor</th>
+                <th className="px-4 py-2.5 text-right">Precio unit.</th>
+                <th className="px-4 py-2.5 text-right">Cant.</th>
+                <th className="px-4 py-2.5 text-right">Valor</th>
                 <th className="px-4 py-2.5">Fuente de origen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {comps.map((c) => {
                 const supplierMode = c.origin_mode === "supplier";
-                const valor = (Number(c.component_unit_cost || 0) * Number(c.quantity || 0)).toFixed(2);
+                const pu = Number(c.component_unit_cost || 0);
+                const qty = Number(c.quantity || 0);
+                const valor = (pu * qty).toFixed(2);
                 return (
                   <tr key={c.id} className="align-top">
                     <td className="px-4 py-3">
                       <div className="font-mono text-xs">{c.component_sku}</div>
                       <div className="text-xs text-zinc-500">{c.component_description}</div>
-                      <div className="text-[11px] text-zinc-400">HS {c.component_hs ? formatHs(c.component_hs) : "—"} · cant. {c.quantity}</div>
+                      <div className="text-[11px] text-zinc-400">HS {c.component_hs ? formatHs(c.component_hs) : "—"}</div>
                     </td>
                     <td className="px-4 py-3 text-xs">{c.component_supplier_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-xs">{valor}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">{pu.toFixed(4)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">{qty}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="font-mono text-xs font-medium text-zinc-700">{valor}</div>
+                      <div className="text-[10px] text-zinc-400">{pu.toFixed(4)} × {qty}</div>
+                    </td>
                     <td className="px-4 py-3">
                       <label className="flex items-center gap-2 text-xs font-medium text-zinc-700">
                         <input type="checkbox" checked={supplierMode}
