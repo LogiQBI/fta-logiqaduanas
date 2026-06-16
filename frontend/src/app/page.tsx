@@ -1627,6 +1627,11 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
           {preview.existentes_skus.length > 0 && (
             <div className="mt-1 text-xs text-amber-700">Ya existen: {preview.existentes_skus.join(", ")}{preview.existentes > preview.existentes_skus.length ? "…" : ""}</div>
           )}
+          {(preview.duplicados ?? 0) > 0 && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              ⚠️ <strong>{preview.duplicados} número(s) de parte vienen REPETIDOS</strong> en el archivo; se importará solo la primera fila de cada uno. Deja un solo renglón por número de parte: <span className="font-mono">{(preview.duplicados_skus ?? []).join(", ")}</span>
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
             <Btn size="sm" onClick={() => file && doImport(file)} disabled={busy}>{busy ? "Cargando…" : `Sí, actualizar ${preview.existentes}${preview.nuevos > 0 ? ` y agregar ${preview.nuevos}` : ""}`}</Btn>
             <Btn size="sm" variant="ghost" onClick={() => setPreview(null)}>Cancelar</Btn>
@@ -1652,6 +1657,12 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
               <ul className="mt-1 max-h-40 overflow-auto text-xs text-amber-700">
                 {result.advertencias!.map((e, i) => <li key={i}>Fila {e.fila}: {e.error}</li>)}
               </ul>
+            </div>
+          )}
+          {(result.duplicados_skus?.length ?? 0) > 0 && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
+              <div className="font-semibold text-red-700">{result.duplicados_skus!.length} número(s) de parte venían REPETIDOS (se usó la primera fila de cada uno):</div>
+              <div className="mt-1 max-h-32 overflow-auto font-mono text-xs text-red-600">{result.duplicados_skus!.join(", ")}</div>
             </div>
           )}
           {(result.sin_precio_skus?.length ?? 0) > 0 && (

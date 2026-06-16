@@ -49,13 +49,23 @@ def import_products(tenant, rows, user):
     país, proveedor…), dejando intactos los que vengan vacíos. Si no existe, se crea."""
     from apps.catalog.models import Party, Product, ProductChangeLog, log_product_changes
     res = {"creados": 0, "actualizados": 0, "omitidos": 0, "errores": [], "advertencias": [],
-           "creados_skus": [], "actualizados_skus": [], "sin_precio_skus": []}
+           "creados_skus": [], "actualizados_skus": [], "sin_precio_skus": [], "duplicados_skus": []}
+    seen = set()  # SKUs ya procesados en ESTE archivo (para no cargar duplicados)
     for i, r in enumerate(rows, start=2):
         # El número de parte se normaliza a MAYÚSCULAS y el match es sin distinguir
         # mayúsc/minúsc, para que re-subir actualice aunque cambie el case.
         sku = str(r.get("sku") or "").strip().upper()
         if not sku:
             res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
+        # SKU repetido dentro del mismo archivo: se importa solo la PRIMERA aparición.
+        if sku in seen:
+            if len(res["duplicados_skus"]) < 200:
+                res["duplicados_skus"].append(sku)
+            res["errores"].append({"fila": i,
+                "error": f"“{sku}” está repetido en el archivo; se ignoró esta fila "
+                         "(se usó la primera). Deja un solo renglón por número de parte."})
+            continue
+        seen.add(sku)
         try:
             adv = None
             with transaction.atomic():
@@ -127,17 +137,25 @@ def preview_products(tenant, rows):
     cuántos son nuevos (para confirmar antes de importar)."""
     from apps.catalog.models import Product
     skus = []
+    dup = []  # SKUs repetidos dentro del mismo archivo
+    seen = set()
     for r in rows:
         s = str(r.get("sku") or "").strip().upper()
-        if s and s not in skus:
-            skus.append(s)
+        if not s:
+            continue
+        if s in seen:
+            if s not in dup:
+                dup.append(s)
+        else:
+            seen.add(s); skus.append(s)
     # Comparación sin distinguir mayúsc/minúsc: normaliza lo guardado a MAYÚSCULAS.
     existentes = {sk.upper() for sk in Product.objects.filter(tenant=tenant)
                   .values_list("sku", flat=True)}
     ex = [s for s in skus if s in existentes]
     nuevos = [s for s in skus if s not in existentes]
     return {"total": len(skus), "existentes": len(ex), "nuevos": len(nuevos),
-            "existentes_skus": ex[:40]}
+            "existentes_skus": ex[:40],
+            "duplicados": len(dup), "duplicados_skus": dup[:40]}
 
 
 def _import_parties(tenant, rows, kind):

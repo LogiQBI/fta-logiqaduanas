@@ -98,8 +98,12 @@ export type BulkResult = {
   errores: { fila: number; error: string }[];
   advertencias?: { fila: number; error: string }[];
   creados_skus?: string[]; actualizados_skus?: string[]; sin_precio_skus?: string[];
+  duplicados_skus?: string[];
 };
-export type BulkPreview = { total: number; existentes: number; nuevos: number; existentes_skus: string[] };
+export type BulkPreview = {
+  total: number; existentes: number; nuevos: number; existentes_skus: string[];
+  duplicados?: number; duplicados_skus?: string[];
+};
 export type EmittedCertificate = {
   id: number; folio: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;

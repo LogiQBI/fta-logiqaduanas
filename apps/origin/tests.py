@@ -307,3 +307,30 @@ class ClientLayoutTest(TestCase):
         self.assertEqual(ws["C2"].value, "9403.60")
         self.assertEqual(ws["D2"].value, "Y")
         self.assertEqual(ws["E2"].value, "CTC")
+
+
+class BulkDuplicateTest(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="ACME", slug="acme")
+
+    def test_duplicate_sku_in_file_is_reported_and_first_wins(self):
+        res = import_products(self.tenant, [
+            {"sku": "DUP-1", "descripcion": "Primero", "costo_unitario": "5.00"},
+            {"sku": "OK-2", "descripcion": "B", "costo_unitario": "1.00"},
+            {"sku": "dup-1", "descripcion": "Segundo (repetido)", "costo_unitario": "9.99"},
+        ], user=None)
+        self.assertIn("DUP-1", res["duplicados_skus"])      # repetido (case-insensitive)
+        self.assertEqual(res["creados"], 2)                 # solo DUP-1 y OK-2
+        # ganó la PRIMERA fila (5.00), no la repetida (9.99)
+        p = Product.objects.get(tenant=self.tenant, sku="DUP-1")
+        self.assertEqual(p.unit_cost, Decimal("5.0000"))
+        self.assertEqual(p.description, "Primero")
+
+    def test_preview_reports_duplicates(self):
+        from apps.origin.bulk import preview_products
+        pv = preview_products(self.tenant, [
+            {"sku": "A"}, {"sku": "B"}, {"sku": "a"},
+        ])
+        self.assertEqual(pv["total"], 2)        # A, B (únicos)
+        self.assertEqual(pv["duplicados"], 1)   # "a" repite "A"
+        self.assertIn("A", pv["duplicados_skus"])
