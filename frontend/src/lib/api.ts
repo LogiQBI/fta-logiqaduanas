@@ -179,7 +179,7 @@ export type Qualification = {
 export type Me = {
   username: string; role: string | null; role_display?: string;
   is_supplier?: boolean; must_change_password?: boolean;
-  tenant: { id: number; name: string; slug: string } | null;
+  tenant: { id: number; name: string; slug: string; logo?: string } | null;
   supplier: { id: number; name: string; slug: string } | null;
 };
 export type BomLine = {
@@ -217,6 +217,7 @@ export type CompanyProfile = {
   state: string; postal_code: string; country: string;
   contact_name: string; contact_email: string; contact_phone: string;
   signatory_name: string; signatory_title: string; signature_png: string;
+  logo_png?: string;
 };
 export type DeclarationDetail = {
   is_originating: boolean; country_of_origin: string;

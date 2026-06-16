@@ -99,6 +99,10 @@ class CompanyProfile(TimeStampedModel):
     signatory_name = models.CharField("Nombre de quien firma", max_length=255, blank=True)
     signatory_title = models.CharField("Cargo de quien firma", max_length=120, blank=True)
     signature_png = models.TextField("Firma (PNG en base64)", blank=True)
+    # Logo de la empresa (PNG/data URI en base64). Aparece en la barra superior;
+    # el proveedor ve el logo de su empresa-cliente. Railway tiene almacenamiento
+    # efímero -> se guarda en BD.
+    logo_png = models.TextField("Logo (PNG en base64)", blank=True)
 
     class Meta:
         verbose_name = "Datos de la empresa"

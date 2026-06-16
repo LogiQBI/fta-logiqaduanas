@@ -169,13 +169,19 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
         fields = ["id", "tenant", "tenant_name", "legal_name", "tax_id", "address",
                   "city", "state", "postal_code", "country", "contact_name",
                   "contact_email", "contact_phone", "signatory_name",
-                  "signatory_title", "signature_png"]
+                  "signatory_title", "signature_png", "logo_png"]
         read_only_fields = ["tenant"]
 
     def validate_signature_png(self, value):
         if value and len(value) > 3_000_000:
             raise serializers.ValidationError(
                 "La imagen de la firma es muy grande. Usa un PNG más pequeño.")
+        return value
+
+    def validate_logo_png(self, value):
+        if value and len(value) > 3_000_000:
+            raise serializers.ValidationError(
+                "El logo es muy grande. Usa un PNG más pequeño (≤ ~2 MB).")
         return value
 
 

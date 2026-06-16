@@ -427,10 +427,16 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
       {/* Main */}
       <div className="flex flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-6">
-          <div className="relative w-80 max-w-full">
+          <div className="relative w-64 max-w-full">
             <Search size={16} className="absolute left-3 top-2.5 text-zinc-400" />
             <input placeholder="Buscar…" className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
           </div>
+          {me.tenant?.logo && (
+            <div className="ml-4 flex min-w-0 items-center gap-2">
+              <img src={me.tenant.logo} alt={me.tenant.name} className="h-8 w-auto max-w-[150px] object-contain" />
+              <span className="hidden truncate text-sm font-semibold text-zinc-700 lg:inline">{me.tenant.name}</span>
+            </div>
+          )}
           <div className="ml-auto flex items-center gap-3">
           <ThemeToggle />
           <div className="relative">
@@ -3622,19 +3628,23 @@ type ProfileShape = {
   state: string; postal_code: string; country: string;
   contact_name: string; contact_email: string; contact_phone: string;
   signatory_name: string; signatory_title: string; signature_png: string;
+  logo_png?: string;
 };
 const EMPTY_PROFILE: ProfileShape = {
   legal_name: "", tax_id: "", address: "", city: "", state: "", postal_code: "",
   country: "", contact_name: "", contact_email: "", contact_phone: "",
-  signatory_name: "", signatory_title: "", signature_png: "",
+  signatory_name: "", signatory_title: "", signature_png: "", logo_png: "",
 };
 // Editor de "Datos de la empresa" reutilizable por PROVEEDOR y EMPRESA.
 // El país se captura en ISO-3 (tres letras) para los certificados (PDF).
-function ProfileEditor({ desc, load, save, lockIdentity }: {
+// `showLogo` (solo EMPRESA): permite subir el logo que aparece en la barra superior.
+function ProfileEditor({ desc, load, save, lockIdentity, showLogo, onLogoSaved }: {
   desc: string;
   load: () => Promise<ProfileShape>;
   save: (p: ProfileShape) => Promise<unknown>;
   lockIdentity?: boolean;
+  showLogo?: boolean;
+  onLogoSaved?: () => void;
 }) {
   const [form, setForm] = useState<ProfileShape>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
@@ -3654,9 +3664,18 @@ function ProfileEditor({ desc, load, save, lockIdentity }: {
     reader.onload = () => set("signature_png", String(reader.result || ""));
     reader.readAsDataURL(file);
   }
+  function onLogoFile(file: File | undefined) {
+    setErr("");
+    if (!file) return;
+    if (!/png|jpe?g|svg/i.test(file.type)) { setErr("El logo debe ser PNG, JPG o SVG."); return; }
+    if (file.size > 1_500_000) { setErr("El logo es muy grande (máx. 1.5 MB). Usa uno más ligero."); return; }
+    const reader = new FileReader();
+    reader.onload = () => set("logo_png", String(reader.result || ""));
+    reader.readAsDataURL(file);
+  }
   async function guardar() {
     setSaving(true); setMsg(""); setErr("");
-    try { await save(form); setMsg("Datos guardados."); }
+    try { await save(form); setMsg("Datos guardados."); if (onLogoSaved) onLogoSaved(); }
     catch (e) { setErr((e as Error).message); }
     finally { setSaving(false); }
   }
@@ -3685,6 +3704,22 @@ function ProfileEditor({ desc, load, save, lockIdentity }: {
           </Field>
         </div>
       </Card>
+      {showLogo && (
+        <Card className="mb-4 p-5">
+          <div className="mb-1 text-sm font-semibold text-zinc-800">Logo de la empresa</div>
+          <p className="mb-3 text-xs text-zinc-500">Sube el logo (PNG con fondo transparente recomendado). Aparecerá en la barra superior del sistema; tus proveedores también lo verán al entrar.</p>
+          {form.logo_png ? (
+            <div className="flex items-center gap-4">
+              <img src={form.logo_png} alt="Logo" className="max-h-16 max-w-[220px] rounded-lg border border-zinc-200 bg-white object-contain p-2" />
+              <Btn variant="ghost" size="sm" onClick={() => set("logo_png", "")}>Quitar logo</Btn>
+            </div>
+          ) : (
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml"
+              onChange={(e) => onLogoFile(e.target.files?.[0])}
+              className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+          )}
+        </Card>
+      )}
       <Card className="mb-4 p-5">
         <div className="mb-3 text-sm font-semibold text-zinc-800">Contacto</div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -3729,8 +3764,10 @@ function DatosEmpresaView() {
 // EMPRESA: sus datos para emitir certificados.
 function DatosEmpresaCompanyView() {
   const load = useCallback(() => api.companyProfile() as Promise<ProfileShape>, []);
-  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity
-    desc="Datos y firma de tu empresa para llenar los certificados de origen. La razón social y el RFC los administra LogiQ (no editables aquí)." />;
+  // Al guardar, recargamos para que el logo nuevo aparezca en la barra superior.
+  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity showLogo
+    onLogoSaved={() => { setTimeout(() => window.location.reload(), 600); }}
+    desc="Datos, logo y firma de tu empresa. El logo aparece en la barra superior (y lo ven tus proveedores). La razón social y el RFC los administra LogiQ." />;
 }
 // Color/etiqueta de la vigencia según días restantes.
 function vigenciaInfo(d: number | null | undefined): { txt: string; cls: string } {

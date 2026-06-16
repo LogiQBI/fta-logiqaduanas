@@ -1535,10 +1535,12 @@ def me(request):
             "is_master": True, "is_supplier": False,
             "tenant": None, "supplier": None,
         })
-    m = request.user.memberships.select_related("tenant", "party").first()
+    m = request.user.memberships.select_related("tenant", "party", "tenant__profile").first()
     if not m:
         return Response({"username": request.user.username, "role": None,
                          "is_master": False, "tenant": None, "supplier": None})
+    # Logo de la empresa (tenant). El proveedor ve el logo de su empresa-cliente.
+    tprof = getattr(m.tenant, "profile", None)
     return Response({
         "username": (m.login_name or request.user.username) if m.is_supplier else request.user.username,
         "role": m.role,
@@ -1546,7 +1548,8 @@ def me(request):
         "is_master": False,
         "is_supplier": m.is_supplier,
         "must_change_password": m.must_change_password,
-        "tenant": {"id": m.tenant_id, "name": m.tenant.name, "slug": m.tenant.slug},
+        "tenant": {"id": m.tenant_id, "name": m.tenant.name, "slug": m.tenant.slug,
+                   "logo": (tprof.logo_png if tprof else "")},
         "supplier": ({"id": m.party_id, "name": m.party.name, "slug": m.party.slug}
                      if m.party_id else None),
     })
