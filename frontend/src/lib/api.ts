@@ -176,7 +176,8 @@ export type OriginCalcResult = {
   detail: Record<string, unknown>;
 };
 export type OriginAnalysis = {
-  id: number; product: number; treaty: number; treaty_code?: string;
+  id: number; product: number; product_sku?: string; product_description?: string;
+  product_hs?: string; treaty: number; treaty_code?: string;
   kind: string; kind_display?: string; status: string; status_display?: string;
   criterion: string; rvc_value: string | null; total_value: string | null;
   vnm: string | null; computed_by?: string | null; created_at: string;

@@ -214,6 +214,9 @@ class OriginAnalysisSerializer(serializers.ModelSerializer):
     status_display = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+    product_sku = serializers.CharField(source="product.sku", read_only=True)
+    product_description = serializers.CharField(source="product.description", read_only=True)
+    product_hs = serializers.CharField(source="product.hs_code", read_only=True)
     computed_by = serializers.CharField(source="computed_by.username", read_only=True, default=None)
 
     STATUS_LABELS = {"QUALIFIES": "Califica", "DOES_NOT": "No califica",
@@ -222,7 +225,8 @@ class OriginAnalysisSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OriginAnalysis
-        fields = ["id", "product", "treaty", "treaty_code", "kind", "kind_display",
+        fields = ["id", "product", "product_sku", "product_description", "product_hs",
+                  "treaty", "treaty_code", "kind", "kind_display",
                   "status", "status_display", "criterion", "rvc_value", "total_value",
                   "vnm", "computed_by", "created_at"]
 

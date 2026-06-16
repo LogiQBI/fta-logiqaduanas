@@ -180,7 +180,7 @@ def _evaluate_product(product, treaty, as_of, visited):
         return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
                 "detail": {"error": f"Ciclo en el BOM detectado en {product.sku}."}}
     visited = visited | {product.id}
-    components = list(product.bom_components.select_related("component").all())
+    components = list(product.bom_components.select_related("component", "component__supplier").all())
     if not components:
         return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
                 "detail": {"error": "El producto no tiene lista de materiales (BOM)."}}
@@ -205,6 +205,7 @@ def _evaluate_product(product, treaty, as_of, visited):
             "unit_cost": str(bc.component.unit_cost), "line_value": str(val),
             "originating": info["originating"], "country": info["country"],
             "origin_source": info["source"],
+            "supplier": (bc.component.supplier.name if bc.component.supplier_id else ""),
         })
 
     transaction_value = product.unit_cost if product.unit_cost else total
