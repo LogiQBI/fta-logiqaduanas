@@ -1965,6 +1965,7 @@ function CalculoOrigenView() {
   const [product, setProduct] = useState<Product | null>(null);
   const [members, setMembers] = useState<string[]>([]);
   const [loadingBom, setLoadingBom] = useState(false);
+  const [bomError, setBomError] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
   const [ayuda, setAyuda] = useState(false);
@@ -1987,12 +1988,12 @@ function CalculoOrigenView() {
   }, [treatiesL.data, treatyId]);
 
   const loadBom = useCallback(async () => {
-    if (!productId || !treatyId) { setComps([]); setProduct(null); return; }
-    setLoadingBom(true); setResult(null);
+    if (!productId || !treatyId) { setComps([]); setProduct(null); setBomError(false); return; }
+    setLoadingBom(true); setResult(null); setBomError(false); setMsg("");
     try {
       const r = await api.productBomOrigin(Number(productId), Number(treatyId));
       setComps(r.components); setProduct(r.product); setMembers(r.treaty_members ?? []);
-    } catch (e) { setMsg((e as Error).message); }
+    } catch (e) { setBomError(true); setComps([]); setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
   useEffect(() => { loadBom(); }, [loadBom]);
@@ -2040,7 +2041,13 @@ function CalculoOrigenView() {
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
 
       {!productId && <p className="text-sm text-zinc-400">Elige un producto para ver su lista de materiales.</p>}
-      {productId && !loadingBom && comps.length === 0 && (
+      {productId && !loadingBom && bomError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          No se pudo cargar la información del producto (puede ser una interrupción temporal del servidor).
+          <button onClick={() => loadBom()} className="ml-2 font-medium text-blue-600 hover:underline">Reintentar</button>
+        </div>
+      )}
+      {productId && !loadingBom && !bomError && comps.length === 0 && (
         <p className="text-sm text-zinc-400">Este producto no tiene BOM. Agrégalo en “Productos” → botón “BOM”.</p>
       )}
       {comps.length > 0 && (
