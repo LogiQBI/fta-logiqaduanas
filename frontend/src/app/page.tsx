@@ -640,6 +640,31 @@ const STATUS_PILL: Record<string, string> = {
 function Pill({ k, children }: { k?: string; children: React.ReactNode }) {
   return <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_PILL[k ?? ""] ?? "bg-zinc-100 text-zinc-600")}>{children}</span>;
 }
+// Cuadro que explica el estado "Requiere régimen automotriz" (core parts T-MEC).
+function AutoReviewBox() {
+  return (
+    <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className="mb-1 font-semibold">🚗 ¿Qué significa “Requiere régimen automotriz”?</div>
+      <p className="text-amber-800">
+        Uno o más productos son una <strong>parte esencial (“core part”)</strong> del régimen automotriz
+        del T-MEC (Anexo 4-B, ej. suspensión, ejes, transmisiones, dirección, carrocerías, motores,
+        baterías). Para estas partes <strong>el salto arancelario NO es suficiente</strong> para darlas
+        por originarias — por eso no aparecen como “Califica”.
+      </p>
+      <div className="mt-2">
+        <div className="font-semibold text-amber-900">¿Qué hay que hacer?</div>
+        <ul className="ml-4 mt-1 list-disc space-y-0.5 text-amber-800">
+          <li>Ve al módulo <strong>“Automotriz (T-MEC)”</strong> y evalúa el producto ahí.</li>
+          <li>Debe cumplir además: <strong>Valor de Contenido Regional (VCR)</strong> alto por costo
+            neto, <strong>Valor de Contenido Laboral (LVC)</strong> y compra de <strong>acero/aluminio</strong>
+            originario (super-core).</li>
+          <li>Mientras esté en este estado <strong>no se puede emitir el certificado</strong> de origen.</li>
+        </ul>
+        <p className="mt-1 text-[11px] text-amber-700">El cálculo por BOM es solo informativo; la determinación formal la hace el módulo automotriz, con apoyo de un especialista.</p>
+      </div>
+    </div>
+  );
+}
 function ActionCard({ icon: Icon, color, title, desc, onClick }: {
   icon: React.ElementType; color: string; title: string; desc: string; onClick?: () => void;
 }) {
@@ -1414,6 +1439,7 @@ function ProductosView() {
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (SKU o descripción)" />
+      {visibles.some((p) => qualFor(p.id)?.status === "AUTO_REVIEW") && <AutoReviewBox />}
       <Table head={["SKU", "Descripción", "Tipo", "HS", "Resultado", ""]}>
         {visibles.map((p) => {
           const q = qualFor(p.id);
@@ -1717,11 +1743,7 @@ function OriginResultReport({ result }: { result: OriginCalcResult }) {
         {result.criterion && <span className="text-xs text-zinc-500">Criterio: <strong>{result.criterion}</strong></span>}
         {result.rvc_value != null && <span className="text-xs text-zinc-500">VCR: <strong>{result.rvc_value}%</strong></span>}
       </div>
-      {d.automotive_core && (
-        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-          🚗 <strong>Parte esencial (core part).</strong> {d.automotive_core}
-        </div>
-      )}
+      {d.automotive_core && <div className="mt-3"><AutoReviewBox /></div>}
       {d.error && <p className="mt-2 text-sm text-amber-700">{d.error}</p>}
       {d.rule && <p className="mt-2 text-xs text-zinc-500">Regla aplicada: <strong>{d.rule}</strong></p>}
       {d.automotive_regime && (
@@ -2468,6 +2490,7 @@ function CalificacionesView() {
         </div>
       </div>
       <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
+      {vis.some((x) => x.status === "AUTO_REVIEW") && <AutoReviewBox />}
       <Table head={["Producto", "Criterio", "VCR", "Resultado"]}>
         {vis.map((q) => (
           <tr key={q.id}>
