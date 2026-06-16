@@ -152,6 +152,8 @@ export type BomOriginComponent = BomComponent & { declarations: ComponentDeclara
 export type BomOriginResponse = {
   product: Product; components: BomOriginComponent[]; treaty_members?: string[];
   total_value?: string; vnm?: string;
+  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
+  automotive_core_code?: string | null;
 };
 export type OriginCalcResult = {
   status: string; criterion: string; rvc_value: string | number | null;

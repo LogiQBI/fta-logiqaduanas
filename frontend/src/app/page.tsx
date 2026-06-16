@@ -1971,6 +1971,7 @@ function CalculoOrigenView() {
   const [product, setProduct] = useState<Product | null>(null);
   const [bomTotal, setBomTotal] = useState("0");
   const [bomVnm, setBomVnm] = useState("0");
+  const [suggestedRule, setSuggestedRule] = useState<{ rule_type: string; description: string; hs_pattern: string } | null>(null);
   const [loadingBom, setLoadingBom] = useState(false);
   const [bomError, setBomError] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
@@ -1995,6 +1996,7 @@ function CalculoOrigenView() {
       const r = await api.productBomOrigin(Number(productId), Number(treatyId));
       setComps(r.components); setProduct(r.product);
       setBomTotal(r.total_value ?? "0"); setBomVnm(r.vnm ?? "0");
+      setSuggestedRule(r.suggested_rule ?? null);
     } catch (e) { setBomError(true); setComps([]); setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
@@ -2042,6 +2044,33 @@ function CalculoOrigenView() {
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
 
+      {product && comps.length > 0 && (
+        <Card className="mb-4 p-4">
+          <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
+            <div>
+              <span className="text-xs text-zinc-500">Producto terminado</span>
+              <div className="font-mono text-sm font-semibold">{product.sku}<span className="ml-1 font-sans font-normal text-zinc-500">— {product.description}</span></div>
+            </div>
+            <div>
+              <span className="text-xs text-zinc-500">Fracción arancelaria (HS)</span>
+              <div className="font-mono text-sm font-semibold">{product.hs_code ? formatHs(product.hs_code) : "—"}</div>
+            </div>
+            <div className="min-w-[16rem] flex-1">
+              <span className="text-xs text-zinc-500">Regla de origen sugerida (catálogo)</span>
+              <div className="text-sm">
+                {suggestedRule
+                  ? <><strong>{ruleTypeLabel(suggestedRule.rule_type)}</strong>{suggestedRule.description ? <span className="text-zinc-500"> — {cleanRuleDesc(suggestedRule.description)}</span> : null}</>
+                  : <span className="text-amber-600">No hay una regla específica en el catálogo para esta fracción.</span>}
+              </div>
+            </div>
+          </div>
+          {automotive && (
+            <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+              🚗 La fracción <strong>{product.hs_code ? formatHs(product.hs_code) : ""}</strong> es una <strong>parte esencial (core part)</strong> del Anexo 4-B del T-MEC: su origen se determina por el <strong>régimen automotriz (VCR)</strong> — ver el panel de abajo.
+            </div>
+          )}
+        </Card>
+      )}
       {!productId && <p className="text-sm text-zinc-400">Elige un producto para ver su lista de materiales.</p>}
       {productId && !loadingBom && bomError && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

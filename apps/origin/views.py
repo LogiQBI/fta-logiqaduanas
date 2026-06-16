@@ -508,10 +508,19 @@ class ProductViewSet(TenantScopedViewSet):
         if not m or m.is_supplier:
             raise PermissionDenied("Solo la empresa puede ver el cálculo de origen.")
         from decimal import Decimal
+        from apps.origin import engine
         from apps.origin.services import _resolve_component_origin
         product = self.get_object()
         treaty_id = request.query_params.get("treaty")
         treaty = Treaty.objects.filter(pk=treaty_id).first() if treaty_id else None
+        # Regla de origen sugerida (PSR) para la fracción del producto terminado.
+        suggested_rule = None
+        if treaty:
+            r = engine.find_rule(treaty, product.hs_code or "")
+            if r:
+                suggested_rule = {"id": r.id, "hs_pattern": r.hs_pattern,
+                                  "rule_type": r.rule_type, "description": r.description}
+        core_code = engine.core_part_code(product.hs_code or "")
         comps = []
         total = Decimal("0")
         vnm = Decimal("0")   # valor de materiales NO originarios (automático, por tratado)
@@ -534,7 +543,8 @@ class ProductViewSet(TenantScopedViewSet):
                           "originating": originating})
         return Response({"product": s.ProductSerializer(product).data, "components": comps,
                          "treaty_members": (treaty.member_countries if treaty else []),
-                         "total_value": str(total), "vnm": str(vnm)})
+                         "total_value": str(total), "vnm": str(vnm),
+                         "suggested_rule": suggested_rule, "automotive_core_code": core_code})
 
     @action(detail=True, methods=["get"], url_path="automotive")
     def automotive_get(self, request, pk=None):
