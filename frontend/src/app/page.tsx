@@ -1405,26 +1405,12 @@ function RuleDisplayModal({ rule, onClose, onSaved }: {
 /* ============ EMPRESA ============ */
 function ProductosView() {
   const { data, reload, loading } = useList<Product>(() => api.products());
-  const treaties = useList<Treaty>(() => api.treaties());
-  const quals = useList<Qualification>(() => api.qualifications());
   const parties = useList<{ id: number; name: string; kind: string }>(() => api.parties());
-  const [treatyId, setTreatyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [busq, setBusq] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
-  useEffect(() => {
-    if (!treatyId && treaties.data.length) {
-      const tmec = treaties.data.find((t) => t.code === "TMEC");
-      setTreatyId(tmec ? tmec.id : treaties.data[0].id);
-    }
-  }, [treaties.data, treatyId]);
-  const qualFor = (pid: number) => quals.data.find((q) => q.product === pid && q.treaty === treatyId);
-  async function run(pid: number, fn: () => Promise<Qualification>) {
-    setMsg("…"); try { const q = await fn(); setMsg(`${q.status_display}${q.rvc_value ? ` · VCR ${q.rvc_value}%` : ""}`); await quals.reload(); }
-    catch (e) { setMsg((e as Error).message); }
-  }
   async function del(p: Product) {
     if (!confirm(`¿Eliminar el producto “${p.sku}”?`)) return;
     setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
@@ -1433,19 +1419,17 @@ function ProductosView() {
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
   // En "Productos" solo los terminados/subensambles; los insumos van en "Números de parte".
   const visibles = smartFilter(data.filter((p) => p.kind !== "material"), busq, (p) => [p.sku, p.description, p.hs_code]);
+  const money = (v?: string, cur?: string) =>
+    v != null && Number(v) > 0 ? `${Number(v).toLocaleString("es-MX")} ${cur ?? ""}`.trim() : "—";
   function exportar() {
-    exportCSV("productos", ["SKU", "Descripción", "Tipo", "HS", "Resultado"],
-      visibles.map((p) => { const qq = qualFor(p.id); return [p.sku, p.description, p.kind_display ?? p.kind, p.hs_code ?? "", qq ? `${qq.status_display}${qq.rvc_value ? ` ${qq.rvc_value}%` : ""}` : ""]; }));
+    exportCSV("productos", ["SKU", "Descripción", "Tipo", "HS", "Precio", "Moneda", "Mano de obra/conversión"],
+      visibles.map((p) => [p.sku, p.description, p.kind_display ?? p.kind, p.hs_code ?? "",
+        p.unit_cost ?? "", p.currency ?? "", p.conversion_cost ?? ""]));
   }
   return (
     <div>
-      <PageTitle title="Productos terminados" desc="Tus productos terminados. Califícalos contra los tratados." />
+      <PageTitle title="Productos terminados" desc="Ficha de tus productos: fracción (HS), costos, mano de obra y BOM. Para calificarlos ve a “Cálculo de origen”; para pedir origen a proveedores, a “Solicitudes”." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <span className="text-sm text-zinc-500">Tratado:</span>
-        <select value={treatyId ?? ""} onChange={(e) => setTreatyId(Number(e.target.value))}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm">
-          {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
-        </select>
         <div className="ml-auto flex flex-wrap gap-2">
           <Btn variant="ghost" onClick={() => setBulk("products")}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
           <Btn variant="ghost" onClick={() => setBulk("bom")}><Upload size={15} className="-mt-0.5 mr-1 inline" />BOM masivo</Btn>
@@ -1454,30 +1438,25 @@ function ProductosView() {
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (SKU o descripción)" />
-      {visibles.some((p) => qualFor(p.id)?.status === "AUTO_REVIEW") && <AutoReviewBox />}
-      <Table head={["SKU", "Descripción", "Tipo", "HS", "Resultado", ""]}>
-        {visibles.map((p) => {
-          const q = qualFor(p.id);
-          return (
-            <tr key={p.id}>
-              <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
-              <td className="px-4 py-3">{p.description}</td>
-              <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
-              <td className="px-4 py-3 font-mono text-xs">{formatHs(p.hs_code)}</td>
-              <td className="px-4 py-3">{q ? <Pill k={q.status}>{q.status_display}{q.rvc_value ? ` · ${q.rvc_value}%` : ""}</Pill> : <span className="text-zinc-400">—</span>}</td>
-              <td className="px-4 py-3 text-right whitespace-nowrap">
-                <span className="mr-2 inline-block"><Btn size="sm" onClick={() => treatyId && run(p.id, () => api.qualify(p.id, treatyId))}>Calificar</Btn></span>
-                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => treatyId && run(p.id, async () => { await api.solicit(p.id, treatyId); return { status_display: "Solicitudes enviadas", rvc_value: null } as unknown as Qualification; })}>Solicitar origen</Btn></span>
-                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
-                <button onClick={() => setEditing(p)} title="Editar"
-                  className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
-                <button onClick={() => del(p)} title="Eliminar"
-                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
-              </td>
-            </tr>
-          );
-        })}
-        {!loading && visibles.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos terminados. Crea el primero con “Nuevo producto”.</td></tr>}
+      <Table head={["SKU", "Descripción", "Tipo", "HS", "Precio", "Mano de obra", ""]}>
+        {visibles.map((p) => (
+          <tr key={p.id}>
+            <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
+            <td className="px-4 py-3">{p.description}</td>
+            <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
+            <td className="px-4 py-3 font-mono text-xs">{formatHs(p.hs_code)}</td>
+            <td className="px-4 py-3 text-xs">{money(p.unit_cost, p.currency)}</td>
+            <td className="px-4 py-3 text-xs">{money(p.conversion_cost, p.currency)}</td>
+            <td className="px-4 py-3 text-right whitespace-nowrap">
+              <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
+              <button onClick={() => setEditing(p)} title="Editar"
+                className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
+              <button onClick={() => del(p)} title="Eliminar"
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            </td>
+          </tr>
+        ))}
+        {!loading && visibles.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos terminados. Crea el primero con “Nuevo producto”.</td></tr>}
       </Table>
       {editing && (
         <ProductForm product={editing === "new" ? null : editing} suppliers={suppliers}
