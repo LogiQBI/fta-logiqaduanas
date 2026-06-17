@@ -143,7 +143,7 @@ export type ProductChangeLog = {
 };
 export type Product = {
   id: number; sku: string; description: string; kind: string;
-  kind_display?: string; hs_code: string; unit_cost: string;
+  kind_display?: string; hs_code: string; unit_cost: string; conversion_cost?: string;
   currency: string; country_of_origin: string; supplier: number | null;
   supplier_name?: string | null; supplier_code?: string | null;
   is_active: boolean;
@@ -167,7 +167,7 @@ export type BomComponent = {
 export type BomOriginComponent = BomComponent & { declarations: ComponentDeclaration[]; originating?: boolean | null };
 export type BomOriginResponse = {
   product: Product; components: BomOriginComponent[]; treaty_members?: string[];
-  total_value?: string; vnm?: string;
+  total_value?: string; conversion_cost?: string; net_cost?: string; vnm?: string;
   suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
   automotive_core_code?: string | null;
 };
@@ -184,7 +184,8 @@ export type OriginAnalysis = {
 };
 export type OriginAnalysisDetail = OriginAnalysis & { detail: Record<string, unknown> };
 export type AutoPillar = {
-  key: string; label: string; value: string | null; threshold: string; ok: boolean; detail: string;
+  key: string; label: string; value: string | null; threshold: string; ok: boolean;
+  detail: string; informational?: boolean;
 };
 export type AutomotiveResult = {
   vehicle_class: string; class_label: string; as_of: string | null; qualifies: boolean;

@@ -208,7 +208,11 @@ def _evaluate_product(product, treaty, as_of, visited):
             "supplier": (bc.component.supplier.name if bc.component.supplier_id else ""),
         })
 
-    transaction_value = product.unit_cost if product.unit_cost else total
+    # Costo neto del bien = materiales (BOM) + mano de obra/costos de conversión.
+    # La conversión es valor agregado REGIONAL (originario): suma a la base del VCR
+    # pero NO al VNM. Es la base del cálculo de Valor de Contenido Regional.
+    conversion = Decimal(str(product.conversion_cost or 0))
+    net_cost = total + conversion
     rt = rule.rule_type
     params = dict(rule.params or {})
     params.setdefault("rvc_method", "transaction")
@@ -219,7 +223,8 @@ def _evaluate_product(product, treaty, as_of, visited):
     except_codes = params.get("ctc_except", [])
     fake_product = SimpleNamespace(hs_code=product.hs_code or "")
     detail = {"rule": str(rule), "rule_type": rt, "bom": lines,
-              "total_value": str(total), "vnm": str(vnm)}
+              "materials_total": str(total), "conversion_cost": str(conversion),
+              "total_value": str(net_cost), "vnm": str(vnm)}
 
     ctc_pass = rvc_pass = None
     rvc_value = None
@@ -228,7 +233,7 @@ def _evaluate_product(product, treaty, as_of, visited):
             fake_product, lines, shift_level, de_minimis, total, except_codes=except_codes)
         detail["tariff_shift"] = ctc_detail
     if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
-        rvc_pass, rvc_value, rvc_detail = engine._check_rvc(treaty, params, transaction_value, vnm)
+        rvc_pass, rvc_value, rvc_detail = engine._check_rvc(treaty, params, net_cost, vnm)
         detail["rvc"] = rvc_detail
     note = engine.automotive_note(params, product.hs_code or "")
     if note:

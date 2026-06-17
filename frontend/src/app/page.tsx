@@ -1852,6 +1852,10 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
   const [result, setResult] = useState<AutomotiveResult | null>(null);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
   const [ayuda, setAyuda] = useState(false);
+  // LVC (Contenido de Valor Laboral) — OPCIONAL e informativo: algunas OEM piden
+  // reportarlo. No determina el origen de la autoparte.
+  const [lvcOn, setLvcOn] = useState(false);
+  const [lvcPct, setLvcPct] = useState(""); const [wage, setWage] = useState("");
   // El VNM (materiales NO originarios) lo determina el sistema desde el BOM según el
   // tratado; NO se captura a mano.
   const vnm = autoVnm;
@@ -1864,6 +1868,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
         if (!alive || !a || !a.vehicle_class) return;
         if (a.net_cost) setNetCost(a.net_cost);
         if (a.as_of) setAsOf(a.as_of);
+        if (a.lvc_pct && Number(a.lvc_pct) > 0) { setLvcOn(true); setLvcPct(a.lvc_pct); if (a.wage_usd_h) setWage(a.wage_usd_h); }
         if (a.detail) { setResult(a.detail); if (a.detail.rvc_method) setMethod(a.detail.rvc_method === "transaction" ? "transaction" : "net_cost"); }
       } catch { /* sin guardado */ }
     })();
@@ -1877,6 +1882,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
       setResult(await api.calcAutomotive(productId, {
         treaty: treatyId, vehicle_class: "autopart", as_of: asOf, rvc_method: method,
         net_cost: netCost || "0", transaction_value: txValue || "0", vnm: vnm || "0",
+        ...(lvcOn && lvcPct ? { lvc_pct: lvcPct, wage_usd_h: wage || "0" } : {}),
       }));
       onCalcDone?.();
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
@@ -1911,6 +1917,25 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
           <Field label="Fecha"><input type="date" className={inputCls} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
         </div>
         <p className="mt-3 text-xs text-amber-800">Umbral requerido: <strong>VCR ≥ {threshold}%</strong> ({method === "transaction" ? "valor de transacción" : "costo neto"}).</p>
+
+        <div className="mt-3 rounded-lg border border-amber-200 bg-white/60 p-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-amber-900">
+            <input type="checkbox" checked={lvcOn} onChange={(e) => setLvcOn(e.target.checked)} />
+            Reportar Contenido de Valor Laboral (LVC) — opcional
+          </label>
+          <p className="mt-1 text-[11px] text-amber-800">El LVC es un requisito del <strong>vehículo</strong> (no de la autoparte) y <strong>no cambia</strong> el origen de la parte. Actívalo solo si tu OEM te pide reportarlo.</p>
+          {lvcOn && (
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="LVC reportado (%)">
+                <input type="number" step="any" className={inputCls} value={lvcPct} onChange={(e) => setLvcPct(e.target.value)} placeholder="Ej. 40" />
+              </Field>
+              <Field label="Salario base mano de obra (USD/h) — opcional">
+                <input type="number" step="any" className={inputCls} value={wage} onChange={(e) => setWage(e.target.value)} placeholder="Ej. 16" />
+              </Field>
+            </div>
+          )}
+        </div>
+
         {msg && <p className="mt-2 text-sm text-red-600">{msg}</p>}
         <div className="mt-4"><Btn onClick={evaluar} disabled={busy}>{busy ? "Calculando…" : "Calcular origen"}</Btn></div>
       </Card>
@@ -1926,9 +1951,9 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
             {result.pillars.map((p) => (
               <tr key={p.key}>
                 <td className="px-4 py-3 font-medium">{p.label}</td>
-                <td className="px-4 py-3 text-xs">{p.value ?? "—"}</td>
-                <td className="px-4 py-3 text-xs">{p.threshold}%</td>
-                <td className="px-4 py-3">{p.ok ? <span className="text-green-700">✓</span> : <span className="text-red-700">✗</span>}</td>
+                <td className="px-4 py-3 text-xs">{p.value ?? "—"}{p.informational && p.value != null ? "%" : ""}</td>
+                <td className="px-4 py-3 text-xs">{p.threshold === "—" ? "—" : `${p.threshold}%`}</td>
+                <td className="px-4 py-3">{p.informational ? <span className="text-zinc-400">informativo</span> : p.ok ? <span className="text-green-700">✓</span> : <span className="text-red-700">✗</span>}</td>
                 <td className="px-4 py-3 text-xs text-zinc-500">{p.detail}</td>
               </tr>
             ))}
@@ -1988,6 +2013,8 @@ function CalculoOrigenView() {
   const [comps, setComps] = useState<BomOriginComponent[]>([]);
   const [product, setProduct] = useState<Product | null>(null);
   const [bomTotal, setBomTotal] = useState("0");
+  const [bomConversion, setBomConversion] = useState("0");
+  const [bomNetCost, setBomNetCost] = useState("0");
   const [bomVnm, setBomVnm] = useState("0");
   const [suggestedRule, setSuggestedRule] = useState<{ rule_type: string; description: string; hs_pattern: string } | null>(null);
   const [loadingBom, setLoadingBom] = useState(false);
@@ -2015,6 +2042,8 @@ function CalculoOrigenView() {
       const r = await api.productBomOrigin(Number(productId), Number(treatyId));
       setComps(r.components); setProduct(r.product);
       setBomTotal(r.total_value ?? "0"); setBomVnm(r.vnm ?? "0");
+      setBomConversion(r.conversion_cost ?? "0");
+      setBomNetCost(r.net_cost ?? r.total_value ?? "0");
       setSuggestedRule(r.suggested_rule ?? null);
     } catch (e) { setBomError(true); setComps([]); setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
@@ -2085,6 +2114,17 @@ function CalculoOrigenView() {
                   : <span className="text-amber-600">No hay una regla específica en el catálogo para esta fracción.</span>}
               </div>
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-1 border-t border-zinc-100 pt-3 text-sm">
+            <span className="text-xs text-zinc-500">Costo neto del bien:</span>
+            <span className="font-mono">Materiales {Number(bomTotal).toLocaleString("es-MX")}</span>
+            <span className="text-zinc-400">+</span>
+            <span className="font-mono">Mano de obra/conversión {Number(bomConversion).toLocaleString("es-MX")}</span>
+            <span className="text-zinc-400">=</span>
+            <span className="font-mono font-semibold">{Number(bomNetCost).toLocaleString("es-MX")} {product.currency}</span>
+            {Number(bomConversion) === 0 && (
+              <span className="text-[11px] text-amber-600">· Agrega la mano de obra en “Productos” → editar producto (sube el VCR).</span>
+            )}
           </div>
           {automotive && (
             <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
@@ -2192,7 +2232,7 @@ function CalculoOrigenView() {
       )}
       {comps.length > 0 && automotive && (
         <AutomotivePanel productId={Number(productId)} treatyId={Number(treatyId)}
-          suggestNet={bomTotal} autoVnm={bomVnm} onCalcDone={() => setHistKey((k) => k + 1)} />
+          suggestNet={bomNetCost} autoVnm={bomVnm} onCalcDone={() => setHistKey((k) => k + 1)} />
       )}
       {result && !automotive && <OriginResultReport result={result} />}
       {productId && treatyId && comps.length > 0 && (
@@ -2382,15 +2422,21 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     recos = `<div class="section">3. Recomendaciones y siguientes pasos</div><ul>${items.join("")}</ul>`;
   }
 
+  const materials = d.materials_total;
+  const conversion = d.conversion_cost;
+  const hasConv = conversion != null && Number(conversion) > 0;
   const vcrBlock = hasRvc ? `
     <div class="section">2. Métrica del Valor de Contenido Regional (VCR)</div>
-    <div class="grid">
+    <div class="grid g3">
       <div class="cell"><div class="lbl">Método utilizado</div><div class="big">${esc(methodLabel)}</div></div>
-      <div class="cell"><div class="lbl">${automotive ? "Costo neto del bien" : "Valor del bien"}</div><div class="big">$${num(base)} USD</div></div>
+      <div class="cell"><div class="lbl">Materiales (BOM)</div><div class="big">$${num(materials ?? base)} USD</div></div>
+      <div class="cell"><div class="lbl">Mano de obra / conversión</div><div class="big">$${num(conversion ?? 0)} USD</div></div>
+      <div class="cell"><div class="lbl">${automotive ? "Costo neto del bien" : "Valor del bien (costo neto)"}</div><div class="big">$${num(base)} USD</div></div>
       <div class="cell"><div class="lbl">Materiales no originarios (VNM)</div><div class="big">$${num(vnm)} USD</div></div>
       <div class="cell"><div class="lbl">Umbral requerido</div><div class="big">${esc(threshold)}%</div></div>
     </div>
-    <p class="formula">Fórmula del VCR: VCR = ((Valor − VNM) / Valor) × 100<br>
+    ${hasConv ? `<p class="muted">Costo neto del bien = materiales $${num(materials)} + mano de obra/conversión $${num(conversion)} = <b>$${num(base)}</b>. La mano de obra es valor regional originario: suma al costo neto pero no al VNM.</p>` : ""}
+    <p class="formula">Fórmula del VCR: VCR = ((Costo neto − VNM) / Costo neto) × 100<br>
        Cálculo aplicado: VCR = (($${num(base)} − $${num(vnm)}) / $${num(base)}) × 100 = <b>${num(rvcVal)}%</b></p>
     <p>Determinación: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
     <p class="muted">El VCR obtenido es de <b>${num(rvcVal)}%</b>, ${Number(rvcVal) >= Number(threshold) ? "igual o superior" : "por debajo"} del umbral mínimo de <b>${esc(threshold)}%</b> (${esc(methodLabel.toLowerCase())})${automotive ? " para autopartes esenciales del sector automotriz bajo el T-MEC" : ""}.</p>
@@ -2400,6 +2446,14 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     <p>Determinación: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
     ${d.error ? `<p class="muted">${esc(d.error as string)}</p>` : ""}
   `;
+
+  // LVC opcional (informativo) — si se reportó en el cálculo automotriz.
+  const lvcPillar = pillars.find((p) => (p.key as string) === "lvc");
+  const lvcBlock = lvcPillar ? `
+    <div class="section">Contenido de Valor Laboral (LVC) — informativo</div>
+    <p>LVC reportado: <b>${esc(lvcPillar.value)}%</b></p>
+    <p class="muted">${esc(lvcPillar.detail)}</p>
+  ` : "";
 
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <title>Análisis de origen ${esc(a.product_sku)} — ${esc(treaty)}</title>
@@ -2414,6 +2468,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   th{background:${NAVY};color:#fff;font-size:11px} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .muted{color:#6b7280;font-size:11px} .g{color:#15803d;font-weight:bold} .r{color:#b91c1c;font-weight:bold}
   .grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:8px 0}
+  .grid.g3{grid-template-columns:1fr 1fr 1fr}
   .cell{border:1px solid #e5e7eb;border-radius:6px;padding:8px} .lbl{font-size:10px;color:#6b7280;text-transform:uppercase} .big{font-size:15px;font-weight:bold;color:#111827;margin-top:2px}
   .formula{background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:10px;font-size:12px}
   .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
@@ -2441,10 +2496,11 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     <thead><tr><th>Insumo / Descripción / HS</th><th>Proveedor</th><th class="num">Precio unit.</th><th class="num">Cant.</th><th class="num">Valor total</th><th>Origen (país)</th></tr></thead>
     <tbody>${bomRows}</tbody>
   </table>
-  <p class="muted">Valor total del bien: <b>$${num(base ?? d.total_value)} USD</b> · Materiales no originarios (VNM): <b>$${num(vnm)} USD</b></p>`
+  <p class="muted">Costo neto del bien: <b>$${num(base ?? d.total_value)} USD</b> · Materiales no originarios (VNM): <b>$${num(vnm)} USD</b></p>`
     : `<p class="muted">Este análisis no registró desglose de BOM.</p>`}
 
   ${vcrBlock}
+  ${lvcBlock}
   ${recos}
 
   <div class="legal">
@@ -2476,6 +2532,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     sku: product?.sku ?? "", description: product?.description ?? "",
     kind: product?.kind ?? "finished", hs_code: product?.hs_code ?? "",
     unit_cost: product?.unit_cost ?? "0", currency: product?.currency ?? "USD",
+    conversion_cost: product?.conversion_cost ?? "0",
     country_of_origin: product?.country_of_origin ?? "",
     supplier: (product?.supplier ?? "") as number | "",
   });
@@ -2489,7 +2546,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     const payload = {
       sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
       hs_code: f.hs_code.trim(), unit_cost: f.unit_cost || "0",
-      currency: f.currency || "USD",
+      currency: f.currency || "USD", conversion_cost: f.conversion_cost || "0",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
       supplier: f.supplier === "" ? null : Number(f.supplier),
     };
@@ -2527,6 +2584,14 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
         <Field label="Moneda">
           <input value={f.currency} onChange={(e) => set("currency", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} maxLength={3} placeholder="USD" />
         </Field>
+        {f.kind !== "material" && (
+          <div className="col-span-2">
+            <Field label="Mano de obra y costos de conversión (opcional)">
+              <input type="number" step="0.0001" value={f.conversion_cost} onChange={(e) => set("conversion_cost", e.target.value)} className={inputCls} placeholder="0" />
+              <p className="mt-1 text-[11px] text-zinc-500">Mano de obra directa + indirectos de fabricación del bien. Es valor regional originario: se suma al costo neto y <strong>sube el VCR</strong>. Ej.: 7.77</p>
+            </Field>
+          </div>
+        )}
         <div className="col-span-2">
           <Field label="Proveedor (opcional)">
             <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>

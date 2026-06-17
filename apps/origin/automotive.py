@@ -83,9 +83,14 @@ WAGE_MIN_USD_H = Decimal("16")
 PART_RVC = {"net_cost": Decimal("75"), "transaction": Decimal("85")}
 
 
-def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm):
+def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
+                   lvc_pct=None, wage_usd_h=None):
     """Una AUTOPARTE (core) se determina solo por VCR (costo neto o valor de
-    transacción). NO aplican LVC ni acero/aluminio (esos son del vehículo)."""
+    transacción). NO aplican LVC ni acero/aluminio (esos son del vehículo).
+
+    El LVC es OPCIONAL e INFORMATIVO: algunas OEM piden al proveedor reportar el
+    Contenido de Valor Laboral de su parte. No cambia la determinación de origen de
+    la autoparte; solo se reporta."""
     method = "transaction" if rvc_method == "transaction" else "net_cost"
     base = _d(transaction_value) if method == "transaction" else _d(net_cost)
     vnm_d = _d(vnm)
@@ -102,10 +107,30 @@ def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm):
     pillar = {"key": "rvc", "label": f"VCR ({base_label})",
               "value": str(rvc) if rvc is not None else None,
               "threshold": str(thr), "ok": ok, "detail": detail}
+    pillars = [pillar]
+
+    # LVC opcional (informativo). El proveedor reporta el % de contenido de valor
+    # laboral de su parte y, si lo tiene, el salario base. NO afecta el veredicto.
+    if lvc_pct not in (None, ""):
+        lvc_v = _d(lvc_pct)
+        if wage_usd_h not in (None, ""):
+            wage = _d(wage_usd_h)
+            wage_txt = (f" con mano de obra a {wage} USD/h "
+                        f"({'≥' if wage >= WAGE_MIN_USD_H else '<'} {WAGE_MIN_USD_H} USD/h de alto salario)")
+        else:
+            wage_txt = ""
+        pillars.append({
+            "key": "lvc", "label": "Contenido de Valor Laboral (LVC) — informativo",
+            "value": str(lvc_v), "threshold": "—", "ok": True, "informational": True,
+            "detail": (f"Contenido de Valor Laboral reportado: {lvc_v}%{wage_txt}. "
+                       f"Es un requisito del VEHÍCULO (no de la autoparte); se reporta "
+                       f"porque algunas OEM lo solicitan. No afecta el origen de la parte."),
+        })
+
     return {
         "vehicle_class": "autopart", "class_label": "Autoparte esencial (core)",
         "as_of": as_of.isoformat() if as_of else None,
-        "qualifies": ok, "pillars": [pillar], "failing": [] if ok else [pillar["label"]],
+        "qualifies": ok, "pillars": pillars, "failing": [] if ok else [pillar["label"]],
         "rvc_value": str(rvc) if rvc is not None else None, "rvc_method": method,
         "disclaimer": ("Para una AUTOPARTE el origen se determina por el VCR; NO aplican "
                        "el Valor de Contenido Laboral ni la compra de acero/aluminio (esos son "
@@ -122,7 +147,8 @@ def evaluate(*, vehicle_class, as_of, net_cost, vnm, lvc_pct, wage_usd_h,
     """Evalúa el régimen automotriz. Para AUTOPARTE: solo VCR. Para VEHÍCULO: los
     5 pilares (VCR + LVC + acero + aluminio + core parts)."""
     if vehicle_class == "autopart":
-        return _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm)
+        return _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
+                              lvc_pct=lvc_pct, wage_usd_h=wage_usd_h)
     nc = _d(net_cost)
     vnm_d = _d(vnm)
     pillars = []

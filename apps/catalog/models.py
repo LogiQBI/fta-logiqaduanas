@@ -126,6 +126,13 @@ class Product(TenantOwnedModel):
     hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10, blank=True,
                                help_text="6 a 10 dígitos")
     unit_cost = models.DecimalField("Costo unitario", max_digits=14, decimal_places=4, default=0)
+    # Mano de obra directa + gastos indirectos de fabricación (costos de conversión)
+    # del bien terminado. Es valor agregado REGIONAL (originario): suma al costo neto
+    # del bien para el VCR, pero NO cuenta como material no originario (VNM).
+    conversion_cost = models.DecimalField(
+        "Mano de obra y costos de conversión", max_digits=14, decimal_places=4, default=0,
+        help_text="Mano de obra directa + indirectos de fabricación. Suma al costo neto "
+                  "del bien (valor regional originario); sube el VCR.")
     currency = models.CharField("Moneda", max_length=3, default="USD")
     # Para materiales comprados: país de origen declarado del propio item.
     country_of_origin = models.CharField("País de origen (ISO-2)", max_length=2, blank=True)

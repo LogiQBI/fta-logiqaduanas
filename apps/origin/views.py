@@ -570,9 +570,12 @@ class ProductViewSet(TenantScopedViewSet):
                 originating = info["originating"]
             comps.append({**s.BOMComponentSerializer(bc).data, "declarations": decls,
                           "originating": originating})
+        conversion = Decimal(str(product.conversion_cost or 0))
+        net_cost = total + conversion
         return Response({"product": s.ProductSerializer(product).data, "components": comps,
                          "treaty_members": (treaty.member_countries if treaty else []),
-                         "total_value": str(total), "vnm": str(vnm),
+                         "total_value": str(total), "conversion_cost": str(conversion),
+                         "net_cost": str(net_cost), "vnm": str(vnm),
                          "suggested_rule": suggested_rule, "automotive_core_code": core_code})
 
     @action(detail=True, methods=["get"], url_path="automotive")
