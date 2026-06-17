@@ -185,7 +185,7 @@ export type OriginAnalysis = {
 export type OriginAnalysisDetail = OriginAnalysis & { detail: Record<string, unknown> };
 export type AutoPillar = {
   key: string; label: string; value: string | null; threshold: string; ok: boolean;
-  detail: string; informational?: boolean;
+  detail: string; informational?: boolean; unit?: string; value_pct?: string | null;
 };
 export type AutomotiveResult = {
   vehicle_class: string; class_label: string; as_of: string | null; qualifies: boolean;
@@ -194,8 +194,8 @@ export type AutomotiveResult = {
 };
 export type AutomotiveSaved = {
   vehicle_class?: string; as_of?: string | null; net_cost?: string; vnm?: string;
-  lvc_pct?: string; wage_usd_h?: string; steel_na_pct?: string; aluminum_na_pct?: string;
-  core_parts_originating?: boolean; detail?: AutomotiveResult;
+  lvc_pct?: string; lvc_value?: string; wage_usd_h?: string; steel_na_pct?: string;
+  aluminum_na_pct?: string; core_parts_originating?: boolean; detail?: AutomotiveResult;
 };
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {

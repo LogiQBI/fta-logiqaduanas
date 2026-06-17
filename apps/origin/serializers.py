@@ -205,7 +205,7 @@ class AutomotiveAssessmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = AutomotiveAssessment
         fields = ["id", "product", "product_sku", "treaty", "treaty_code", "vehicle_class",
-                  "as_of", "net_cost", "vnm", "lvc_pct", "wage_usd_h", "steel_na_pct",
+                  "as_of", "net_cost", "vnm", "lvc_pct", "lvc_value", "wage_usd_h", "steel_na_pct",
                   "aluminum_na_pct", "core_parts_originating", "qualifies", "detail", "computed_at"]
 
 

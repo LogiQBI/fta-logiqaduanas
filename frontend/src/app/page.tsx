@@ -1832,9 +1832,10 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
   const [ayuda, setAyuda] = useState(false);
   // LVC (Contenido de Valor Laboral) — OPCIONAL e informativo: algunas OEM piden
-  // reportarlo. No determina el origen de la autoparte.
+  // reportarlo. Es el VALOR EN USD de materiales/mano de obra de proveedores con
+  // salario ≥ 16 USD/h. No determina el origen de la autoparte.
   const [lvcOn, setLvcOn] = useState(false);
-  const [lvcPct, setLvcPct] = useState(""); const [wage, setWage] = useState("");
+  const [lvcValue, setLvcValue] = useState("");
   // El VNM (materiales NO originarios) lo determina el sistema desde el BOM según el
   // tratado; NO se captura a mano.
   const vnm = autoVnm;
@@ -1847,7 +1848,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
         if (!alive || !a || !a.vehicle_class) return;
         if (a.net_cost) setNetCost(a.net_cost);
         if (a.as_of) setAsOf(a.as_of);
-        if (a.lvc_pct && Number(a.lvc_pct) > 0) { setLvcOn(true); setLvcPct(a.lvc_pct); if (a.wage_usd_h) setWage(a.wage_usd_h); }
+        if (a.lvc_value && Number(a.lvc_value) > 0) { setLvcOn(true); setLvcValue(a.lvc_value); }
         if (a.detail) { setResult(a.detail); if (a.detail.rvc_method) setMethod(a.detail.rvc_method === "transaction" ? "transaction" : "net_cost"); }
       } catch { /* sin guardado */ }
     })();
@@ -1861,7 +1862,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
       setResult(await api.calcAutomotive(productId, {
         treaty: treatyId, vehicle_class: "autopart", as_of: asOf, rvc_method: method,
         net_cost: netCost || "0", transaction_value: txValue || "0", vnm: vnm || "0",
-        ...(lvcOn && lvcPct ? { lvc_pct: lvcPct, wage_usd_h: wage || "0" } : {}),
+        ...(lvcOn && lvcValue ? { lvc_value: lvcValue } : {}),
       }));
       onCalcDone?.();
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
@@ -1904,14 +1905,19 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
           </label>
           <p className="mt-1 text-[11px] text-amber-800">El LVC es un requisito del <strong>vehículo</strong> (no de la autoparte) y <strong>no cambia</strong> el origen de la parte. Actívalo solo si tu OEM te pide reportarlo.</p>
           {lvcOn && (
-            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="LVC reportado (%)">
-                <input type="number" step="any" className={inputCls} value={lvcPct} onChange={(e) => setLvcPct(e.target.value)} placeholder="Ej. 40" />
-              </Field>
-              <Field label="Salario base mano de obra (USD/h) — opcional">
-                <input type="number" step="any" className={inputCls} value={wage} onChange={(e) => setWage(e.target.value)} placeholder="Ej. 16" />
-              </Field>
-            </div>
+            <>
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+                <strong>¿Qué se captura aquí?</strong> El <strong>valor en USD</strong> de los materiales y la mano de obra usados para fabricar el bien que provienen de <strong>plantas/proveedores cuyos trabajadores de producción ganan en promedio ≥ 16 USD/h</strong> (“high-wage material and manufacturing expenditure”, T-MEC Art. 4-B). <strong>No</strong> es un porcentaje: el sistema calcula automáticamente el % que representa sobre el costo neto. El umbral del 40% (autos) / 45% (camiones) es del <strong>vehículo</strong>, no de tu parte.
+              </div>
+              <div className="mt-2 max-w-sm">
+                <Field label="Valor de contenido de alto salario (USD) — proveedores ≥ 16 USD/h">
+                  <input type="number" step="any" className={inputCls} value={lvcValue} onChange={(e) => setLvcValue(e.target.value)} placeholder="Ej. 5.20" />
+                </Field>
+                {lvcValue && Number(netCost) > 0 && (
+                  <p className="mt-1 text-[11px] text-amber-700">≈ {((Number(lvcValue) / Number(netCost)) * 100).toFixed(2)}% del costo neto ({netCost} USD).</p>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -1930,7 +1936,7 @@ function AutomotivePanel({ productId, treatyId, suggestNet, autoVnm, onCalcDone 
             {result.pillars.map((p) => (
               <tr key={p.key}>
                 <td className="px-4 py-3 font-medium">{p.label}</td>
-                <td className="px-4 py-3 text-xs">{p.value ?? "—"}{p.informational && p.value != null ? "%" : ""}</td>
+                <td className="px-4 py-3 text-xs">{p.value ?? "—"}{p.value != null && p.unit ? ` ${p.unit}` : ""}{p.value_pct ? ` (${p.value_pct}%)` : ""}</td>
                 <td className="px-4 py-3 text-xs">{p.threshold === "—" ? "—" : `${p.threshold}%`}</td>
                 <td className="px-4 py-3">{p.informational ? <span className="text-zinc-400">informativo</span> : p.ok ? <span className="text-green-700">✓</span> : <span className="text-red-700">✗</span>}</td>
                 <td className="px-4 py-3 text-xs text-zinc-500">{p.detail}</td>
@@ -2474,7 +2480,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   const lvcPillar = pillars.find((p) => (p.key as string) === "lvc");
   const lvcBlock = lvcPillar ? `
     <div class="section">Contenido de Valor Laboral (LVC) — informativo</div>
-    <p>LVC reportado: <b>${esc(lvcPillar.value)}%</b></p>
+    <p>Contenido de alto salario reportado: <b>$${num(lvcPillar.value)} USD</b>${lvcPillar.value_pct ? ` (<b>${esc(lvcPillar.value_pct)}%</b> del costo neto)` : ""}</p>
     <p class="muted">${esc(lvcPillar.detail)}</p>
   ` : "";
 

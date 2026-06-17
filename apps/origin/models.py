@@ -60,6 +60,9 @@ class AutomotiveAssessment(TenantOwnedModel):
     net_cost = models.DecimalField("Costo neto", max_digits=16, decimal_places=4, default=0)
     vnm = models.DecimalField("Valor de materiales no originarios", max_digits=16, decimal_places=4, default=0)
     lvc_pct = models.DecimalField("LVC (%)", max_digits=6, decimal_places=2, default=0)
+    # LVC reportado como VALOR en USD (high-wage material & manufacturing expenditure):
+    # valor de materiales/mano de obra de proveedores con salario ≥ 16 USD/h.
+    lvc_value = models.DecimalField("LVC (valor USD)", max_digits=16, decimal_places=4, default=0)
     wage_usd_h = models.DecimalField("Salario base (USD/h)", max_digits=8, decimal_places=2, default=0)
     steel_na_pct = models.DecimalField("Acero N.A. (%)", max_digits=6, decimal_places=2, default=0)
     aluminum_na_pct = models.DecimalField("Aluminio N.A. (%)", max_digits=6, decimal_places=2, default=0)

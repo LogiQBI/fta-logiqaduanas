@@ -84,13 +84,15 @@ PART_RVC = {"net_cost": Decimal("75"), "transaction": Decimal("85")}
 
 
 def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
-                   lvc_pct=None, wage_usd_h=None):
+                   lvc_value=None):
     """Una AUTOPARTE (core) se determina solo por VCR (costo neto o valor de
     transacción). NO aplican LVC ni acero/aluminio (esos son del vehículo).
 
     El LVC es OPCIONAL e INFORMATIVO: algunas OEM piden al proveedor reportar el
-    Contenido de Valor Laboral de su parte. No cambia la determinación de origen de
-    la autoparte; solo se reporta."""
+    "high-wage material and manufacturing expenditure" de su parte, es decir, el
+    VALOR EN USD de los materiales/mano de obra de plantas cuyos trabajadores de
+    producción ganan en promedio ≥ 16 USD/h. No cambia la determinación de origen
+    de la autoparte; solo se reporta (su % se obtiene contra el costo neto)."""
     method = "transaction" if rvc_method == "transaction" else "net_cost"
     base = _d(transaction_value) if method == "transaction" else _d(net_cost)
     vnm_d = _d(vnm)
@@ -109,22 +111,23 @@ def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
               "threshold": str(thr), "ok": ok, "detail": detail}
     pillars = [pillar]
 
-    # LVC opcional (informativo). El proveedor reporta el % de contenido de valor
-    # laboral de su parte y, si lo tiene, el salario base. NO afecta el veredicto.
-    if lvc_pct not in (None, ""):
-        lvc_v = _d(lvc_pct)
-        if wage_usd_h not in (None, ""):
-            wage = _d(wage_usd_h)
-            wage_txt = (f" con mano de obra a {wage} USD/h "
-                        f"({'≥' if wage >= WAGE_MIN_USD_H else '<'} {WAGE_MIN_USD_H} USD/h de alto salario)")
-        else:
-            wage_txt = ""
+    # LVC opcional (informativo). Valor EN USD de contenido de alto salario
+    # (proveedores con mano de obra ≥ 16 USD/h). Se muestra su % del costo neto.
+    if lvc_value not in (None, ""):
+        lvc_usd = _d(lvc_value)
+        nc = _d(net_cost) if _d(net_cost) > 0 else base
+        pct = (lvc_usd / nc * 100).quantize(Decimal("0.01")) if nc > 0 else None
+        pct_txt = f" ({pct}% del costo neto {nc} USD)" if pct is not None else ""
         pillars.append({
             "key": "lvc", "label": "Contenido de Valor Laboral (LVC) — informativo",
-            "value": str(lvc_v), "threshold": "—", "ok": True, "informational": True,
-            "detail": (f"Contenido de Valor Laboral reportado: {lvc_v}%{wage_txt}. "
-                       f"Es un requisito del VEHÍCULO (no de la autoparte); se reporta "
-                       f"porque algunas OEM lo solicitan. No afecta el origen de la parte."),
+            "value": str(lvc_usd), "unit": "USD",
+            "value_pct": str(pct) if pct is not None else None,
+            "threshold": "—", "ok": True, "informational": True,
+            "detail": (f"Contenido de alto salario reportado: {lvc_usd} USD{pct_txt}. "
+                       f"Es el valor de materiales/mano de obra de proveedores cuyos "
+                       f"trabajadores de producción ganan en promedio ≥ {WAGE_MIN_USD_H} USD/h. "
+                       f"El LVC es un requisito del VEHÍCULO (umbral 40% autos / 45% camiones, "
+                       f"T-MEC), no de la autoparte; se reporta porque algunas OEM lo solicitan."),
         })
 
     return {
@@ -143,12 +146,13 @@ def _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
 
 def evaluate(*, vehicle_class, as_of, net_cost, vnm, lvc_pct, wage_usd_h,
              steel_na_pct, aluminum_na_pct, core_parts_originating,
-             rvc_method="net_cost", transaction_value=None):
-    """Evalúa el régimen automotriz. Para AUTOPARTE: solo VCR. Para VEHÍCULO: los
-    5 pilares (VCR + LVC + acero + aluminio + core parts)."""
+             rvc_method="net_cost", transaction_value=None, lvc_value=None):
+    """Evalúa el régimen automotriz. Para AUTOPARTE: solo VCR (+ LVC opcional en
+    USD, informativo). Para VEHÍCULO: los 5 pilares (VCR + LVC + acero + aluminio
+    + core parts)."""
     if vehicle_class == "autopart":
         return _evaluate_part(as_of, rvc_method, net_cost, transaction_value, vnm,
-                              lvc_pct=lvc_pct, wage_usd_h=wage_usd_h)
+                              lvc_value=lvc_value)
     nc = _d(net_cost)
     vnm_d = _d(vnm)
     pillars = []

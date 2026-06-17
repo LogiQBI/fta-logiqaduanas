@@ -617,12 +617,13 @@ class ProductViewSet(TenantScopedViewSet):
             wage_usd_h=d.get("wage_usd_h"), steel_na_pct=d.get("steel_na_pct"),
             aluminum_na_pct=d.get("aluminum_na_pct"), core_parts_originating=core,
             rvc_method=(d.get("rvc_method") or "net_cost"),
-            transaction_value=d.get("transaction_value"))
+            transaction_value=d.get("transaction_value"), lvc_value=d.get("lvc_value"))
         AutomotiveAssessment.objects.update_or_create(
             tenant=m.tenant, product=product, treaty=treaty,
             defaults={"vehicle_class": vclass, "as_of": as_of,
                       "net_cost": d.get("net_cost") or 0, "vnm": d.get("vnm") or 0,
                       "lvc_pct": d.get("lvc_pct") or 0, "wage_usd_h": d.get("wage_usd_h") or 0,
+                      "lvc_value": d.get("lvc_value") or 0,
                       "steel_na_pct": d.get("steel_na_pct") or 0,
                       "aluminum_na_pct": d.get("aluminum_na_pct") or 0,
                       "core_parts_originating": core, "qualifies": result["qualifies"],
