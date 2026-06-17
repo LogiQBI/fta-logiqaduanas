@@ -2482,6 +2482,15 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   `;
 
   // LVC opcional (informativo) — si se reportó en el cálculo automotriz.
+  const psr = d.psr as { hs_pattern?: string; rule_type?: string; description?: string } | undefined;
+  const psrBlock = psr ? `
+    <div class="section">Regla de origen específica (PSR) aplicable</div>
+    <table>
+      <tr><td class="k">Fracción / patrón</td><td>${esc(psr.hs_pattern ? formatHs(psr.hs_pattern) : (a.product_hs ? formatHs(a.product_hs) : "—"))}</td></tr>
+      <tr><td class="k">Tipo de regla</td><td><b>${esc(ruleTypeLabel(psr.rule_type))}</b></td></tr>
+      <tr><td class="k">Texto de la regla</td><td>${esc(cleanRuleDesc(psr.description) || "—")}</td></tr>
+    </table>
+  ` : "";
   const lvcPillar = pillars.find((p) => (p.key as string) === "lvc");
   const lvcBlock = lvcPillar ? `
     <div class="section">Contenido de Valor Laboral (LVC) — informativo</div>
@@ -2500,6 +2509,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   .section{font-size:12.5px;font-weight:bold;color:${NAVY};margin:18px 0 6px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
   table{width:100%;border-collapse:collapse;margin:6px 0 8px} th,td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;text-align:left}
   th{background:${NAVY};color:#fff;font-size:11px} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.k{background:#f8fafc;font-weight:bold;width:28%;color:#374151}
   .bomtbl th,.bomtbl td{font-size:10px;padding:4px 6px}
   .muted{color:#6b7280;font-size:11px} .g{color:#15803d;font-weight:bold} .r{color:#b91c1c;font-weight:bold}
   .grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:8px 0}
@@ -2529,6 +2539,8 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     ${company?.legal_name ? `<div><b>Empresa (productor/exportador):</b> ${esc(company.legal_name)}${company.tax_id ? ` · RFC ${esc(company.tax_id)}` : ""}</div>` : ""}
     <div><b>Tipo de análisis:</b> ${esc(a.kind_display)}</div>
   </div>
+
+  ${psrBlock}
 
   <div class="section">1. Desglose de la lista de materiales (BOM) e insumos</div>
   ${bom.length ? `<table class="bomtbl">

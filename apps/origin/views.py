@@ -640,14 +640,19 @@ class ProductViewSet(TenantScopedViewSet):
         # Incluye el desglose del BOM usado (insumos, proveedor, origen) para que el
         # PDF muestre el sustento del cálculo, igual que el cálculo por BOM.
         from decimal import Decimal as _Dec
+        from apps.origin import engine as _engine
         lines, materials_total, bom_vnm = bom_lines_for(product, treaty, as_of)
         conversion = _Dec(str(product.conversion_cost or 0))
         net_cost = _Dec(str(d.get("net_cost"))) if d.get("net_cost") not in (None, "") else (materials_total + conversion)
+        _r = _engine.find_rule(treaty, product.hs_code or "")
+        psr = ({"hs_pattern": _r.hs_pattern, "rule_type": _r.rule_type,
+                "description": _r.description} if _r else None)
         snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
                 "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),
                 "detail": {**result, "bom": lines, "materials_total": str(materials_total),
                            "conversion_cost": str(conversion), "total_value": str(net_cost),
-                           "vnm": str(d.get("vnm") if d.get("vnm") not in (None, "") else bom_vnm)}}
+                           "vnm": str(d.get("vnm") if d.get("vnm") not in (None, "") else bom_vnm),
+                           "psr": psr}}
         save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.AUTOMOTIVE, snap, request.user)
         return Response(result)
 

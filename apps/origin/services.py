@@ -249,7 +249,9 @@ def _evaluate_product(product, treaty, as_of, visited):
     fake_product = SimpleNamespace(hs_code=product.hs_code or "")
     detail = {"rule": str(rule), "rule_type": rt, "bom": lines,
               "materials_total": str(total), "conversion_cost": str(conversion),
-              "total_value": str(net_cost), "vnm": str(vnm)}
+              "total_value": str(net_cost), "vnm": str(vnm),
+              "psr": {"hs_pattern": rule.hs_pattern, "rule_type": rt,
+                      "description": rule.description}}
 
     ctc_pass = rvc_pass = None
     rvc_value = None
