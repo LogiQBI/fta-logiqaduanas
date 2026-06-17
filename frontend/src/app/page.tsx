@@ -2263,7 +2263,7 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
         api.originAnalysis(id),
         api.companyProfile().catch(() => null),
       ]);
-      generarAnalisisPDF(a, prof?.legal_name || prof?.tax_id ? { legal_name: prof?.legal_name, tax_id: prof?.tax_id } : undefined);
+      generarAnalisisPDF(a, prof ? { legal_name: prof.legal_name, tax_id: prof.tax_id, logo_png: prof.logo_png } : undefined);
     } catch (e) { setMsg((e as Error).message); }
   }
 
@@ -2341,7 +2341,7 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
 // Genera un PDF (vía HTML imprimible) con el análisis de origen completo, para
 // evidencia en auditorías internas o de la autoridad (CBP / aduana). Mismo patrón
 // que los certificados: abre una ventana y el usuario hace "Guardar como PDF".
-function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: string; tax_id?: string }) {
+function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: string; tax_id?: string; logo_png?: string }) {
   const esc = (v?: unknown) =>
     String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
   const num = (v: unknown, dec = 2) => {
@@ -2370,17 +2370,23 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   const statusLabel = a.status_display || a.status;
   const statusBadge = originario ? "ok" : (a.status === "DOES_NOT" ? "no" : "warn");
 
-  const bomRows = bom.map((l) => {
+  const bomRows = bom.map((l, i) => {
     const orig = l.originating === true;
-    const pais = l.country ? ` (${esc(l.country as string)})` : "";
-    const origenTxt = l.originating == null ? "—" : (orig ? `Originario${pais}` : `NO Originario${pais}`);
+    const estado = l.originating == null
+      ? "—"
+      : orig
+        ? `<span class="g">Originario</span>`
+        : `<span class="r">No originario</span><br><span class="muted">cuenta en VNM</span>`;
     return `<tr>
+      <td class="num">${i + 1}</td>
       <td><b>${esc(l.sku as string)}</b> — ${esc(l.description as string)}<br><span class="muted">HS ${esc(l.hs_code ? formatHs(l.hs_code as string) : "—")}</span></td>
       <td>${esc((l.supplier as string) || "—")}</td>
+      <td>${esc((l.country as string) || "—")}</td>
       <td class="num">${num(l.unit_cost, 4)}</td>
       <td class="num">${num(l.quantity, 0)}</td>
       <td class="num">${num(l.line_value)}</td>
-      <td class="${orig ? "g" : (l.originating === false ? "r" : "")}">${origenTxt}</td>
+      <td>${estado}</td>
+      <td class="muted">${esc((l.origin_source as string) || "—")}</td>
     </tr>`;
   }).join("");
 
@@ -2445,6 +2451,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   .section{font-size:12.5px;font-weight:bold;color:${NAVY};margin:18px 0 6px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
   table{width:100%;border-collapse:collapse;margin:6px 0 8px} th,td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;text-align:left}
   th{background:${NAVY};color:#fff;font-size:11px} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .bomtbl th,.bomtbl td{font-size:10px;padding:4px 6px}
   .muted{color:#6b7280;font-size:11px} .g{color:#15803d;font-weight:bold} .r{color:#b91c1c;font-weight:bold}
   .grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:8px 0}
   .grid.g3{grid-template-columns:1fr 1fr 1fr}
@@ -2457,7 +2464,11 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   @media print{.noprint{display:none} body{padding:16px}}
 </style></head><body>
   <div class="head">
-    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
+    <div>${company?.logo_png
+      ? `<img src="${company.logo_png}" alt="${esc(company.legal_name || "")}" style="max-height:60px;max-width:240px;object-fit:contain"/>`
+      : `<div class="brand">${esc(company?.legal_name || "")}</div>`}
+      ${company?.legal_name ? `<div class="sub">${esc(company.legal_name)}</div>` : ""}
+    </div>
     <div style="text-align:right"><h1>Análisis de Calificación de Origen</h1>
       <div class="sub">Tratado: <b>${esc(treaty)}</b> · Folio: ${esc(folio)}</div>
       <div class="sub">Generado: ${esc(fecha)}</div></div>
@@ -2471,11 +2482,12 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   </div>
 
   <div class="section">1. Desglose de la lista de materiales (BOM) e insumos</div>
-  ${bom.length ? `<table>
-    <thead><tr><th>Insumo / Descripción / HS</th><th>Proveedor</th><th class="num">Precio unit.</th><th class="num">Cant.</th><th class="num">Valor total</th><th>Origen (país)</th></tr></thead>
+  ${bom.length ? `<table class="bomtbl">
+    <thead><tr><th class="num">#</th><th>Insumo / Descripción / HS</th><th>Proveedor</th><th>País</th><th class="num">Precio unit.</th><th class="num">Cant.</th><th class="num">Valor</th><th>Origen</th><th>Cómo se determinó</th></tr></thead>
     <tbody>${bomRows}</tbody>
   </table>
-  <p class="muted">Costo neto del bien: <b>$${num(base ?? d.total_value)} USD</b> · Materiales no originarios (VNM): <b>$${num(vnm)} USD</b></p>`
+  <p class="muted">Materiales (BOM): <b>$${num(materials ?? d.total_value)} USD</b>${hasConv ? ` · Mano de obra/conversión: <b>$${num(conversion)} USD</b>` : ""} · Costo neto del bien: <b>$${num(base ?? d.total_value)} USD</b> · Materiales no originarios (VNM): <b>$${num(vnm)} USD</b></p>
+  <p class="muted"><b>Cómo leer el origen:</b> “Originario” = el insumo es del país miembro del tratado o cumple la regla aplicable; “No originario” = su valor cuenta como VNM y resta al VCR. La columna “Cómo se determinó” indica el sustento (declaración del proveedor, captura manual, subensamble calculado por roll-up o país miembro).</p>`
     : `<p class="muted">Este análisis no registró desglose de BOM.</p>`}
 
   ${vcrBlock}
