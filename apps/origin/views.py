@@ -3,8 +3,11 @@
 - Usuarios de empresa (admin/analyst/auditor): ven todo lo de su tenant.
 - Usuarios proveedor (role=supplier): ven SOLO los registros de su propia Party.
 """
+import logging
 import secrets
 import string
+
+logger = logging.getLogger(__name__)
 
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -15,7 +18,7 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -374,6 +377,13 @@ class ProductViewSet(TenantScopedViewSet):
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo usuarios de empresa pueden crear productos.")
+        # El SKU es único por tenant: avisar con un 400 claro en vez de un 500
+        # (IntegrityError) si el número de parte ya existe.
+        sku = (serializer.validated_data.get("sku") or "").strip().upper()
+        if sku and Product.objects.filter(tenant=m.tenant, sku=sku).exists():
+            raise DRFValidationError(
+                {"sku": f"Ya existe un número de parte con SKU “{sku}”. "
+                        f"Usa otro o edita el existente."})
         serializer.save(tenant=m.tenant)
 
     def perform_update(self, serializer):
@@ -639,21 +649,26 @@ class ProductViewSet(TenantScopedViewSet):
         # Snapshot en el histórico de análisis (con la fecha de esta corrida).
         # Incluye el desglose del BOM usado (insumos, proveedor, origen) para que el
         # PDF muestre el sustento del cálculo, igual que el cálculo por BOM.
-        from decimal import Decimal as _Dec
-        from apps.origin import engine as _engine
-        lines, materials_total, bom_vnm = bom_lines_for(product, treaty, as_of)
-        conversion = _Dec(str(product.conversion_cost or 0))
-        net_cost = _Dec(str(d.get("net_cost"))) if d.get("net_cost") not in (None, "") else (materials_total + conversion)
-        _r = _engine.find_rule(treaty, product.hs_code or "")
-        psr = ({"hs_pattern": _r.hs_pattern, "rule_type": _r.rule_type,
-                "description": _r.description} if _r else None)
-        snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
-                "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),
-                "detail": {**result, "bom": lines, "materials_total": str(materials_total),
-                           "conversion_cost": str(conversion), "total_value": str(net_cost),
-                           "vnm": str(d.get("vnm") if d.get("vnm") not in (None, "") else bom_vnm),
-                           "psr": psr}}
-        save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.AUTOMOTIVE, snap, request.user)
+        # El snapshot es AUXILIAR: si algo falla aquí, no debe tumbar el cálculo.
+        try:
+            from decimal import Decimal as _Dec
+            from apps.origin import engine as _engine
+            lines, materials_total, bom_vnm = bom_lines_for(product, treaty, as_of)
+            conversion = _Dec(str(product.conversion_cost or 0))
+            net_cost = _Dec(str(d.get("net_cost"))) if d.get("net_cost") not in (None, "") else (materials_total + conversion)
+            _r = _engine.find_rule(treaty, product.hs_code or "")
+            psr = ({"hs_pattern": _r.hs_pattern, "rule_type": _r.rule_type,
+                    "description": _r.description} if _r else None)
+            snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
+                    "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),
+                    "detail": {**result, "bom": lines, "materials_total": str(materials_total),
+                               "conversion_cost": str(conversion), "total_value": str(net_cost),
+                               "vnm": str(d.get("vnm") if d.get("vnm") not in (None, "") else bom_vnm),
+                               "psr": psr}}
+            save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.AUTOMOTIVE, snap, request.user)
+        except Exception:
+            logger.exception("No se pudo guardar el snapshot del análisis automotriz "
+                             "(product=%s, treaty=%s)", product.pk, treaty.pk)
         return Response(result)
 
     @action(detail=True, methods=["post"], url_path="calc-bom-origin")

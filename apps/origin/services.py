@@ -1,4 +1,5 @@
 """Servicios de alto nivel: calificar, persistir y emitir certificados."""
+import logging
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -293,7 +294,13 @@ def calculate_product_origin(product, treaty, as_of=None, user=None):
     _save_qual(product, treaty, rule, result, user)
     # Snapshot en el histórico: cada corrida queda guardada con su fecha, para poder
     # comparar resultados cuando cambian precios del producto o de los insumos del BOM.
-    save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.BOM, result, user)
+    # Auxiliar: un fallo aquí no debe tumbar el cálculo.
+    try:
+        save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.BOM, result, user)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "No se pudo guardar el snapshot del análisis BOM (product=%s, treaty=%s)",
+            product.pk, treaty.pk)
     # El resultado se devuelve por la API: no debe contener el objeto OriginRule
     # (no es JSON-serializable). La descripción de la regla ya va en detail["rule"].
     result.pop("rule", None)

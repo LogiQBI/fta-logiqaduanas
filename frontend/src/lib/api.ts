@@ -42,7 +42,15 @@ async function req(path: string, opts: RequestInit = {}) {
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    // Surface DRF field errors (p.ej. {"sku": "Ya existe…"}) además de error/detail.
+    let fieldErr: string | null = null;
+    if (data && typeof data === "object") {
+      for (const v of Object.values(data)) {
+        if (typeof v === "string") { fieldErr = v; break; }
+        if (Array.isArray(v) && typeof v[0] === "string") { fieldErr = v[0]; break; }
+      }
+    }
+    throw new Error(data.error || data.detail || fieldErr || `HTTP ${res.status}`);
   }
   return res.status === 204 ? null : res.json();
 }
