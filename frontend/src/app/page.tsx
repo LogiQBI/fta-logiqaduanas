@@ -1996,11 +1996,13 @@ function ProductCombobox({ products, value, onChange, placeholder }: {
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const CAP = 500;
   const selected = products.find((p) => p.id === value) || null;
   const display = open ? query : (selected ? `${selected.sku} — ${selected.description}` : "");
-  const matches = (open && query.trim()
+  const all = open && query.trim()
     ? smartFilter(products, query, (p) => [p.sku, p.description, p.hs_code])
-    : products).slice(0, 50);
+    : products;
+  const matches = all.slice(0, CAP);
   return (
     <div className="relative">
       <input
@@ -2012,7 +2014,10 @@ function ProductCombobox({ products, value, onChange, placeholder }: {
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
       {open && (
-        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-zinc-200 bg-white shadow-lg">
+        <div className="absolute z-20 mt-1 max-h-80 w-full overflow-auto rounded-lg border border-zinc-200 bg-white shadow-lg">
+          <div className="sticky top-0 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[11px] text-zinc-500">
+            {all.length} producto{all.length === 1 ? "" : "s"}{all.length > CAP ? ` · mostrando ${CAP}, escribe para filtrar` : ""}
+          </div>
           {matches.length === 0 ? (
             <div className="px-3 py-2 text-sm text-zinc-400">Sin coincidencias.</div>
           ) : matches.map((p) => (
