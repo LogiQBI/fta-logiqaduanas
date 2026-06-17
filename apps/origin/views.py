@@ -35,7 +35,7 @@ from apps.origin.models import (
     Qualification, SolicitationCertificate,
 )
 from apps.origin.services import (
-    calculate_bom_origin, calculate_product_origin, certificate_elements,
+    bom_lines_for, calculate_bom_origin, calculate_product_origin, certificate_elements,
     ensure_solicitation_certificate, issue_certificate, qualify_and_save,
     save_analysis_snapshot,
 )
@@ -637,10 +637,17 @@ class ProductViewSet(TenantScopedViewSet):
                       "rvc_value": (result.get("rvc_value") or None),
                       "detail": {"automotive": result}, "computed_by": request.user})
         # Snapshot en el histórico de análisis (con la fecha de esta corrida).
+        # Incluye el desglose del BOM usado (insumos, proveedor, origen) para que el
+        # PDF muestre el sustento del cálculo, igual que el cálculo por BOM.
+        from decimal import Decimal as _Dec
+        lines, materials_total, bom_vnm = bom_lines_for(product, treaty, as_of)
+        conversion = _Dec(str(product.conversion_cost or 0))
+        net_cost = _Dec(str(d.get("net_cost"))) if d.get("net_cost") not in (None, "") else (materials_total + conversion)
         snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
                 "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),
-                "detail": {**result, "total_value": str(d.get("net_cost") or ""),
-                           "vnm": str(d.get("vnm") or "")}}
+                "detail": {**result, "bom": lines, "materials_total": str(materials_total),
+                           "conversion_cost": str(conversion), "total_value": str(net_cost),
+                           "vnm": str(d.get("vnm") if d.get("vnm") not in (None, "") else bom_vnm)}}
         save_analysis_snapshot(product, treaty, OriginAnalysis.Kind.AUTOMOTIVE, snap, request.user)
         return Response(result)
 

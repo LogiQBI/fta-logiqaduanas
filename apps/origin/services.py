@@ -172,6 +172,31 @@ def _resolve_component_origin(bc, treaty, default_as_of, visited):
             "value": value, "source": "Sin declaración ni BOM propio"}
 
 
+def bom_lines_for(product, treaty, as_of=None):
+    """Devuelve (lines, total_materiales, vnm) del BOM de `product` para `treaty`,
+    con el mismo formato de línea del motor (para snapshots/reportes, p.ej. el
+    cálculo automotriz que necesita guardar el desglose del BOM)."""
+    total = Decimal("0")
+    vnm = Decimal("0")
+    lines = []
+    comps = product.bom_components.select_related("component", "component__supplier").all()
+    for bc in comps:
+        info = _resolve_component_origin(bc, treaty, as_of, set())
+        val = info["value"]
+        total += val
+        if not info["originating"]:
+            vnm += val
+        lines.append({
+            "sku": bc.component.sku, "description": bc.component.description,
+            "hs_code": bc.component.hs_code or "", "quantity": str(bc.quantity),
+            "unit_cost": str(bc.component.unit_cost), "line_value": str(val),
+            "originating": info["originating"], "country": info["country"],
+            "origin_source": info["source"],
+            "supplier": (bc.component.supplier.name if bc.component.supplier_id else ""),
+        })
+    return lines, total, vnm
+
+
 def _evaluate_product(product, treaty, as_of, visited):
     """Evalúa el origen de un producto a partir de su BOM, RECURSIVAMENTE: los
     subensambles con BOM propio se califican primero y, si originan, hacen
