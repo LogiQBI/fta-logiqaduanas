@@ -1982,6 +1982,47 @@ function AyudaOrigenModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Buscador con autocompletar de productos: el usuario teclea el número de parte
+// (o descripción) y elige de la lista filtrada. Mejor que un <select> cuando hay
+// muchas variantes.
+function ProductCombobox({ products, value, onChange, placeholder }: {
+  products: Product[]; value: number | ""; onChange: (id: number | "") => void; placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = products.find((p) => p.id === value) || null;
+  const display = open ? query : (selected ? `${selected.sku} — ${selected.description}` : "");
+  const matches = (open && query.trim()
+    ? smartFilter(products, query, (p) => [p.sku, p.description, p.hs_code])
+    : products).slice(0, 50);
+  return (
+    <div className="relative">
+      <input
+        className={inputCls}
+        value={display}
+        placeholder={placeholder ?? "Escribe el número de parte o descripción…"}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); if (value !== "") onChange(""); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-zinc-200 bg-white shadow-lg">
+          {matches.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-zinc-400">Sin coincidencias.</div>
+          ) : matches.map((p) => (
+            <button key={p.id} type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(p.id); setOpen(false); setQuery(""); }}
+              className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-blue-50">
+              <span className="font-mono text-xs font-semibold text-zinc-800">{p.sku}</span>
+              <span className="text-xs text-zinc-500">{p.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Cálculo de origen del producto de la EMPRESA a partir de su BOM, con toggle
 // por insumo (declaración del proveedor / periodo, o captura manual).
 function CalculoOrigenView() {
@@ -2053,12 +2094,9 @@ function CalculoOrigenView() {
       </div>
       {ayuda && <AyudaOrigenModal onClose={() => setAyuda(false)} />}
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="min-w-[18rem]">
+        <div className="min-w-[20rem]">
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Producto</span>
-          <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
-            <option value="">Elige un producto…</option>
-            {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
-          </select>
+          <ProductCombobox products={productos} value={productId} onChange={setProductId} />
         </div>
         <div className="min-w-[16rem]">
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Tratado</span>
