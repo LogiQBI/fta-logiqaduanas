@@ -559,7 +559,9 @@ class ProductViewSet(TenantScopedViewSet):
             if r:
                 suggested_rule = {"id": r.id, "hs_pattern": r.hs_pattern,
                                   "rule_type": r.rule_type, "description": r.description}
-        core_code = engine.core_part_code(product.hs_code or "")
+        # El régimen automotriz de 'core parts' es exclusivo del T-MEC.
+        core_code = (engine.core_part_code(product.hs_code or "")
+                     if (treaty and engine.is_tmec(treaty)) else None)
         comps = []
         total = Decimal("0")
         vnm = Decimal("0")   # valor de materiales NO originarios (automático, por tratado)

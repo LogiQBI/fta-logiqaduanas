@@ -212,7 +212,7 @@ export type Party = {
   email: string; phone: string; access_users: SupplierUser[];
 };
 export type Qualification = {
-  id: number; product: number; treaty: number; status: string;
+  id: number; product: number; treaty: number; treaty_code?: string; status: string;
   status_display: string; criterion: string; rvc_value: string | null;
 };
 export type Me = {

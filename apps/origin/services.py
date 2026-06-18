@@ -81,7 +81,7 @@ def calculate_bom_origin(bom):
             treaty, params, rvc_base, vnm)
         detail["rvc"] = rvc_detail
 
-    note = engine.automotive_note(params, product.hs_code or "")
+    note = engine.automotive_note(params, product.hs_code or "", treaty)
     if note:
         detail["automotive_regime"] = note
 
@@ -100,7 +100,7 @@ def calculate_bom_origin(bom):
 
     result = engine.apply_core_part_review(product.hs_code or "", {
         "status": "QUALIFIES" if passed else "DOES_NOT",
-        "criterion": criterion, "rvc_value": rvc_value, "detail": detail})
+        "criterion": criterion, "rvc_value": rvc_value, "detail": detail}, treaty)
     return _save_bom_result(bom, rule, result)
 
 
@@ -263,7 +263,7 @@ def _evaluate_product(product, treaty, as_of, visited):
     if rt in ("RVC", "CTC_OR_RVC", "CTC_AND_RVC"):
         rvc_pass, rvc_value, rvc_detail = engine._check_rvc(treaty, params, net_cost, vnm)
         detail["rvc"] = rvc_detail
-    note = engine.automotive_note(params, product.hs_code or "")
+    note = engine.automotive_note(params, product.hs_code or "", treaty)
     if note:
         detail["automotive_regime"] = note
 
@@ -282,8 +282,9 @@ def _evaluate_product(product, treaty, as_of, visited):
 
     result = {"status": "QUALIFIES" if passed else "DOES_NOT", "criterion": criterion,
               "rvc_value": rvc_value, "detail": detail, "rule": rule}
-    # Core part (Anexo 4-B): el salto/VCR del BOM no concluye; requiere automotriz.
-    return engine.apply_core_part_review(product.hs_code or "", result)
+    # Core part (Anexo 4-B): SOLO T-MEC; el salto/VCR del BOM no concluye y requiere
+    # el régimen automotriz. En otros tratados rige la PSR normal.
+    return engine.apply_core_part_review(product.hs_code or "", result, treaty)
 
 
 def calculate_product_origin(product, treaty, as_of=None, user=None):

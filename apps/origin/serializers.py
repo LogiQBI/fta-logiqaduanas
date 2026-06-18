@@ -192,6 +192,7 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
 
 class QualificationSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
 
     class Meta:
         model = Qualification

@@ -1492,7 +1492,9 @@ function BomEditorModal({ product, allProducts, onClose }: {
   // Insumos disponibles: cualquier producto del catálogo distinto del padre y
   // que no esté ya en el BOM.
   const usados = new Set(data.map((c) => c.component));
-  const opciones = allProducts.filter((p) => p.id !== product.id && !usados.has(p.id));
+  const opciones = allProducts
+    .filter((p) => p.id !== product.id && !usados.has(p.id))
+    .slice().sort((a, b) => (a.sku || "").localeCompare(b.sku || "", "es", { numeric: true, sensitivity: "base" }));
   async function add() {
     if (!compId) { setErr("Elige un insumo."); return; }
     setErr(""); setSaving(true);
@@ -1998,10 +2000,12 @@ function ProductCombobox({ products, value, onChange, placeholder }: {
   const [open, setOpen] = useState(false);
   const CAP = 500;
   const selected = products.find((p) => p.id === value) || null;
+  const ordered = products.slice().sort((a, b) =>
+    (a.sku || "").localeCompare(b.sku || "", "es", { numeric: true, sensitivity: "base" }));
   const display = open ? query : (selected ? `${selected.sku} — ${selected.description}` : "");
   const all = open && query.trim()
-    ? smartFilter(products, query, (p) => [p.sku, p.description, p.hs_code])
-    : products;
+    ? smartFilter(ordered, query, (p) => [p.sku, p.description, p.hs_code])
+    : ordered;
   const matches = all.slice(0, CAP);
   return (
     <div className="relative">
@@ -2054,8 +2058,11 @@ function CalculoOrigenView() {
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
   const [ayuda, setAyuda] = useState(false);
   const [histKey, setHistKey] = useState(0);  // refresca el histórico tras cada cálculo
+  const [autoCore, setAutoCore] = useState<string | null>(null);  // core part SOLO si T-MEC
   const productos = productsL.data.filter((p) => p.kind !== "material");
-  const automotive = !!product?.is_automotive_core;
+  // El régimen automotriz (core part) es exclusivo del T-MEC: el backend solo
+  // devuelve automotive_core_code cuando el tratado es T-MEC.
+  const automotive = !!autoCore;
   // Total y VNM (valor de materiales NO originarios) los calcula el BACKEND según el
   // tratado (origen real de cada insumo): aquí solo se muestran/usan.
 
@@ -2075,6 +2082,7 @@ function CalculoOrigenView() {
       setBomTotal(r.total_value ?? "0"); setBomVnm(r.vnm ?? "0");
       setBomConversion(r.conversion_cost ?? "0");
       setBomNetCost(r.net_cost ?? r.total_value ?? "0");
+      setAutoCore(r.automotive_core_code ?? null);
       setSuggestedRule(r.suggested_rule ?? null);
     } catch (e) { setBomError(true); setComps([]); setMsg((e as Error).message); }
     finally { setLoadingBom(false); }
@@ -2940,10 +2948,10 @@ function CalificacionesView() {
   const [q, setQ] = useState("");
   const [layoutCliente, setLayoutCliente] = useState<number | "">("");
   const [layoutsFor, setLayoutsFor] = useState<Party | null>(null);
-  const vis = smartFilter(data, q, (x) => [name(x.product), x.criterion, x.status_display]);
+  const vis = smartFilter(data, q, (x) => [name(x.product), treatyLabel(x.treaty_code), x.criterion, x.status_display]);
   function exportar() {
-    exportCSV("calificaciones", ["Producto", "Criterio", "VCR", "Resultado"],
-      vis.map((x) => [name(x.product), x.criterion || "", x.rvc_value ? `${x.rvc_value}%` : "", x.status_display]));
+    exportCSV("calificaciones", ["Producto", "Tratado", "Criterio", "VCR", "Resultado"],
+      vis.map((x) => [name(x.product), treatyLabel(x.treaty_code), x.criterion || "", x.rvc_value ? `${x.rvc_value}%` : "", x.status_display]));
   }
   return (
     <div>
@@ -2966,10 +2974,11 @@ function CalificacionesView() {
       </div>
       <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
       {vis.some((x) => x.status === "AUTO_REVIEW") && <AutoReviewBox />}
-      <Table head={["Producto", "Criterio", "VCR", "Resultado"]}>
+      <Table head={["Producto", "Tratado", "Criterio", "VCR", "Resultado"]}>
         {vis.map((q) => (
           <tr key={q.id}>
             <td className="px-4 py-3 font-mono text-xs">{name(q.product)}</td>
+            <td className="px-4 py-3 text-xs">{treatyLabel(q.treaty_code)}</td>
             <td className="px-4 py-3">{q.criterion || "—"}</td>
             <td className="px-4 py-3">{q.rvc_value ? `${q.rvc_value}%` : "—"}</td>
             <td className="px-4 py-3"><Pill k={q.status}>{q.status_display}</Pill></td>

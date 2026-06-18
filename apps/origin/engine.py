@@ -131,12 +131,20 @@ AUTO_VEHICLE_HEADINGS = {"8701", "8702", "8703", "8704", "8705"}
 AUTO_PART_HEADINGS = {"8706", "8707", "8708"}
 
 
-def automotive_note(params, hs_code=""):
-    """Aviso de régimen automotriz para el expediente. Se dispara si la PSR trae
-    banderas en 'extra' (LVC / acero-aluminio / core) O si la fracción del bien
-    es del sector automotor (cap. 87 vehículos/autopartes), SIEMPRE (califique o
-    no), porque el VCR no basta: hay requisitos que el motor no calcula.
-    Devuelve None si no aplica."""
+def is_tmec(treaty):
+    """El régimen automotriz de 'core parts' (Anexo 4-B) es EXCLUSIVO del T-MEC /
+    USMCA. Otros tratados (ACE 55, TLCUEM, etc.) tienen sus propias reglas y NO
+    deben mostrar este régimen."""
+    return getattr(treaty, "code", "") == "TMEC"
+
+
+def automotive_note(params, hs_code="", treaty=None):
+    """Aviso de régimen automotriz T-MEC para el expediente. Solo aplica al T-MEC.
+    Se dispara si la PSR trae banderas en 'extra' (LVC / acero-aluminio / core) O
+    si la fracción del bien es del sector automotor (cap. 87). Devuelve None si no
+    aplica (incluido cualquier tratado distinto al T-MEC)."""
+    if treaty is not None and not is_tmec(treaty):
+        return None
     extra = (params or {}).get("extra") or {}
     flags = []
     if extra.get("lvc_pct"):
@@ -204,10 +212,13 @@ def core_part_code(hs_code):
     return None
 
 
-def apply_core_part_review(hs_code, result):
-    """Si la fracción del bien es una 'core part', el motor de BOM NO concluye el
-    origen: se marca el resultado como 'AUTO_REVIEW' (requiere régimen automotriz)
-    y se anexa la nota. Conserva la traza CTC/VCR calculada como referencia."""
+def apply_core_part_review(hs_code, result, treaty=None):
+    """Si la fracción del bien es una 'core part' del T-MEC, el motor de BOM NO
+    concluye el origen: se marca el resultado como 'AUTO_REVIEW' (requiere régimen
+    automotriz) y se anexa la nota. Conserva la traza CTC/VCR como referencia.
+    SOLO aplica al T-MEC; en otros tratados se devuelve el resultado tal cual."""
+    if treaty is not None and not is_tmec(treaty):
+        return result
     code = core_part_code(hs_code)
     if not code:
         return result
@@ -336,7 +347,7 @@ def qualify(product, treaty, as_of=None, _visited=None):
         rvc_pass, rvc_value, rvc_detail = _check_rvc(treaty, params, transaction_value, vnm)
         detail["rvc"] = rvc_detail
 
-    note = automotive_note(params, product.hs_code or "")
+    note = automotive_note(params, product.hs_code or "", treaty)
     if note:
         detail["automotive_regime"] = note
 
@@ -352,7 +363,7 @@ def qualify(product, treaty, as_of=None, _visited=None):
         criterion = "CTC_AND_RVC"
 
     result = _result(passed, criterion, rvc_value, rule, detail)
-    return apply_core_part_review(product.hs_code or "", result)
+    return apply_core_part_review(product.hs_code or "", result, treaty)
 
 
 def _result(passed, criterion, rvc_value, rule, detail, insufficient=False):
