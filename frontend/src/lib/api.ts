@@ -158,6 +158,7 @@ export type Product = {
   hs_suggested?: string; hs_suggestion_status?: string;
   hs_suggestion_note?: string; hs_suggested_by_name?: string | null;
   hs_logs?: HsLog[]; change_log_count?: number; is_automotive_core?: boolean;
+  customers?: number[]; customer_names?: { id: number; name: string }[];
 };
 export type Treaty = { id: number; code: string; name: string };
 export type ComponentDeclaration = {

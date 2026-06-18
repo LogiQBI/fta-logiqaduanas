@@ -2596,6 +2596,10 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     country_of_origin: product?.country_of_origin ?? "",
     supplier: (product?.supplier ?? "") as number | "",
   });
+  const clientsL = useList<Party>(() => api.parties("customer"));
+  const [customers, setCustomers] = useState<number[]>(product?.customers ?? []);
+  const toggleCustomer = (id: number) =>
+    setCustomers((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof f, v: string | number) => setF({ ...f, [k]: v });
   async function save() {
@@ -2609,6 +2613,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
       currency: f.currency || "USD", conversion_cost: f.conversion_cost || "0",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
       supplier: f.supplier === "" ? null : Number(f.supplier),
+      customers,
     };
     try {
       if (product) await api.updateProduct(product.id, payload);
@@ -2658,6 +2663,21 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
               <option value="">— Sin proveedor —</option>
               {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
             </select>
+          </Field>
+        </div>
+        <div className="col-span-2">
+          <Field label="Cliente(s) que compran esta parte (opcional)">
+            {clientsL.data.length === 0
+              ? <p className="text-xs text-zinc-400">No tienes clientes. Agrégalos en Catálogos → Clientes.</p>
+              : <div className="max-h-36 overflow-y-auto rounded-lg border border-zinc-200">
+                  {clientsL.data.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 border-b border-zinc-100 px-3 py-1.5 text-sm last:border-0">
+                      <input type="checkbox" checked={customers.includes(c.id)} onChange={() => toggleCustomer(c.id)} />
+                      <span className="flex-1 truncate">{c.name}</span>
+                    </label>
+                  ))}
+                </div>}
+            <p className="mt-1 text-[11px] text-zinc-500">Al emitir certificados o declarar, podrás filtrar los números de parte por cliente.</p>
           </Field>
         </div>
       </div>
@@ -3694,6 +3714,16 @@ function CertificadosEmitirView() {
   }
   useEffect(() => { api.companyProfile().then((p) => setProfile(p as ProfileShape)).catch(() => {}); }, []);
   const productos = productsL.data.filter((p) => p.kind !== "material");
+  // Si se elige un cliente, solo sus números de parte (los que tienen ese cliente asignado).
+  const productosCliente = clientId === ""
+    ? productos
+    : productos.filter((p) => (p.customers ?? []).includes(Number(clientId)));
+  // Si cambia el cliente y el producto elegido ya no le corresponde, se limpia.
+  useEffect(() => {
+    if (productId !== "" && clientId !== "" && !productosCliente.some((p) => p.id === productId)) {
+      setProductId("");
+    }
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
   const qual = qualsL.data.find((q) => q.product === Number(productId) && q.treaty === Number(treatyId));
   const profileOk = !!profile && !!profile.legal_name;
   const califica = qual?.status === "QUALIFIES";
@@ -3731,10 +3761,8 @@ function CertificadosEmitirView() {
       <Card className="p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Producto">
-            <select value={productId} onChange={(e) => setProductId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
-              <option value="">Elige un producto…</option>
-              {productos.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.description}</option>)}
-            </select>
+            <ProductCombobox products={productosCliente} value={productId} onChange={setProductId} />
+            {clientId !== "" && <p className="mt-1 text-[11px] text-zinc-500">Mostrando los números de parte de este cliente ({productosCliente.length}).</p>}
           </Field>
           <Field label="Tratado">
             <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
@@ -4563,6 +4591,8 @@ function SolicitudForm({ onClose, onSaved }: {
   const [dueDate, setDueDate] = useState("");
   const [mode, setMode] = useState<"proveedor" | "productos">("proveedor");
   const [supplierId, setSupplierId] = useState<number | "">("");
+  const [prodSupplierFilter, setProdSupplierFilter] = useState<number | "">("");  // filtra la lista por proveedor
+  const [prodQuery, setProdQuery] = useState("");
   const [picked, setPicked] = useState<number[]>([]);
   const [bomAnalysis, setBomAnalysis] = useState(false);
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
@@ -4579,6 +4609,10 @@ function SolicitudForm({ onClose, onSaved }: {
 
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
   const conProveedor = products.data.filter((p) => p.supplier);
+  // Lista para "productos individuales": filtrada por proveedor elegido y búsqueda.
+  const conProveedorVis = smartFilter(
+    conProveedor.filter((p) => prodSupplierFilter === "" || p.supplier === prodSupplierFilter),
+    prodQuery, (p) => [p.sku, p.description, p.supplier_name ?? ""]);
   const selectedIds = mode === "proveedor"
     ? conProveedor.filter((p) => p.supplier === supplierId).map((p) => p.id)
     : picked;
@@ -4645,16 +4679,27 @@ function SolicitudForm({ onClose, onSaved }: {
               )}
             </div>
           ) : (
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200">
-              {conProveedor.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">No hay productos con proveedor asignado.</div>}
-              {conProveedor.map((p) => (
-                <label key={p.id} className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 text-sm last:border-0">
-                  <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} />
-                  <span className="font-mono text-xs">{p.sku}</span>
-                  <span className="flex-1 truncate text-zinc-600">{p.description}</span>
-                  <span className="text-xs text-zinc-400">{p.supplier_name}</span>
-                </label>
-              ))}
+            <div>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <select value={prodSupplierFilter} onChange={(e) => setProdSupplierFilter(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
+                  <option value="">Todos los proveedores</option>
+                  {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
+                </select>
+                <input value={prodQuery} onChange={(e) => setProdQuery(e.target.value)} placeholder="Buscar número de parte…"
+                  className="flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" />
+              </div>
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200">
+                {conProveedorVis.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">{conProveedor.length === 0 ? "No hay productos con proveedor asignado." : "Sin coincidencias para ese proveedor/búsqueda."}</div>}
+                {conProveedorVis.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 text-sm last:border-0">
+                    <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} />
+                    <span className="font-mono text-xs">{p.sku}</span>
+                    <span className="flex-1 truncate text-zinc-600">{p.description}</span>
+                    <span className="text-xs text-zinc-400">{p.supplier_name}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>

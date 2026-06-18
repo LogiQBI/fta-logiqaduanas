@@ -142,6 +142,12 @@ class Product(TenantOwnedModel):
         Party, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="supplied_products", limit_choices_to={"kind": Party.Kind.SUPPLIER},
     )
+    # Clientes a los que la empresa VENDE esta parte. Sirve para filtrar los
+    # números de parte por cliente al emitir certificados / declarar origen.
+    customers = models.ManyToManyField(
+        Party, blank=True, related_name="purchased_products",
+        limit_choices_to={"kind": Party.Kind.CUSTOMER},
+    )
     # Sugerencia de fracción del proveedor (la empresa la acepta o rechaza).
     class HsSuggestion(models.TextChoices):
         PENDING = "pending", "Pendiente"

@@ -82,6 +82,10 @@ class ProductSerializer(serializers.ModelSerializer):
     hs_logs = serializers.SerializerMethodField()
     change_log_count = serializers.SerializerMethodField()
     is_automotive_core = serializers.SerializerMethodField()
+    customer_names = serializers.SerializerMethodField()
+
+    def get_customer_names(self, obj):
+        return [{"id": c.id, "name": c.name} for c in obj.customers.all()]
 
     def get_is_automotive_core(self, obj):
         from apps.origin.engine import core_part_code

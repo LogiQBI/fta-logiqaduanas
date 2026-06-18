@@ -368,7 +368,7 @@ class ProductViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         # Cuenta de cambios de precio/origen para el badge "historial" en la lista.
-        return super().get_queryset().annotate(
+        return super().get_queryset().prefetch_related("customers").annotate(
             _change_log_count=Count("change_logs", distinct=True))
 
     def perform_create(self, serializer):
