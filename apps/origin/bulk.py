@@ -424,7 +424,36 @@ BOM_RESPONSE_HELP = {
 }
 
 
-def make_template(columns, sheet_name, instructions="", col_help=None):
+DECLARATION_RESPONSE_COLUMNS = [
+    ("num_parte", "Número de parte", "CMP-001"),
+    ("descripcion", "Descripción", "Resistencia"),
+    ("hs_code", "Fracción HS", "853321"),
+    ("originario", "¿Originario? (si/no)", "si"),
+    ("pais", "País de origen (ISO-2)", "MX"),
+    ("valor_originario", "Valor materiales ORIGINARIOS", "0"),
+    ("valor_no_originario", "Valor materiales NO originarios", "0"),
+]
+
+DECLARATION_RESPONSE_INSTRUCTIONS = (
+    "Responde EN LOTE la solicitud de origen de tu cliente: una fila por número de parte.\n"
+    "Los números de parte, descripción y fracción ya vienen pre-cargados; NO los cambies.\n"
+    "Por cada uno indica si el bien es ORIGINARIO del tratado (si/no), su país de origen y, "
+    "si los conoces, el valor de materiales originarios y no originarios.\n"
+    "Al importar se registra tu declaración y la solicitud queda RESPONDIDA para cada parte.\n"
+    "El sistema te orienta, pero no sustituye la asesoría profesional en reglas de origen.")
+
+DECLARATION_RESPONSE_HELP = {
+    "num_parte": {"req": True, "help": "Número de parte (pre-cargado; no lo cambies)."},
+    "descripcion": {"req": False, "help": "Descripción (pre-cargada)."},
+    "hs_code": {"req": False, "help": "Fracción arancelaria (pre-cargada)."},
+    "originario": {"req": True, "help": "¿El bien CALIFICA como originario del tratado? Escribe si o no."},
+    "pais": {"req": False, "help": _ISO2_HELP},
+    "valor_originario": {"req": False, "help": "Valor de materiales originarios; solo número (ej. 1.50)."},
+    "valor_no_originario": {"req": False, "help": "Valor de materiales no originarios; solo número (ej. 0.80)."},
+}
+
+
+def make_template(columns, sheet_name, instructions="", col_help=None, data_rows=None):
     """Crea un .xlsx con: (1) una hoja "Instrucciones" de llenado y (2) la hoja de
     datos con encabezados resaltados + fila de ejemplo. Cada encabezado lleva un
     comentario con su ayuda. Devuelve bytes.
@@ -443,7 +472,12 @@ def make_template(columns, sheet_name, instructions="", col_help=None):
         c = ws.cell(row=1, column=col, value=label)
         c.font = header_font
         c.fill = fill
-        ws.cell(row=2, column=col, value=example)
+        if data_rows:
+            # Pre-carga: una fila por registro (ej. los productos solicitados).
+            for i, dr in enumerate(data_rows):
+                ws.cell(row=2 + i, column=col, value=dr.get(key, ""))
+        else:
+            ws.cell(row=2, column=col, value=example)
         ws.column_dimensions[c.column_letter].width = max(14, len(label) + 2)
         info = col_help.get(key)
         if info:

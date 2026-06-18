@@ -1334,6 +1334,102 @@ class SolicitationRequestViewSet(TenantScopedViewSet):
         sr.save(update_fields=["declaration", "status", "responded_at", "rejection_reason", "updated_at"])
         return Response(s.SolicitationRequestSerializer(sr).data)
 
+    @action(detail=False, methods=["post"], url_path="declaration-template")
+    def declaration_template(self, request):
+        """Plantilla .xlsx PRE-CARGADA para responder EN LOTE solicitudes de
+        DECLARACIÓN (no BOM). Body: {ids:[...]}. Solo el proveedor."""
+        from django.http import HttpResponse
+        from apps.origin import bulk
+        m = self.membership()
+        if not m or not m.is_supplier:
+            raise PermissionDenied("Solo el proveedor responde solicitudes.")
+        ids = request.data.get("ids") or []
+        qs = self.get_queryset().filter(id__in=ids, bom_analysis=False).exclude(
+            status__in=[SolicitationRequest.Status.RESPONDED,
+                        SolicitationRequest.Status.ACCEPTED]).select_related("product")
+        rows = [{"num_parte": sr.product.sku, "descripcion": sr.product.description,
+                 "hs_code": sr.product.hs_code or ""} for sr in qs]
+        content = bulk.make_template(
+            bulk.DECLARATION_RESPONSE_COLUMNS, "Declaración de origen",
+            instructions=bulk.DECLARATION_RESPONSE_INSTRUCTIONS,
+            col_help=bulk.DECLARATION_RESPONSE_HELP, data_rows=rows or None)
+        resp = HttpResponse(content, content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        resp["Content-Disposition"] = 'attachment; filename="plantilla_declaracion_origen.xlsx"'
+        return resp
+
+    @action(detail=False, methods=["post"], url_path="import-declarations")
+    def import_declarations(self, request):
+        """El proveedor responde EN LOTE solicitudes de declaración subiendo el
+        layout. Multipart: file + ids (lista separada por comas). Crea la
+        declaración y marca RESPONDIDA cada parte cuyo SKU aparezca en el archivo."""
+        from decimal import Decimal
+        from apps.origin import bulk
+        m = self.membership()
+        if not m or not m.is_supplier:
+            raise PermissionDenied("Solo el proveedor responde solicitudes.")
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"error": "Adjunta el archivo .xlsx."}, status=status.HTTP_400_BAD_REQUEST)
+        ids = [int(x) for x in str(request.data.get("ids") or "").split(",") if x.strip().isdigit()]
+        try:
+            rows = bulk.read_rows(f, bulk.DECLARATION_RESPONSE_COLUMNS)
+        except Exception:
+            return Response({"error": "No se pudo leer el archivo. Usa la plantilla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        base = self.get_queryset().filter(bom_analysis=False).exclude(
+            status__in=[SolicitationRequest.Status.RESPONDED, SolicitationRequest.Status.ACCEPTED])
+        if ids:
+            base = base.filter(id__in=ids)
+        by_sku = {}
+        for sr in base.select_related("product"):
+            by_sku.setdefault((sr.product.sku or "").strip().upper(), sr)
+
+        def _dec(x):
+            try:
+                return Decimal(str(x or 0))
+            except Exception:
+                return Decimal("0")
+
+        def _truthy(v):
+            return str(v or "").strip().lower() in ("si", "sí", "yes", "y", "1", "true", "x")
+
+        respondidas = 0
+        errores = []
+        with transaction.atomic():
+            for r in rows:
+                sku = str(r.get("num_parte") or "").strip().upper()
+                if not sku:
+                    continue
+                sr = by_sku.get(sku)
+                if not sr:
+                    errores.append(f"{sku}: no es una solicitud pendiente tuya (omitido).")
+                    continue
+                if not sr.period_from or not sr.period_to:
+                    errores.append(f"{sku}: la solicitud no tiene periodo de vigencia (omitido).")
+                    continue
+                v_orig = _dec(r.get("valor_originario"))
+                v_non = _dec(r.get("valor_no_originario"))
+                price = sr.product.unit_cost or Decimal("0")
+                if price and (v_orig + v_non) > price:
+                    errores.append(f"{sku}: materiales ({v_orig + v_non}) > precio ({price}); omitido.")
+                    continue
+                decl = SupplierDeclaration.objects.create(
+                    tenant=sr.tenant, supplier=sr.supplier, product=sr.product, treaty=sr.treaty,
+                    is_originating=_truthy(r.get("originario")),
+                    country_of_origin="".join(c for c in str(r.get("pais") or "") if c.isalpha()).upper()[:2],
+                    value_originating=v_orig, value_non_originating=v_non,
+                    valid_from=sr.period_from, valid_to=sr.period_to)
+                sr.declaration = decl
+                sr.status = SolicitationRequest.Status.RESPONDED
+                sr.responded_at = timezone.now()
+                sr.rejection_reason = ""
+                sr.save(update_fields=["declaration", "status", "responded_at",
+                                       "rejection_reason", "updated_at"])
+                _log_sol(sr, "sent", "declaración por layout", request.user)
+                respondidas += 1
+        return Response({"respondidas": respondidas, "errores": errores})
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])

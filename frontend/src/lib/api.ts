@@ -473,6 +473,11 @@ export const api = {
   bulkPreview: (type: string, file: File): Promise<BulkPreview> => uploadFile(`/bulk/import/?type=${type}&dry=1`, file),
   solicitudBomTemplate: () => downloadFile(`/bulk/template/?type=bom_response`, "plantilla_respuesta_bom.xlsx"),
   importSolicitudBom: (id: number, file: File) => uploadFile(`/solicitations/${id}/import-bom/`, file),
+  // Declaración EN LOTE por layout (varias solicitudes de un bloque a la vez).
+  solicitudDeclarationTemplate: (ids: number[]) =>
+    downloadPost(`/solicitations/declaration-template/`, { ids }, "plantilla_declaracion_origen.xlsx"),
+  importSolicitudDeclarations: (ids: number[], file: File) =>
+    uploadForm(`/solicitations/import-declarations/`, { file, ids: ids.join(",") }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

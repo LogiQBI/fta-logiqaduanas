@@ -4785,8 +4785,10 @@ function SolicitudBloque({ items, prod, onDone }: {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [layoutDecl, setLayoutDecl] = useState(false);
   const s0 = items[0];
   const esBom = !!s0.bom_analysis;
+  const pendingIds = items.filter((i) => i.status !== "responded").map((i) => i.id);
   const alert = dueAlert(s0);
   const respondidas = items.filter((i) => i.status === "responded").length;
   const pendientesItems = items.filter((i) => i.status !== "responded");
@@ -4848,6 +4850,22 @@ function SolicitudBloque({ items, prod, onDone }: {
               </div>
               {msg && <div className="mt-2 text-zinc-700">{msg}</div>}
             </div>
+          )}
+          {!esBom && respondidas < items.length && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <Btn size="sm" onClick={() => setLayoutDecl(true)} disabled={busy}>
+                  <Upload size={14} className="-mt-0.5 mr-1 inline" />Responder por Excel (layout)
+                </Btn>
+                <span className="text-zinc-500">responde todos los productos de esta solicitud en un solo archivo, o uno por uno abajo.</span>
+              </div>
+            </div>
+          )}
+          {layoutDecl && (
+            <CargaMasivaModal title="Responder por layout (declaración de origen)" onClose={() => setLayoutDecl(false)} onDone={onDone}
+              hint="Descarga la plantilla (ya viene con todos los números de parte de esta solicitud), marca por cada uno si es originario, su país y los valores, y súbela. Cada parte quedará respondida."
+              templateFn={() => api.solicitudDeclarationTemplate(pendingIds)}
+              importFn={(f) => api.importSolicitudDeclarations(pendingIds, f)} />
           )}
           {items.map((i) => (
             <SolAccordion key={i.id} s={i} compact>
