@@ -362,8 +362,8 @@ export const api = {
     req(`/products/${id}/calc-bom-origin/`, {
       method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null }),
     }),
-  originAnalyses: (productId: number, treaty: number): Promise<{ results: OriginAnalysis[] } | OriginAnalysis[]> =>
-    req(`/origin-analyses/?product=${productId}&treaty=${treaty}`),
+  originAnalyses: (productId: number, treaty?: number): Promise<{ results: OriginAnalysis[] } | OriginAnalysis[]> =>
+    req(`/origin-analyses/?product=${productId}${treaty ? `&treaty=${treaty}` : ""}`),
   originAnalysis: (id: number): Promise<OriginAnalysisDetail> =>
     req(`/origin-analyses/${id}/`),
   deleteOriginAnalysis: (id: number): Promise<null> =>

@@ -2292,11 +2292,13 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
   const load = useCallback(async () => {
     setLoading(true); setMsg("");
     try {
-      const r = await api.originAnalyses(productId, treatyId);
+      // Todos los cálculos del producto (de cualquier tratado): así el histórico se
+      // mantiene aunque cambies de tratado; la columna Tratado los distingue.
+      const r = await api.originAnalyses(productId);
       setItems(Array.isArray(r) ? r : r.results);
     } catch (e) { setMsg((e as Error).message); }
     finally { setLoading(false); }
-  }, [productId, treatyId]);
+  }, [productId]);
   useEffect(() => { load(); }, [load, reloadKey]);
 
   async function ver(id: number) {
@@ -2344,13 +2346,14 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
       {loading && items.length === 0 ? (
         <p className="text-sm text-zinc-400">Cargando…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-zinc-400">Aún no hay análisis guardados para este producto y tratado.</p>
+        <p className="text-sm text-zinc-400">Aún no hay análisis guardados para este producto.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500">
                 <th className="py-2 pr-3">Fecha</th><th className="py-2 pr-3">Tipo</th>
+                <th className="py-2 pr-3">Tratado</th>
                 <th className="py-2 pr-3">Resultado</th><th className="py-2 pr-3">Criterio</th>
                 <th className="py-2 pr-3 text-right">VCR</th><th className="py-2 pr-3 text-right">Valor total</th>
                 <th className="py-2 pr-3 text-right">VNM</th><th className="py-2 pr-3">Por</th><th className="py-2"></th>
@@ -2362,6 +2365,7 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
                   <tr className="border-b border-zinc-100">
                     <td className="py-2 pr-3 whitespace-nowrap">{fmt(a.created_at)}</td>
                     <td className="py-2 pr-3 text-xs text-zinc-500">{a.kind_display}</td>
+                    <td className="py-2 pr-3 text-xs">{treatyLabel(a.treaty_code)}</td>
                     <td className="py-2 pr-3">
                       <span className={cx("rounded-full px-2 py-0.5 text-xs font-semibold", STATUS_STYLE[a.status] ?? "bg-zinc-100 text-zinc-600")}>
                         {a.status_display}
@@ -2380,7 +2384,7 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
                   </tr>
                   {openId === a.id && (
                     <tr className="bg-zinc-50">
-                      <td colSpan={9} className="px-3 py-3">
+                      <td colSpan={10} className="px-3 py-3">
                         {detail ? <OriginResultReport result={{ status: a.status, criterion: a.criterion, rvc_value: a.rvc_value, detail: detail.detail }} /> : <span className="text-xs text-zinc-400">Cargando traza…</span>}
                       </td>
                     </tr>
@@ -3714,10 +3718,14 @@ function CertificadosEmitirView() {
   }
   useEffect(() => { api.companyProfile().then((p) => setProfile(p as ProfileShape)).catch(() => {}); }, []);
   const productos = productsL.data.filter((p) => p.kind !== "material");
-  // Si se elige un cliente, solo sus números de parte (los que tienen ese cliente asignado).
-  const productosCliente = clientId === ""
+  // Si se elige un cliente, solo sus números de parte (los que tienen ese cliente
+  // asignado). Si el cliente AÚN no tiene partes asignadas, se muestran todas (para
+  // no dejar el buscador vacío) con un aviso.
+  const asignadasCliente = clientId === ""
     ? productos
     : productos.filter((p) => (p.customers ?? []).includes(Number(clientId)));
+  const clienteSinPartes = clientId !== "" && asignadasCliente.length === 0;
+  const productosCliente = clienteSinPartes ? productos : asignadasCliente;
   // Si cambia el cliente y el producto elegido ya no le corresponde, se limpia.
   useEffect(() => {
     if (productId !== "" && clientId !== "" && !productosCliente.some((p) => p.id === productId)) {
@@ -3762,7 +3770,9 @@ function CertificadosEmitirView() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Producto">
             <ProductCombobox products={productosCliente} value={productId} onChange={setProductId} />
-            {clientId !== "" && <p className="mt-1 text-[11px] text-zinc-500">Mostrando los números de parte de este cliente ({productosCliente.length}).</p>}
+            {clientId !== "" && (clienteSinPartes
+              ? <p className="mt-1 text-[11px] text-amber-600">Este cliente no tiene números de parte asignados; mostrando todos. Asígnalos en el producto (campo “Cliente(s)”).</p>
+              : <p className="mt-1 text-[11px] text-zinc-500">Mostrando los números de parte de este cliente ({productosCliente.length}).</p>)}
           </Field>
           <Field label="Tratado">
             <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
