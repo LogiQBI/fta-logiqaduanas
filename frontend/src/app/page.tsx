@@ -1030,6 +1030,16 @@ function ruleTypeLabel(t?: string) {
     WO: "Totalmente obtenido",
   } as Record<string, string>)[t ?? ""] ?? (t ?? "");
 }
+// Criterio de preferencia USMCA (A–D) a partir del criterio interno del motor.
+// A = totalmente obtenido; B = cumple regla específica (CTC/RVC); orientativo.
+function usmcaPref(criterion?: string, status?: string): { letter: string; label: string } {
+  if (status !== "QUALIFIES") return { letter: "—", label: "Origen no confirmado" };
+  const c = (criterion || "").toUpperCase();
+  if (c === "WO") return { letter: "A", label: "Totalmente obtenido" };
+  if (c.includes("CTC") || c.includes("RVC") || c.includes("AUTOMOTRIZ"))
+    return { letter: "B", label: "Cumple regla específica (CTC/RVC)" };
+  return { letter: "B", label: criterion || "Cumple PSR" };
+}
 // Limpia la descripción de la regla (quita el marcador interno [AUTO-GN11 ...]).
 function cleanRuleDesc(d?: string) {
   return (d ?? "").replace(/\[AUTO-GN11[^\]]*\]\s*/g, "").trim();
@@ -3647,72 +3657,94 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const esc = (v?: string | null) =>
     (v ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch] as string));
   const ce = c.certifier_data || {}; const im = c.importer_data || {};
-  const originario = c.origin_status === "QUALIFIES";
-  const criterio = `${c.criterion || c.origin_status}${c.rvc_value ? ` · VCR ${c.rvc_value}%` : ""}`;
-  const periodo = (c.blanket_from && c.blanket_to) ? `${c.blanket_from} a ${c.blanket_to}` : "No especificado";
+  const pr = (c.producer_data && Object.keys(c.producer_data).length ? c.producer_data : ce);
   const hoy = (c.issued_at || "").slice(0, 10);
+  const periodo = (c.blanket_from && c.blanket_to) ? `${c.blanket_from} → ${c.blanket_to}` : "Single shipment";
+  const pref = usmcaPref(c.criterion, c.origin_status);
+  const contacto = (d: Record<string, string> = {}) =>
+    [d.direccion, d.pais].filter(Boolean).join(" — ");
+  // Bloque de una parte (1..6 datos de identidad). Estilo del CO oficial USMCA.
+  const party = (title: string, d: Record<string, string> = {}, extra = "") => `
+    <td class="box">
+      <div class="bt">${title}</div>
+      <div class="bl"><b>Name:</b> ${esc(d.nombre || "—")}</div>
+      <div class="bl"><b>Address:</b> ${esc(d.direccion || "—")}${d.pais ? ` [${esc(d.pais)}]` : ""}</div>
+      <div class="bl"><b>Tax ID:</b> ${esc(d.rfc || "—")}</div>
+      <div class="bl"><b>Tel:</b> ${esc(d.telefono || "—")} &nbsp; <b>E-mail:</b> ${esc(d.email || "—")}</div>
+      ${extra}
+    </td>`;
   const firmaImg = ce.firma_png
-    ? `<img src="${ce.firma_png}" alt="Firma" style="max-height:70px;max-width:260px"/>`
-    : `<span style="color:#b91c1c;font-size:12px">Sin firma cargada.</span>`;
-  const row = (k: string, v: string) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`;
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
-<title>Certificado ${esc(c.folio)} — ${esc(c.product_sku)}</title>
+    ? `<img src="${ce.firma_png}" alt="Signature" style="max-height:60px;max-width:240px"/>`
+    : `<span style="color:#b91c1c;font-size:11px">Sin firma cargada (Datos de la empresa).</span>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Certificate of Origin ${esc(c.folio)} — ${esc(c.product_sku)}</title>
 <style>
-  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:13px}
-  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:18px}
-  .brand{font-size:20px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:12px}
-  h1{font-size:16px;color:${NAVY};margin:0 0 2px} .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-weight:bold;font-size:12px}
-  .ok{background:#dcfce7;color:#15803d} .no{background:#fee2e2;color:#b91c1c}
-  table{width:100%;border-collapse:collapse;margin:10px 0 18px} td{border:1px solid #e5e7eb;padding:7px 10px;vertical-align:top}
-  td.k{background:#f8fafc;font-weight:bold;width:34%;color:#374151} td.v{width:66%}
-  .section{font-size:13px;font-weight:bold;color:${NAVY};margin:18px 0 4px;text-transform:uppercase;letter-spacing:.3px}
-  .sign{display:flex;gap:40px;margin-top:36px} .sign div{flex:1;border-top:1px solid #9ca3af;padding-top:6px;font-size:12px}
-  .legal{margin-top:24px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
-  @media print{.noprint{display:none} body{padding:16px}}
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;padding:24px;font-size:11.5px;line-height:1.35}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${NAVY};padding-bottom:8px;margin-bottom:6px}
+  h1{font-size:16px;margin:0;color:${NAVY}} .doc{font-size:11px;color:#374151;text-align:right}
+  .sub{font-size:10.5px;color:#6b7280}
+  table{width:100%;border-collapse:collapse;margin:6px 0} td,th{border:1px solid #9ca3af;padding:6px 8px;vertical-align:top}
+  .box{width:50%} .bt{font-weight:bold;background:#eef2f6;margin:-6px -8px 6px;padding:4px 8px;font-size:11px}
+  .bl{margin:1px 0} .full .bt{}
+  th{background:${NAVY};color:#fff;font-size:10.5px;text-align:left}
+  .mtbl td{font-size:10.5px}
+  .cert{font-size:10.5px;margin:8px 0;line-height:1.5}
+  .sign td{height:56px}
+  .foot{margin-top:10px;font-size:9.5px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:6px}
+  @media print{.noprint{display:none} body{padding:10px}}
 </style></head><body>
-  <div class="head">
-    <div><div class="brand">LogiQ Aduanas</div><div class="sub">FTA · Gestión de Origen Preferencial</div></div>
-    <div style="text-align:right"><h1>Certificación de Origen</h1><div class="sub">Tratado: <b>${esc(c.treaty_label)}</b></div>
-      <div class="sub">Folio: ${esc(c.folio)} · Emitido: ${esc(hoy)}</div></div>
+  <div class="top">
+    <div>
+      ${ce.logo_png ? `<img src="${ce.logo_png}" alt="" style="max-height:44px;max-width:180px;object-fit:contain">` : `<h1>${esc(ce.nombre || "Certificate of Origin")}</h1>`}
+      <div class="sub">Certificate of Origin — ${esc(c.treaty_label)} (USMCA/T-MEC)</div>
+    </div>
+    <div class="doc"><b>Document No.:</b> ${esc(c.folio)}<br>Issued: ${esc(hoy)}</div>
   </div>
-  <div class="section">Resultado de origen</div>
-  <p><span class="badge ${originario ? "ok" : "no"}">${originario ? "PRODUCTO ORIGINARIO" : "ORIGEN NO CONFIRMADO"}</span></p>
-  <div class="section">1. Mercancía</div>
+
   <table>
-    ${row("Núm. de parte / SKU", esc(c.product_sku))}
-    ${row("Descripción", esc(c.product_description))}
-    ${row("Clasificación arancelaria (HS)", esc(c.product_hs ? formatHs(c.product_hs) : "—"))}
-    ${row("Criterio de origen", esc(criterio))}
+    <tr>${party("1. Exporter / Seller", ce)}<td class="box"><div class="bt">2. Blanket Period</div><div class="bl">${esc(periodo)}</div><div class="sub" style="margin-top:6px">If for single shipment, insert invoice no.</div></td></tr>
+    <tr>${party("3. Producer", pr, pr === ce ? '<div class="sub">Same as exporter</div>' : "")}${party("4. Importer / Buyer", im)}</tr>
   </table>
-  <div class="section">2. Exportador / Productor (Empresa)</div>
-  <table>
-    ${row("Razón social", esc(ce.nombre || "—"))}
-    ${row("RFC / Tax ID", esc(ce.rfc || "—"))}
-    ${row("Domicilio", esc(ce.direccion || "—"))}
-    ${row("País", esc(ce.pais || "—"))}
-    ${row("Contacto", esc([ce.email, ce.telefono].filter(Boolean).join(" · ") || "—"))}
+
+  <table class="mtbl">
+    <tr><th colspan="5">5. Merchandise Information</th></tr>
+    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Preference Criterion</th><th>Country of Origin</th></tr>
+    <tr>
+      <td>${esc(c.product_sku)}</td>
+      <td>${esc(c.product_description)}</td>
+      <td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td>
+      <td style="text-align:center"><b>${esc(pref.letter)}</b><div class="sub">${esc(pref.label)}${c.rvc_value ? ` · RVC ${c.rvc_value}%` : ""}</div></td>
+      <td style="text-align:center">${esc(im.pais || ce.pais || "—")}</td>
+    </tr>
   </table>
-  <div class="section">3. Importador (Cliente)</div>
-  <table>
-    ${row("Razón social", esc(im.nombre || "—"))}
-    ${row("RFC / Tax ID", esc(im.rfc || "—"))}
-    ${row("País", esc(im.pais || "—"))}
-    ${row("Contacto", esc([im.email, im.telefono].filter(Boolean).join(" · ") || "—"))}
-  </table>
-  <div class="section">4. Periodo que cubre (blanket period)</div>
-  <table>${row("Vigencia", esc(periodo))}</table>
-  <div class="section">5. Firma autorizada</div>
-  <div class="sign">
-    <div>${firmaImg}<br><b>${esc(ce.firmante || "—")}</b><br>${esc(ce.cargo || "")}<br>${esc(ce.nombre || "")}<br>Fecha: ${esc(hoy)}</div>
-    ${c.qr_data_uri ? `<div style="flex:0 0 auto;border-top:0;text-align:center"><img src="${c.qr_data_uri}" alt="QR" style="width:96px;height:96px"/><div style="font-size:10px;color:#6b7280">Verifica este certificado</div></div>` : ""}
+
+  <div class="cert">
+    <b>6. Certification.</b> I certify that the goods described in this document qualify as originating and the information
+    contained in this document is true and accurate. I assume responsibility for proving such representations and agree to
+    maintain and present upon request, or to make available during a verification visit, documentation necessary to support
+    this certification. The goods comply with all requirements for preferential tariff treatment under the ${esc(c.treaty_label)}.
   </div>
-  <div class="legal">Certificación de origen con folio ${esc(c.folio)} emitida por ${esc(ce.nombre || "")} para el tratado ${esc(c.treaty_label)}.
-    ${c.verify_url ? `Verificación pública: ${esc(c.verify_url)}.` : ""} Documento generado por LogiQ Aduanas | FTA.</div>
-  <div class="noprint" style="margin-top:24px;text-align:center">
-    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+
+  <table>
+    <tr>
+      <td class="box sign"><div class="bt">7. Authorized Signature</div>${firmaImg}</td>
+      <td class="box">
+        <div class="bt">Signatory</div>
+        <div class="bl"><b>Name &amp; Title:</b> ${esc(ce.firmante || "—")}${ce.cargo ? `, ${esc(ce.cargo)}` : ""}</div>
+        <div class="bl"><b>Company:</b> ${esc(ce.nombre || "—")}</div>
+        <div class="bl"><b>Date (YYYY-MM-DD):</b> ${esc(hoy)}</div>
+        <div class="bl"><b>Tel:</b> ${esc(ce.telefono || "—")} &nbsp; <b>E-mail:</b> ${esc(ce.email || "—")}</div>
+        ${c.qr_data_uri ? `<img src="${c.qr_data_uri}" alt="QR" style="width:70px;height:70px;margin-top:4px">` : ""}
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">Folio ${esc(c.folio)} · ${esc(c.treaty_label)}. ${c.verify_url ? `Public verification: ${esc(c.verify_url)}. ` : ""}Generated by LogiQ Aduanas | FTA. Orientativo; validar con un especialista en reglas de origen.</div>
+  <div class="noprint" style="margin-top:16px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer">Imprimir / Guardar PDF</button>
   </div>
 </body></html>`;
-  const win = window.open("", "_blank", "width=900,height=1000");
+  const win = window.open("", "_blank", "width=980,height=1000");
   if (!win) { alert("Permite las ventanas emergentes para ver el certificado."); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
@@ -3840,7 +3872,10 @@ function CertificadosEmitirView() {
               <td className="px-4 py-3 text-xs">{c.importer_data?.nombre ?? "—"}</td>
               <td className="px-4 py-3 text-xs">{c.criterion}{c.rvc_value ? ` · ${c.rvc_value}%` : ""}</td>
               <td className="px-4 py-3 text-xs text-zinc-500">{c.issued_at?.slice(0, 10)}</td>
-              <td className="px-4 py-3 text-right"><Btn size="sm" variant="ghost" onClick={() => generarCertificadoRegistro(c)}>Reimprimir</Btn></td>
+              <td className="px-4 py-3 text-right whitespace-nowrap">
+                <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => generarCertificadoRegistro(c)}>PDF</Btn></span>
+                <Btn size="sm" variant="ghost" onClick={() => api.certificateXlsx(c.id, c.folio)}>Excel</Btn>
+              </td>
             </tr>
           ))}
           {emitidos.count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no has emitido certificados.</td></tr>}

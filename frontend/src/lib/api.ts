@@ -131,6 +131,7 @@ export type BulkPreview = {
 export type EmittedCertificate = {
   id: number; folio: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;
+  producer_data?: Record<string, string>; exporter_data?: Record<string, string>;
   blanket_from: string | null; blanket_to: string | null; issued_at: string;
   product_sku: string; product_description: string; product_hs: string;
   treaty_code: string; treaty_label: string; criterion: string;
@@ -403,6 +404,8 @@ export const api = {
   certificates: () => req("/certificates/"),
   emitCertificate: (payload: Record<string, unknown>): Promise<EmittedCertificate> =>
     req("/certificates/emit/", { method: "POST", body: JSON.stringify(payload) }),
+  certificateXlsx: (id: number, folio: string) =>
+    downloadFile(`/certificates/${id}/xlsx/`, `certificado_${folio}.xlsx`),
   rules: (params = "") => req(`/origin-rules/${params}`),
   createRule: (payload: Record<string, unknown>) =>
     req("/origin-rules/", { method: "POST", body: JSON.stringify(payload) }),

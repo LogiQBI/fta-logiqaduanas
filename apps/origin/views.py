@@ -801,6 +801,18 @@ class CertificateViewSet(TenantScopedViewSet):
         """Devuelve los 9 elementos mínimos del T-MEC para impresión."""
         return Response(certificate_elements(self.get_object()))
 
+    @action(detail=True, methods=["get"])
+    def xlsx(self, request, pk=None):
+        """Descarga el certificado de origen en formato oficial USMCA como .xlsx."""
+        from django.http import HttpResponse
+        from apps.origin.services import build_certificate_xlsx
+        cert = self.get_object()
+        content = build_certificate_xlsx(cert)
+        resp = HttpResponse(content, content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        resp["Content-Disposition"] = f'attachment; filename="certificado_{cert.folio}.xlsx"'
+        return resp
+
     @action(detail=False, methods=["post"])
     def emit(self, request):
         """La EMPRESA emite y REGISTRA un certificado de origen (con folio) para

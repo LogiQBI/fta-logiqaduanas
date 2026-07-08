@@ -443,6 +443,127 @@ def certificate_elements(certificate):
 _TREATY_LABELS = {"TMEC": "USMCA"}
 
 
+def _usmca_pref(criterion, status):
+    """Criterio de preferencia USMCA (A–D) desde el criterio interno. Orientativo."""
+    if status != "QUALIFIES":
+        return ("—", "Origen no confirmado")
+    c = (criterion or "").upper()
+    if c == "WO":
+        return ("A", "Totalmente obtenido")
+    if "CTC" in c or "RVC" in c or "AUTOMOTRIZ" in c:
+        return ("B", "Cumple regla específica (CTC/RVC)")
+    return ("B", criterion or "Cumple PSR")
+
+
+def build_certificate_xlsx(cert):
+    """Genera el Certificado de Origen en formato oficial USMCA como .xlsx (bytes).
+    Mismos 7 campos que el PDF: exportador, periodo, productor, importador,
+    mercancía, certificación y firma."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from io import BytesIO
+    q = cert.qualification
+    p = q.product
+    ce = cert.certifier_data or {}
+    im = cert.importer_data or {}
+    pr = cert.producer_data or ce
+    label = _TREATY_LABELS.get(q.treaty.code, q.treaty.code)
+    letter, plabel = _usmca_pref(q.criterion, q.status)
+    periodo = (f"{cert.blanket_from} → {cert.blanket_to}"
+               if cert.blanket_from and cert.blanket_to else "Single shipment")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Certificate of Origin"
+    navy = PatternFill("solid", fgColor="043A70")
+    grey = PatternFill("solid", fgColor="EEF2F6")
+    thin = Side(style="thin", color="9CA3AF")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bold = Font(bold=True)
+    white = Font(bold=True, color="FFFFFF")
+    for col, w in zip("ABCDE", (22, 30, 16, 20, 18)):
+        ws.column_dimensions[col].width = w
+
+    def merge(rng, value, *, fill=None, font=None, wrap=False, align=None):
+        ws.merge_cells(rng)
+        c = ws[rng.split(":")[0]]
+        c.value = value
+        if fill:
+            c.fill = fill
+        if font:
+            c.font = font
+        c.alignment = Alignment(wrap_text=wrap, vertical="top",
+                                horizontal=align or "left")
+        for row in ws[rng]:
+            for cc in row:
+                cc.border = box
+
+    def party_lines(d):
+        return (f"Name: {d.get('nombre','—')}\nAddress: {d.get('direccion','—')}"
+                f"{(' ['+d['pais']+']') if d.get('pais') else ''}\n"
+                f"Tax ID: {d.get('rfc','—')}\nTel: {d.get('telefono','—')}   "
+                f"E-mail: {d.get('email','—')}")
+
+    r = 1
+    merge(f"A{r}:C{r}", "CERTIFICATE OF ORIGIN", font=Font(bold=True, size=14, color="043A70"))
+    merge(f"D{r}:E{r}", f"Document No.: {cert.folio}", font=bold, align="right")
+    r += 1
+    merge(f"A{r}:C{r}", f"{label} (USMCA / T-MEC)", font=Font(italic=True, color="6B7280"))
+    merge(f"D{r}:E{r}", f"Issued: {str(cert.issued_at)[:10]}", align="right")
+    r += 1
+    # 1 exportador / 2 periodo
+    ws.row_dimensions[r].height = 70
+    merge(f"A{r}:C{r}", "1. Exporter / Seller\n" + party_lines(ce), fill=None, font=None, wrap=True)
+    ws[f"A{r}"].font = Font(size=10)
+    merge(f"D{r}:E{r}", f"2. Blanket Period\n{periodo}\n(If single shipment, insert invoice no.)", wrap=True)
+    r += 1
+    # 3 productor / 4 importador
+    ws.row_dimensions[r].height = 70
+    merge(f"A{r}:C{r}", "3. Producer\n" + (party_lines(pr) if pr is not ce else "Same as exporter"), wrap=True)
+    merge(f"D{r}:E{r}", "4. Importer / Buyer\n" + party_lines(im), wrap=True)
+    r += 1
+    # 5 mercancía
+    merge(f"A{r}:E{r}", "5. Merchandise Information", fill=navy, font=white)
+    r += 1
+    heads = ["Serial / Part No.", "Description of Good(s)", "HS No.", "Preference Criterion", "Country of Origin"]
+    for i, h in enumerate(heads):
+        c = ws.cell(row=r, column=1 + i, value=h)
+        c.fill = navy; c.font = white; c.border = box
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+    r += 1
+    hs = p.hs_code or ""
+    hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
+    vals = [p.sku, p.description, hs_fmt, f"{letter} — {plabel}"
+            + (f" · RVC {q.rvc_value}%" if q.rvc_value else ""),
+            im.get("pais") or ce.get("pais") or "—"]
+    for i, v in enumerate(vals):
+        c = ws.cell(row=r, column=1 + i, value=v)
+        c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
+    r += 2
+    merge(f"A{r}:E{r}",
+          "6. Certification. I certify that the goods described qualify as originating and the information is "
+          "true and accurate. I assume responsibility for proving such representations and agree to maintain and "
+          f"present supporting documentation upon request. The goods comply with the {label} origin requirements.",
+          wrap=True)
+    ws.row_dimensions[r].height = 60
+    r += 1
+    ws.row_dimensions[r].height = 60
+    merge(f"A{r}:C{r}", "7. Authorized Signature\n\n_______________________________", wrap=True)
+    merge(f"D{r}:E{r}",
+          f"Name & Title: {ce.get('firmante','—')}"
+          f"{(', '+ce['cargo']) if ce.get('cargo') else ''}\n"
+          f"Company: {ce.get('nombre','—')}\nDate: {str(cert.issued_at)[:10]}\n"
+          f"Tel: {ce.get('telefono','—')}   E-mail: {ce.get('email','—')}", wrap=True)
+    r += 2
+    merge(f"A{r}:E{r}", f"Folio {cert.folio} · {label}. Generado por LogiQ Aduanas | FTA. "
+          "Orientativo; validar con un especialista en reglas de origen.",
+          font=Font(size=8, color="6B7280"), wrap=True)
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def _cert_party_block(prof, fallback_name="", fallback_country=""):
     """Bloque de datos de una parte (productor/importador) desde su perfil."""
     if not prof:
