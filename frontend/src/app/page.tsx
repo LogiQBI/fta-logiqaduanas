@@ -2972,7 +2972,22 @@ function CalificacionesView() {
   const [q, setQ] = useState("");
   const [layoutCliente, setLayoutCliente] = useState<number | "">("");
   const [layoutsFor, setLayoutsFor] = useState<Party | null>(null);
+  const [pdfMsg, setPdfMsg] = useState("");
   const vis = smartFilter(data, q, (x) => [name(x.product), treatyLabel(x.treaty_code), x.criterion, x.status_display]);
+  // PDF del cálculo: usa el análisis más reciente guardado para ese producto+tratado.
+  async function pdfDe(qz: Qualification) {
+    setPdfMsg("");
+    try {
+      const r = await api.originAnalyses(qz.product, qz.treaty);
+      const list = Array.isArray(r) ? r : r.results;
+      if (!list.length) { setPdfMsg(`${name(qz.product)}: aún no hay un cálculo guardado. Córrelo en “Cálculo de origen”.`); return; }
+      const [a, prof] = await Promise.all([
+        api.originAnalysis(list[0].id),
+        api.companyProfile().catch(() => null),
+      ]);
+      generarAnalisisPDF(a, prof ? { legal_name: prof.legal_name, tax_id: prof.tax_id, logo_png: prof.logo_png } : undefined);
+    } catch (e) { setPdfMsg((e as Error).message); }
+  }
   function exportar() {
     exportCSV("calificaciones", ["Producto", "Tratado", "Criterio", "VCR", "Resultado"],
       vis.map((x) => [name(x.product), treatyLabel(x.treaty_code), x.criterion || "", x.rvc_value ? `${x.rvc_value}%` : "", x.status_display]));
@@ -2997,8 +3012,9 @@ function CalificacionesView() {
         </div>
       </div>
       <ReportToolbar q={q} setQ={setQ} onExport={exportar} />
+      {pdfMsg && <p className="mb-3 text-sm text-amber-600">{pdfMsg}</p>}
       {vis.some((x) => x.status === "AUTO_REVIEW") && <AutoReviewBox />}
-      <Table head={["Producto", "Tratado", "Criterio", "VCR", "Resultado"]}>
+      <Table head={["Producto", "Tratado", "Criterio", "VCR", "Resultado", ""]}>
         {vis.map((q) => (
           <tr key={q.id}>
             <td className="px-4 py-3 font-mono text-xs">{name(q.product)}</td>
@@ -3006,6 +3022,9 @@ function CalificacionesView() {
             <td className="px-4 py-3">{q.criterion || "—"}</td>
             <td className="px-4 py-3">{q.rvc_value ? `${q.rvc_value}%` : "—"}</td>
             <td className="px-4 py-3"><Pill k={q.status}>{q.status_display}</Pill></td>
+            <td className="px-4 py-3 text-right">
+              <button onClick={() => pdfDe(q)} className="text-xs font-medium text-blue-600 hover:underline">PDF del cálculo</button>
+            </td>
           </tr>
         ))}
       </Table>
