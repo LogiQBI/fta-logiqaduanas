@@ -832,10 +832,12 @@ class CertificateViewSet(TenantScopedViewSet):
             return Response({"error": "Selecciona producto, tratado y cliente válidos."},
                             status=status.HTTP_400_BAD_REQUEST)
         qual = Qualification.objects.filter(tenant=m.tenant, product=product, treaty=treaty).first()
-        if not qual or qual.status != Qualification.Status.QUALIFIES:
-            return Response({"error": "Primero calcula el origen en “Cálculo de origen” y "
-                             "asegúrate de que el producto CALIFIQUE para este tratado."},
+        if not qual:
+            return Response({"error": "Primero calcula el origen del producto en "
+                             "“Cálculo de origen” para este tratado."},
                             status=status.HTTP_400_BAD_REQUEST)
+        # Si CALIFICA → certificado de origen. Si NO califica → affidavit (VOM):
+        # el documento se determina por el estado de la calificación al imprimir.
         prof = getattr(m.tenant, "profile", None)
         certifier = {
             "nombre": (prof.legal_name if prof and prof.legal_name else m.tenant.name),

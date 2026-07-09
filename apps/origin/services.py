@@ -471,6 +471,15 @@ def build_certificate_xlsx(cert):
     letter, plabel = _usmca_pref(q.criterion, q.status)
     periodo = (f"{cert.blanket_from} → {cert.blanket_to}"
                if cert.blanket_from and cert.blanket_to else "Single shipment")
+    # No originario → AFFIDAVIT (Value of Originating Material / VOM).
+    is_affidavit = q.status != "QUALIFIES"
+    an = OriginAnalysis.objects.filter(
+        tenant_id=cert.tenant_id, product_id=q.product_id,
+        treaty_id=q.treaty_id).order_by("-created_at").first()
+    tot = an.total_value if (an and an.total_value is not None) else None
+    vnm_v = (an.vnm if an and an.vnm is not None else Decimal("0"))
+    vom = (tot - vnm_v) if tot is not None else None
+    doc_title = "AFFIDAVIT OF ORIGIN (VOM)" if is_affidavit else "CERTIFICATE OF ORIGIN"
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -505,7 +514,7 @@ def build_certificate_xlsx(cert):
                 f"E-mail: {d.get('email','—')}")
 
     r = 1
-    merge(f"A{r}:C{r}", "CERTIFICATE OF ORIGIN", font=Font(bold=True, size=14, color="043A70"))
+    merge(f"A{r}:C{r}", doc_title, font=Font(bold=True, size=14, color="043A70"))
     merge(f"D{r}:E{r}", f"Document No.: {cert.folio}", font=bold, align="right")
     r += 1
     merge(f"A{r}:C{r}", f"{label} (USMCA / T-MEC)", font=Font(italic=True, color="6B7280"))
@@ -536,19 +545,42 @@ def build_certificate_xlsx(cert):
     vals = [p.sku, p.description, hs_fmt, f"{letter} — {plabel}"
             + (f" · RVC {q.rvc_value}%" if q.rvc_value else ""),
             im.get("pais") or ce.get("pais") or "—"]
+    if is_affidavit:
+        vals[3] = "NOT ORIGINATING"
     for i, v in enumerate(vals):
         c = ws.cell(row=r, column=1 + i, value=v)
         c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
     r += 2
-    merge(f"A{r}:E{r}",
-          "6. Certification. I certify that the goods described qualify as originating and the information is "
-          "true and accurate. I assume responsibility for proving such representations and agree to maintain and "
-          f"present supporting documentation upon request. The goods comply with the {label} origin requirements.",
-          wrap=True)
+
+    def _money(v):
+        return "—" if v is None else f"${float(v):,.2f}"
+
+    n_cert, n_sign = (7, 8) if is_affidavit else (6, 7)
+    if is_affidavit:
+        merge(f"A{r}:E{r}", "6. Value of Originating Material (VOM)", fill=navy, font=white)
+        r += 1
+        for lbl, v in (("Total value of the good (net cost)", tot),
+                       ("Non-originating materials (VNM)", vnm_v),
+                       ("Originating material value (VOM)", vom)):
+            merge(f"A{r}:D{r}", lbl)
+            c = ws.cell(row=r, column=5, value=_money(v))
+            c.border = box; c.alignment = Alignment(horizontal="right")
+            r += 1
+    if is_affidavit:
+        cert_txt = (f"{n_cert}. Certification. I certify that the good described does NOT qualify as originating "
+                    f"under the {label}, and that the Value of Originating Material (VOM) stated is true and accurate. "
+                    "This affidavit lets the recipient account for the originating content in its own RVC "
+                    "determination. I assume responsibility for proving these representations.")
+    else:
+        cert_txt = (f"{n_cert}. Certification. I certify that the goods described qualify as originating and the "
+                    "information is true and accurate. I assume responsibility for proving such representations and "
+                    f"agree to maintain and present supporting documentation upon request. The goods comply with the "
+                    f"{label} origin requirements.")
+    merge(f"A{r}:E{r}", cert_txt, wrap=True)
     ws.row_dimensions[r].height = 60
     r += 1
     ws.row_dimensions[r].height = 60
-    merge(f"A{r}:C{r}", "7. Authorized Signature\n\n_______________________________", wrap=True)
+    merge(f"A{r}:C{r}", f"{n_sign}. Authorized Signature\n\n_______________________________", wrap=True)
     merge(f"D{r}:E{r}",
           f"Name & Title: {ce.get('firmante','—')}"
           f"{(', '+ce['cargo']) if ce.get('cargo') else ''}\n"

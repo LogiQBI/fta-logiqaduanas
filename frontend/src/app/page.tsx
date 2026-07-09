@@ -3676,6 +3676,70 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const firmaImg = ce.firma_png
     ? `<img src="${ce.firma_png}" alt="Signature" style="max-height:60px;max-width:240px"/>`
     : `<span style="color:#b91c1c;font-size:11px">Sin firma cargada (Datos de la empresa).</span>`;
+
+  // NO ORIGINARIO → se emite un AFFIDAVIT (Value of Originating Material / VOM) en
+  // vez de certificado de origen.
+  if (c.origin_status !== "QUALIFIES") {
+    const money = (v?: string | null) => {
+      const n = Number(v); return isNaN(n) ? "—" : `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+    const affidavit = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Affidavit of Origin (VOM) ${esc(c.folio)} — ${esc(c.product_sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;padding:24px;font-size:11.5px;line-height:1.35}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${NAVY};padding-bottom:8px;margin-bottom:6px}
+  h1{font-size:16px;margin:0;color:${NAVY}} .doc{font-size:11px;color:#374151;text-align:right} .sub{font-size:10.5px;color:#6b7280}
+  table{width:100%;border-collapse:collapse;margin:6px 0} td,th{border:1px solid #9ca3af;padding:6px 8px;vertical-align:top}
+  .box{width:50%} .bt{font-weight:bold;background:#eef2f6;margin:-6px -8px 6px;padding:4px 8px;font-size:11px} .bl{margin:1px 0}
+  th{background:${NAVY};color:#fff;font-size:10.5px;text-align:left} td.num{text-align:right}
+  .cert{font-size:10.5px;margin:8px 0;line-height:1.5} .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-weight:bold;font-size:11px}
+  .foot{margin-top:10px;font-size:9.5px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:6px}
+  @media print{.noprint{display:none} body{padding:10px}}
+</style></head><body>
+  <div class="top">
+    <div>${ce.logo_png ? `<img src="${ce.logo_png}" alt="" style="max-height:44px;max-width:180px;object-fit:contain">` : `<h1>${esc(ce.nombre || "Affidavit of Origin")}</h1>`}
+      <div class="sub">Affidavit of Origin — Value of Originating Material (VOM) — ${esc(c.treaty_label)}</div></div>
+    <div class="doc"><b>Document No.:</b> ${esc(c.folio)}<br>Issued: ${esc(hoy)}</div>
+  </div>
+  <table>
+    <tr>${party("1. Supplier / Exporter", ce)}<td class="box"><div class="bt">2. Period</div><div class="bl">${esc(periodo)}</div></td></tr>
+    <tr>${party("3. Producer", pr, pr === ce ? '<div class="sub">Same as supplier</div>' : "")}${party("4. Recipient / Buyer", im)}</tr>
+  </table>
+  <table>
+    <tr><th colspan="4">5. Merchandise Information</th></tr>
+    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Country of Origin</th></tr>
+    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(im.pais || ce.pais || "—")}</td></tr>
+  </table>
+  <table>
+    <tr><th colspan="2">6. Value of Originating Material (VOM)</th></tr>
+    <tr><td>Total value of the good (net cost)</td><td class="num">${money(c.total_value)}</td></tr>
+    <tr><td>Non-originating materials (VNM)</td><td class="num">${money(c.vnm)}</td></tr>
+    <tr><td><b>Originating material value (VOM)</b></td><td class="num"><b>${money(c.originating_value)}</b></td></tr>
+  </table>
+  <div class="cert">
+    <span class="badge">NOT ORIGINATING under ${esc(c.treaty_label)}</span><br><br>
+    <b>7. Certification.</b> I certify that the good described above does <b>not</b> qualify as originating under the ${esc(c.treaty_label)},
+    and that the <b>Value of Originating Material (VOM)</b> stated herein is true and accurate. This affidavit is provided so the recipient
+    may account for the originating content in its own regional value content determination. I assume responsibility for proving these
+    representations and agree to maintain and present supporting documentation upon request.
+  </div>
+  <table>
+    <tr><td class="box" style="height:56px"><div class="bt">8. Authorized Signature</div>${firmaImg}</td>
+      <td class="box"><div class="bt">Signatory</div>
+        <div class="bl"><b>Name &amp; Title:</b> ${esc(ce.firmante || "—")}${ce.cargo ? `, ${esc(ce.cargo)}` : ""}</div>
+        <div class="bl"><b>Company:</b> ${esc(ce.nombre || "—")}</div>
+        <div class="bl"><b>Date:</b> ${esc(hoy)} &nbsp; <b>Tel:</b> ${esc(ce.telefono || "—")} &nbsp; <b>E-mail:</b> ${esc(ce.email || "—")}</div>
+      </td></tr>
+  </table>
+  <div class="foot">Folio ${esc(c.folio)} · ${esc(c.treaty_label)}. Generado por LogiQ Aduanas | FTA. Orientativo; validar con un especialista en reglas de origen.</div>
+  <div class="noprint" style="margin-top:16px;text-align:center"><button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer">Imprimir / Guardar PDF</button></div>
+</body></html>`;
+    const w = window.open("", "_blank", "width=980,height=1000");
+    if (!w) { alert("Permite las ventanas emergentes para ver el affidavit."); return; }
+    w.document.open(); w.document.write(affidavit); w.document.close();
+    return;
+  }
+
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>Certificate of Origin ${esc(c.folio)} — ${esc(c.product_sku)}</title>
 <style>
@@ -3799,7 +3863,7 @@ function CertificadosEmitirView() {
     setBusy(true); setErr(""); setMsg("");
     try {
       const cert = await api.emitCertificate({ product: productId, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null });
-      setMsg(`Certificado ${cert.folio} emitido y registrado.`);
+      setMsg(`${cert.origin_status === "QUALIFIES" ? "Certificado" : "Affidavit"} ${cert.folio} emitido y registrado.`);
       await emitidos.reload();
       generarCertificadoRegistro(cert);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -3846,19 +3910,19 @@ function CertificadosEmitirView() {
           <p className="mt-3 text-xs text-zinc-500">
             Resultado de origen: {qual ? <Pill k={qual.status}>{qual.status_display}{qual.rvc_value ? ` · ${qual.rvc_value}%` : ""}</Pill>
               : <span className="text-amber-600">sin calcular — usa “Cálculo de origen” primero.</span>}
-            {qual && !califica && <span className="ml-2 text-amber-600">El producto NO califica; solo puedes ver una vista previa.</span>}
+            {qual && !califica && <span className="ml-2 text-amber-600">El producto NO califica → se emitirá un <strong>affidavit de origen (VOM)</strong> en vez de certificado.</span>}
           </p>
         )}
         {msg && <p className="mt-3 text-sm text-emerald-700">{msg}</p>}
         {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
         <div className="mt-5 flex flex-wrap gap-2">
-          <Btn onClick={emitirRegistrar} disabled={busy || !productId || !treatyId || !clientId || !califica}>
-            {busy ? "Emitiendo…" : "Emitir y registrar"}
+          <Btn onClick={emitirRegistrar} disabled={busy || !productId || !treatyId || !clientId || !qual}>
+            {busy ? "Emitiendo…" : califica ? "Emitir certificado" : "Emitir affidavit (VOM)"}
           </Btn>
           <Btn variant="ghost" onClick={vistaPrevia} disabled={!productId || !treatyId || !clientId}>Vista previa (sin registrar)</Btn>
         </div>
       </Card>
-      <p className="mt-3 text-xs text-zinc-500">📄 El certificado se abre en una ventana nueva; usa “Imprimir / Guardar PDF” para descargarlo. “Emitir y registrar” requiere que el producto CALIFIQUE y lo guarda con folio en el historial.</p>
+      <p className="mt-3 text-xs text-zinc-500">📄 Se abre en una ventana nueva; usa “Imprimir / Guardar PDF”. Si el producto CALIFICA se emite un <strong>certificado de origen</strong>; si NO califica, un <strong>affidavit (VOM)</strong>. Requiere haber calculado el origen; queda registrado con folio.</p>
 
       <div className="mt-8">
         <div className="mb-2 text-sm font-semibold text-zinc-800">Certificados emitidos ({emitidos.count})</div>
@@ -3870,7 +3934,7 @@ function CertificadosEmitirView() {
               <td className="px-4 py-3"><span className="font-mono text-xs">{c.product_sku}</span><div className="text-[11px] text-zinc-500">{c.product_description}</div></td>
               <td className="px-4 py-3">{c.treaty_label}</td>
               <td className="px-4 py-3 text-xs">{c.importer_data?.nombre ?? "—"}</td>
-              <td className="px-4 py-3 text-xs">{c.criterion}{c.rvc_value ? ` · ${c.rvc_value}%` : ""}</td>
+              <td className="px-4 py-3 text-xs">{c.origin_status === "QUALIFIES" ? `${c.criterion}${c.rvc_value ? ` · ${c.rvc_value}%` : ""}` : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">Affidavit (VOM)</span>}</td>
               <td className="px-4 py-3 text-xs text-zinc-500">{c.issued_at?.slice(0, 10)}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className="mr-1 inline-block"><Btn size="sm" variant="ghost" onClick={() => generarCertificadoRegistro(c)}>PDF</Btn></span>

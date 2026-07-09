@@ -136,6 +136,7 @@ export type EmittedCertificate = {
   product_sku: string; product_description: string; product_hs: string;
   treaty_code: string; treaty_label: string; criterion: string;
   origin_status: string; rvc_value: string | null;
+  total_value?: string | null; vnm?: string | null; originating_value?: string | null;
   verify_url?: string; qr_data_uri?: string;
 };
 

@@ -257,6 +257,9 @@ class CertificateSerializer(serializers.ModelSerializer):
                                          decimal_places=2, read_only=True)
     verify_url = serializers.SerializerMethodField()
     qr_data_uri = serializers.SerializerMethodField()
+    total_value = serializers.SerializerMethodField()
+    vnm = serializers.SerializerMethodField()
+    originating_value = serializers.SerializerMethodField()  # VOM (materiales originarios)
 
     class Meta:
         model = Certificate
@@ -264,7 +267,33 @@ class CertificateSerializer(serializers.ModelSerializer):
                   "producer_data", "importer_data", "blanket_from", "blanket_to",
                   "issued_at", "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
-                  "verify_url", "qr_data_uri"]
+                  "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value"]
+
+    def _vom_vals(self, obj):
+        from apps.origin.models import OriginAnalysis
+        a = OriginAnalysis.objects.filter(
+            tenant_id=obj.tenant_id, product_id=obj.qualification.product_id,
+            treaty_id=obj.qualification.treaty_id).order_by("-created_at").first()
+        if a and a.total_value is not None:
+            return a.total_value, (a.vnm or 0)
+        d = obj.qualification.detail or {}
+        return d.get("total_value"), d.get("vnm")
+
+    def get_total_value(self, obj):
+        v = self._vom_vals(obj)[0]
+        return str(v) if v is not None else None
+
+    def get_vnm(self, obj):
+        v = self._vom_vals(obj)[1]
+        return str(v) if v is not None else None
+
+    def get_originating_value(self, obj):
+        from decimal import Decimal
+        tv, vnm = self._vom_vals(obj)
+        try:
+            return str(Decimal(str(tv)) - Decimal(str(vnm or 0)))
+        except Exception:
+            return None
 
     def get_treaty_label(self, obj):
         code = obj.qualification.treaty.code
