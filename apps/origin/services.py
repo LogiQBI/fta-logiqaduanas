@@ -520,21 +520,35 @@ def build_certificate_xlsx(cert):
     merge(f"A{r}:C{r}", f"{label} (USMCA / T-MEC)", font=Font(italic=True, color="6B7280"))
     merge(f"D{r}:E{r}", f"Issued: {str(cert.issued_at)[:10]}", align="right")
     r += 1
-    # 1 exportador / 2 periodo
-    ws.row_dimensions[r].height = 70
-    merge(f"A{r}:C{r}", "1. Exporter / Seller\n" + party_lines(ce), fill=None, font=None, wrap=True)
-    ws[f"A{r}"].font = Font(size=10)
-    merge(f"D{r}:E{r}", f"2. Blanket Period\n{periodo}\n(If single shipment, insert invoice no.)", wrap=True)
+    # Anexo 5-A elemento 1: tipo de certificador
+    ct = cert.certifier_type
+    ck = lambda t: "☑" if ct == t else "☐"
+    merge(f"A{r}:E{r}", f"1. Certifier is the:   {ck('exporter')} Exporter    "
+          f"{ck('producer')} Producer    {ck('importer')} Importer", font=bold)
     r += 1
-    # 3 productor / 4 importador
-    ws.row_dimensions[r].height = 70
-    merge(f"A{r}:C{r}", "3. Producer\n" + (party_lines(pr) if pr is not ce else "Same as exporter"), wrap=True)
-    merge(f"D{r}:E{r}", "4. Importer / Buyer\n" + party_lines(im), wrap=True)
+    # 2 certifier / 3 exportador
+    ws.row_dimensions[r].height = 76
+    certifier = (f"2. Certifier\nName: {ce.get('nombre','—')}\n"
+                 f"Certifier/Title: {ce.get('firmante','—')}"
+                 f"{(', '+ce['cargo']) if ce.get('cargo') else ''}\n"
+                 f"Address: {ce.get('direccion','—')}{(' ['+ce['pais']+']') if ce.get('pais') else ''}\n"
+                 f"Tel: {ce.get('telefono','—')}   E-mail: {ce.get('email','—')}")
+    merge(f"A{r}:C{r}", certifier, wrap=True); ws[f"A{r}"].font = Font(size=10)
+    merge(f"D{r}:E{r}", "3. Exporter\n" + party_lines(ce), wrap=True)
     r += 1
-    # 5 mercancía
-    merge(f"A{r}:E{r}", "5. Merchandise Information", fill=navy, font=white)
+    # 4 productor / 5 importador
+    ws.row_dimensions[r].height = 76
+    merge(f"A{r}:C{r}", "4. Producer\n" + (party_lines(pr) if pr is not ce else "Same as certifier"), wrap=True)
+    merge(f"D{r}:E{r}", "5. Importer\n" + party_lines(im), wrap=True)
     r += 1
-    heads = ["Serial / Part No.", "Description of Good(s)", "HS No.", "Preference Criterion", "Country of Origin"]
+    # 8 blanket period + factura
+    merge(f"A{r}:E{r}", f"8. Blanket Period: {periodo}    •    "
+          f"Invoice No. (single shipment): {cert.invoice_number or '—'}", font=bold)
+    r += 1
+    # 6/7 mercancía
+    merge(f"A{r}:E{r}", "6. Description & HS Classification  ·  7. Origin Criteria", fill=navy, font=white)
+    r += 1
+    heads = ["Serial / Part No.", "Description of Good(s)", "HS No. (6-digit)", "7. Preference Criterion", "Country of Origin"]
     for i, h in enumerate(heads):
         c = ws.cell(row=r, column=1 + i, value=h)
         c.fill = navy; c.font = white; c.border = box
@@ -555,7 +569,7 @@ def build_certificate_xlsx(cert):
     def _money(v):
         return "—" if v is None else f"${float(v):,.2f}"
 
-    n_cert, n_sign = (7, 8) if is_affidavit else (6, 7)
+    n_cert, n_sign = (7, 8) if is_affidavit else (9, 9)
     if is_affidavit:
         merge(f"A{r}:E{r}", "6. Value of Originating Material (VOM)", fill=navy, font=white)
         r += 1
@@ -572,10 +586,11 @@ def build_certificate_xlsx(cert):
                     "This affidavit lets the recipient account for the originating content in its own RVC "
                     "determination. I assume responsibility for proving these representations.")
     else:
-        cert_txt = (f"{n_cert}. Certification. I certify that the goods described qualify as originating and the "
-                    "information is true and accurate. I assume responsibility for proving such representations and "
-                    f"agree to maintain and present supporting documentation upon request. The goods comply with the "
-                    f"{label} origin requirements.")
+        cert_txt = (f"{n_cert}. Certification. I certify that the goods described in this document qualify as "
+                    "originating and the information contained in this document is true and accurate. I assume "
+                    "responsibility for proving such representations and agree to maintain and present upon request "
+                    "or to make available during a verification visit, documentation necessary to support this "
+                    "certification.")
     merge(f"A{r}:E{r}", cert_txt, wrap=True)
     ws.row_dimensions[r].height = 60
     r += 1

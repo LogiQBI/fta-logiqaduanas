@@ -861,6 +861,7 @@ class CertificateViewSet(TenantScopedViewSet):
             importer_data=importer,
             blanket_from=parse_date(request.data.get("blanket_from") or "") or None,
             blanket_to=parse_date(request.data.get("blanket_to") or "") or None,
+            invoice_number=(request.data.get("invoice_number") or "").strip()[:60],
             issued_by=request.user)
         return Response(s.CertificateSerializer(cert, context={"request": request}).data,
                         status=status.HTTP_201_CREATED)

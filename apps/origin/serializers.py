@@ -260,12 +260,13 @@ class CertificateSerializer(serializers.ModelSerializer):
     total_value = serializers.SerializerMethodField()
     vnm = serializers.SerializerMethodField()
     originating_value = serializers.SerializerMethodField()  # VOM (materiales originarios)
+    certifier_type_display = serializers.CharField(source="get_certifier_type_display", read_only=True)
 
     class Meta:
         model = Certificate
-        fields = ["id", "folio", "certifier_type", "certifier_data", "exporter_data",
-                  "producer_data", "importer_data", "blanket_from", "blanket_to",
-                  "issued_at", "product_sku", "product_description", "product_hs",
+        fields = ["id", "folio", "certifier_type", "certifier_type_display", "certifier_data",
+                  "exporter_data", "producer_data", "importer_data", "blanket_from", "blanket_to",
+                  "invoice_number", "issued_at", "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
                   "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value"]
 

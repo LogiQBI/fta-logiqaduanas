@@ -130,6 +130,7 @@ export type BulkPreview = {
 };
 export type EmittedCertificate = {
   id: number; folio: string;
+  certifier_type?: string; certifier_type_display?: string; invoice_number?: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;
   producer_data?: Record<string, string>; exporter_data?: Record<string, string>;
   blanket_from: string | null; blanket_to: string | null; issued_at: string;

@@ -3660,6 +3660,7 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const pr = (c.producer_data && Object.keys(c.producer_data).length ? c.producer_data : ce);
   const hoy = (c.issued_at || "").slice(0, 10);
   const periodo = (c.blanket_from && c.blanket_to) ? `${c.blanket_from} → ${c.blanket_to}` : "Single shipment";
+  const ct = c.certifier_type || "producer";  // Anexo 5-A elemento 1
   const pref = usmcaPref(c.criterion, c.origin_status);
   const contacto = (d: Record<string, string> = {}) =>
     [d.direccion, d.pais].filter(Boolean).join(" — ");
@@ -3765,14 +3766,35 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
     <div class="doc"><b>Document No.:</b> ${esc(c.folio)}<br>Issued: ${esc(hoy)}</div>
   </div>
 
+  <div style="border:1px solid #9ca3af;padding:5px 8px;margin:6px 0;font-size:11px">
+    <b>1. Certifier is the:</b>
+    &nbsp; ${ct === "exporter" ? "☑" : "☐"} Exporter
+    &nbsp; ${ct === "producer" ? "☑" : "☐"} Producer
+    &nbsp; ${ct === "importer" ? "☑" : "☐"} Importer
+  </div>
+
   <table>
-    <tr>${party("1. Exporter / Seller", ce)}<td class="box"><div class="bt">2. Blanket Period</div><div class="bl">${esc(periodo)}</div><div class="sub" style="margin-top:6px">If for single shipment, insert invoice no.</div></td></tr>
-    <tr>${party("3. Producer", pr, pr === ce ? '<div class="sub">Same as exporter</div>' : "")}${party("4. Importer / Buyer", im)}</tr>
+    <tr>
+      <td class="box">
+        <div class="bt">2. Certifier</div>
+        <div class="bl"><b>Name:</b> ${esc(ce.nombre || "—")}</div>
+        <div class="bl"><b>Certifier / Title:</b> ${esc(ce.firmante || "—")}${ce.cargo ? `, ${esc(ce.cargo)}` : ""}</div>
+        <div class="bl"><b>Address:</b> ${esc(ce.direccion || "—")}${ce.pais ? ` [${esc(ce.pais)}]` : ""}</div>
+        <div class="bl"><b>Tel:</b> ${esc(ce.telefono || "—")} &nbsp; <b>E-mail:</b> ${esc(ce.email || "—")}</div>
+      </td>
+      ${party("3. Exporter", ce)}
+    </tr>
+    <tr>${party("4. Producer", pr, pr === ce ? '<div class="sub">Same as certifier</div>' : "")}${party("5. Importer", im)}</tr>
   </table>
 
+  <div style="border:1px solid #9ca3af;padding:5px 8px;margin:6px 0;font-size:11px">
+    <b>8. Blanket Period:</b> ${esc(periodo)}
+    &nbsp;•&nbsp; <b>Invoice No. (single shipment):</b> ${esc(c.invoice_number || "—")}
+  </div>
+
   <table class="mtbl">
-    <tr><th colspan="5">5. Merchandise Information</th></tr>
-    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Preference Criterion</th><th>Country of Origin</th></tr>
+    <tr><th colspan="5">6. Description &amp; HS Classification · 7. Origin Criteria</th></tr>
+    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No. (6-digit)</th><th>7. Preference Criterion</th><th>Country of Origin</th></tr>
     <tr>
       <td>${esc(c.product_sku)}</td>
       <td>${esc(c.product_description)}</td>
@@ -3783,15 +3805,15 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   </table>
 
   <div class="cert">
-    <b>6. Certification.</b> I certify that the goods described in this document qualify as originating and the information
+    <b>9. Certification.</b> I certify that the goods described in this document qualify as originating and the information
     contained in this document is true and accurate. I assume responsibility for proving such representations and agree to
-    maintain and present upon request, or to make available during a verification visit, documentation necessary to support
-    this certification. The goods comply with all requirements for preferential tariff treatment under the ${esc(c.treaty_label)}.
+    maintain and present upon request or to make available during a verification visit, documentation necessary to support
+    this certification.
   </div>
 
   <table>
     <tr>
-      <td class="box sign"><div class="bt">7. Authorized Signature</div>${firmaImg}</td>
+      <td class="box sign"><div class="bt">9. Authorized Signature &amp; Date</div>${firmaImg}</td>
       <td class="box">
         <div class="bt">Signatory</div>
         <div class="bl"><b>Name &amp; Title:</b> ${esc(ce.firmante || "—")}${ce.cargo ? `, ${esc(ce.cargo)}` : ""}</div>
@@ -3822,6 +3844,7 @@ function CertificadosEmitirView() {
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [clientId, setClientId] = useState<number | "">("");
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("");
   const [profile, setProfile] = useState<ProfileShape | null>(null);
   const [msg, setMsg] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const emitidos = useList<EmittedCertificate>(() => api.certificates());
@@ -3862,7 +3885,7 @@ function CertificadosEmitirView() {
     if (!productId || !treatyId || !clientId) { setErr("Elige producto, tratado y cliente."); return; }
     setBusy(true); setErr(""); setMsg("");
     try {
-      const cert = await api.emitCertificate({ product: productId, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null });
+      const cert = await api.emitCertificate({ product: productId, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null, invoice_number: invoiceNo || "" });
       setMsg(`${cert.origin_status === "QUALIFIES" ? "Certificado" : "Affidavit"} ${cert.folio} emitido y registrado.`);
       await emitidos.reload();
       generarCertificadoRegistro(cert);
@@ -3904,6 +3927,11 @@ function CertificadosEmitirView() {
           <div className="grid grid-cols-2 gap-2">
             <Field label="Periodo desde"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} /></Field>
             <Field label="Periodo hasta"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} /></Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Número de factura (solo envío único, opcional)">
+              <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={inputCls} placeholder="Ej. INV-2026-00123" />
+            </Field>
           </div>
         </div>
         {productId && treatyId && (

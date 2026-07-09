@@ -145,6 +145,8 @@ class Certificate(TenantOwnedModel):
     importer_data = models.JSONField("Datos del importador", default=dict, blank=True)
     blanket_from = models.DateField("Periodo (desde)", null=True, blank=True)
     blanket_to = models.DateField("Periodo (hasta)", null=True, blank=True)
+    # Anexo 5-A elemento 6(b): número de factura para envío único (opcional).
+    invoice_number = models.CharField("Número de factura (envío único)", max_length=60, blank=True)
     issued_at = models.DateTimeField("Emitido el", auto_now_add=True)
     issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL)
