@@ -4,6 +4,7 @@ Cada "tipo" define sus columnas (clave interna + etiqueta + ejemplo) y una
 función importadora que hace upsert y devuelve un resumen {creados, actualizados,
 errores}. Se usa para catálogos (productos/insumos, proveedores, clientes) y BOM.
 """
+import re
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
@@ -122,6 +123,22 @@ def import_products(tenant, rows, user):
                     res["creados"] += 1
                     if len(res["creados_skus"]) < 200:
                         res["creados_skus"].append(final.sku)
+                # Cliente(s) que compran esta parte (M2M). Solo si la fila trae el dato;
+                # se buscan por nombre (deben existir en Clientes) y se reemplaza el set.
+                cli_raw = str(r.get("clientes") or "").strip()
+                if cli_raw:
+                    names = [n.strip() for n in re.split(r"[;,]", cli_raw) if n.strip()]
+                    matched, unmatched = [], []
+                    for nm in names:
+                        cust = Party.objects.filter(
+                            tenant=tenant, kind=Party.Kind.CUSTOMER, name__iexact=nm).first()
+                        (matched if cust else unmatched).append(cust or nm)
+                    if matched:
+                        final.customers.set(matched)
+                    if unmatched:
+                        res["advertencias"].append({"fila": i,
+                            "error": f"Cliente(s) no encontrados (créalos en Clientes): "
+                                     f"{', '.join(unmatched)}"})
                 # Marca los que quedan SIN precio (precio 0): la fila no traía costo.
                 if (not final.unit_cost) and len(res["sin_precio_skus"]) < 200:
                     res["sin_precio_skus"].append(final.sku)
@@ -300,6 +317,7 @@ SPECS = {
             ("moneda", "Moneda", "USD"),
             ("pais_origen", "País de origen (ISO-2)", "KR"),
             ("proveedor_codigo", "Código de proveedor (opcional)", "ST01"),
+            ("clientes", "Cliente(s) — separa por coma (opcional)", "TESLA INC, DAEWON AMERICA"),
         ],
         "importer": import_products,
         "instructions": (
@@ -317,6 +335,7 @@ SPECS = {
             "moneda": {"req": False, "help": "Moneda de 3 letras (USD, MXN…). Por defecto USD."},
             "pais_origen": {"req": False, "help": _ISO2_HELP},
             "proveedor_codigo": {"req": False, "help": "Código del proveedor que surte este número de parte. Si no existe, se precarga."},
+            "clientes": {"req": False, "help": "Cliente(s) a los que vendes esta parte, por NOMBRE, separados por coma. Deben existir en Clientes; sirve para filtrar al emitir certificados."},
         },
     },
     "suppliers": {
