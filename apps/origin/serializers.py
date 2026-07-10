@@ -274,6 +274,10 @@ class CertificateSerializer(serializers.ModelSerializer):
     vnm = serializers.SerializerMethodField()
     originating_value = serializers.SerializerMethodField()  # VOM (materiales originarios)
     certifier_type_display = serializers.CharField(source="get_certifier_type_display", read_only=True)
+    country_of_origin = serializers.SerializerMethodField()
+    pref_letter = serializers.SerializerMethodField()   # criterio USMCA A–D (en inglés)
+    pref_label = serializers.SerializerMethodField()
+    rule_text = serializers.SerializerMethodField()     # PSR aplicada y cómo se cumplió
 
     class Meta:
         model = Certificate
@@ -281,7 +285,26 @@ class CertificateSerializer(serializers.ModelSerializer):
                   "exporter_data", "producer_data", "importer_data", "blanket_from", "blanket_to",
                   "invoice_number", "issued_at", "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
-                  "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value"]
+                  "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value",
+                  "country_of_origin", "pref_letter", "pref_label", "rule_text"]
+
+    def get_country_of_origin(self, obj):
+        from apps.origin.services import certificate_country_of_origin
+        return certificate_country_of_origin(obj)
+
+    def get_pref_letter(self, obj):
+        from apps.origin.services import _usmca_pref
+        q = obj.qualification
+        return _usmca_pref(q.criterion, q.status)[0]
+
+    def get_pref_label(self, obj):
+        from apps.origin.services import _usmca_pref
+        q = obj.qualification
+        return _usmca_pref(q.criterion, q.status)[1]
+
+    def get_rule_text(self, obj):
+        from apps.origin.services import usmca_rule_text
+        return usmca_rule_text(obj.qualification)
 
     def _vom_vals(self, obj):
         from apps.origin.models import OriginAnalysis

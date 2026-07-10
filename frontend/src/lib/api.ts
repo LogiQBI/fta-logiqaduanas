@@ -139,6 +139,7 @@ export type EmittedCertificate = {
   origin_status: string; rvc_value: string | null;
   total_value?: string | null; vnm?: string | null; originating_value?: string | null;
   verify_url?: string; qr_data_uri?: string;
+  country_of_origin?: string; pref_letter?: string; pref_label?: string; rule_text?: string;
 };
 
 export type HsLog = {

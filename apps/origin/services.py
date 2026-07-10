@@ -1,5 +1,6 @@
 """Servicios de alto nivel: calificar, persistir y emitir certificados."""
 import logging
+import re
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -444,15 +445,100 @@ _TREATY_LABELS = {"TMEC": "USMCA"}
 
 
 def _usmca_pref(criterion, status):
-    """Criterio de preferencia USMCA (A–D) desde el criterio interno. Orientativo."""
+    """Criterio de preferencia USMCA (A–D) desde el criterio interno. Orientativo.
+    Etiquetas en INGLÉS: el certificado se emite en ese idioma."""
     if status != "QUALIFIES":
-        return ("—", "Origen no confirmado")
+        return ("—", "Origin not confirmed")
     c = (criterion or "").upper()
     if c == "WO":
-        return ("A", "Totalmente obtenido")
+        return ("A", "Wholly obtained or produced (Art. 4.2(a))")
     if "CTC" in c or "RVC" in c or "AUTOMOTRIZ" in c:
-        return ("B", "Cumple regla específica (CTC/RVC)")
-    return ("B", criterion or "Cumple PSR")
+        return ("B", "Meets the product-specific rule of origin (Annex 4-B)")
+    return ("B", criterion or "Meets the applicable PSR")
+
+
+# El certificado no lleva hoja de instrucciones, así que el criterio debe decir
+# QUÉ regla específica aplica y CÓMO se cumplió. Todo en inglés (idioma del doc).
+_SHIFT_EN = {
+    "CC": "a change of chapter (CC)",
+    "CTH": "a change from any other heading (CTH)",
+    "CTSH": "a change from any other subheading (CTSH)",
+}
+_RVC_METHOD_EN = {"transaction": "transaction value", "net_cost": "net cost",
+                  "build_down": "build-down", "build_up": "build-up"}
+
+
+def _fmt_pct(v):
+    try:
+        return f"{float(v):g}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _rvc_req_en(params):
+    """Requisito de VCR de la regla, en inglés (soporta rvc_options múltiples)."""
+    opts = params.get("rvc_options") or []
+    if opts:
+        return " or ".join(
+            f"RVC ≥ {_fmt_pct(o.get('threshold'))}% "
+            f"({_RVC_METHOD_EN.get(o.get('method'), o.get('method') or 'transaction value')})"
+            for o in opts)
+    thr = params.get("rvc_threshold")
+    method = _RVC_METHOD_EN.get(params.get("rvc_method"), params.get("rvc_method") or "transaction value")
+    if thr is None:
+        return f"RVC per the treaty's general threshold ({method})"
+    return f"RVC ≥ {_fmt_pct(thr)}% ({method})"
+
+
+def usmca_rule_text(q):
+    """Texto en inglés de la regla específica (PSR) aplicada y cómo se cumplió.
+    Se imprime bajo el criterio de preferencia del certificado."""
+    rule = q.rule
+    if not rule or q.status != "QUALIFIES":
+        return ""
+    params = rule.params or {}
+    # La regla puede cubrir por prefijo (hs_pattern) o por rango (hs_from–hs_to).
+    hs = rule.hs_pattern or (f"{rule.hs_from}-{rule.hs_to}" if rule.hs_from else
+                             (q.product.hs_code or "")[:6])
+    hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 and hs.isdigit() else hs
+    ctc = _SHIFT_EN.get(params.get("shift_level", "CTH"), params.get("shift_level") or "CTH")
+    reqs = {
+        "WO": "the good must be wholly obtained or produced",
+        "CTC": ctc,
+        "RVC": _rvc_req_en(params),
+        "CTC_OR_RVC": f"{ctc}; or {_rvc_req_en(params)}",
+        "CTC_AND_RVC": f"{ctc} and {_rvc_req_en(params)}",
+    }
+    req = reqs.get(rule.rule_type, rule.rule_type)
+    rvc_txt = f"RVC {q.rvc_value}%" if q.rvc_value is not None else "RVC"
+    met = {
+        "WO": "wholly obtained",
+        "CTC": "met by tariff classification change",
+        "RVC": f"met with {rvc_txt}",
+        "CTC_AND_RVC": f"met by tariff classification change and {rvc_txt}",
+    }.get((q.criterion or "").upper(), "")
+    txt = f"PSR (Annex 4-B) for HS {hs_fmt}: {req}" if hs_fmt else f"PSR (Annex 4-B): {req}"
+    return f"{txt} — {met}" if met else txt
+
+
+_MX_RFC_RE = re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$")
+
+
+def certificate_country_of_origin(cert):
+    """País de origen del bien = país del PRODUCTOR, con fallbacks para datos
+    incompletos: producer.pais → certifier.pais → país del perfil de la empresa
+    (vivo, por si lo capturan después de emitir) → inferido de un RFC mexicano."""
+    pr = cert.producer_data or {}
+    ce = cert.certifier_data or {}
+    pais = (pr.get("pais") or ce.get("pais") or "").strip()
+    if not pais:
+        prof = getattr(cert.tenant, "profile", None)
+        pais = ((getattr(prof, "country", "") or "") if prof else "").strip()
+    if not pais:
+        rfc = (pr.get("rfc") or ce.get("rfc") or "").strip().upper()
+        if _MX_RFC_RE.match(rfc):
+            pais = "MX"  # formato de RFC del SAT → productor mexicano
+    return pais.upper() if len(pais) <= 3 else pais
 
 
 def build_certificate_xlsx(cert):
@@ -556,11 +642,15 @@ def build_certificate_xlsx(cert):
     r += 1
     hs = p.hs_code or ""
     hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
-    vals = [p.sku, p.description, hs_fmt, f"{letter} — {plabel}"
-            + (f" · RVC {q.rvc_value}%" if q.rvc_value else ""),
-            ce.get("pais") or "—"]  # país de origen = país del PRODUCTOR, no del importador
+    rule_txt = usmca_rule_text(q)
+    crit = f"{letter} — {plabel}" + (f"\n{rule_txt}" if rule_txt else
+                                     (f" · RVC {q.rvc_value}%" if q.rvc_value else ""))
+    # País de origen = país del PRODUCTOR (con fallbacks), no del importador.
+    vals = [p.sku, p.description, hs_fmt, crit,
+            certificate_country_of_origin(cert) or "—"]
     if is_affidavit:
         vals[3] = "NOT ORIGINATING"
+    ws.row_dimensions[r].height = 58
     for i, v in enumerate(vals):
         c = ws.cell(row=r, column=1 + i, value=v)
         c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")

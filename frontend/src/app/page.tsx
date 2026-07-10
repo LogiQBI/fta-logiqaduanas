@@ -1031,14 +1031,15 @@ function ruleTypeLabel(t?: string) {
   } as Record<string, string>)[t ?? ""] ?? (t ?? "");
 }
 // Criterio de preferencia USMCA (A–D) a partir del criterio interno del motor.
-// A = totalmente obtenido; B = cumple regla específica (CTC/RVC); orientativo.
+// Etiquetas en INGLÉS porque se imprimen en el certificado (fallback del
+// pref_letter/pref_label que ahora manda el backend). Orientativo.
 function usmcaPref(criterion?: string, status?: string): { letter: string; label: string } {
-  if (status !== "QUALIFIES") return { letter: "—", label: "Origen no confirmado" };
+  if (status !== "QUALIFIES") return { letter: "—", label: "Origin not confirmed" };
   const c = (criterion || "").toUpperCase();
-  if (c === "WO") return { letter: "A", label: "Totalmente obtenido" };
+  if (c === "WO") return { letter: "A", label: "Wholly obtained or produced (Art. 4.2(a))" };
   if (c.includes("CTC") || c.includes("RVC") || c.includes("AUTOMOTRIZ"))
-    return { letter: "B", label: "Cumple regla específica (CTC/RVC)" };
-  return { letter: "B", label: criterion || "Cumple PSR" };
+    return { letter: "B", label: "Meets the product-specific rule of origin (Annex 4-B)" };
+  return { letter: "B", label: criterion || "Meets the applicable PSR" };
 }
 // Limpia la descripción de la regla (quita el marcador interno [AUTO-GN11 ...]).
 function cleanRuleDesc(d?: string) {
@@ -3661,7 +3662,10 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const hoy = (c.issued_at || "").slice(0, 10);
   const periodo = (c.blanket_from && c.blanket_to) ? `${c.blanket_from} → ${c.blanket_to}` : "Single shipment";
   const ct = c.certifier_type || "producer";  // Anexo 5-A elemento 1
-  const pref = usmcaPref(c.criterion, c.origin_status);
+  const fallbackPref = usmcaPref(c.criterion, c.origin_status);
+  const pref = { letter: c.pref_letter || fallbackPref.letter, label: c.pref_label || fallbackPref.label };
+  // País de origen = país del PRODUCTOR; el backend resuelve fallbacks (perfil, RFC).
+  const paisOrigen = c.country_of_origin || pr.pais || ce.pais || "";
   const contacto = (d: Record<string, string> = {}) =>
     [d.direccion, d.pais].filter(Boolean).join(" — ");
   // Bloque de una parte (1..6 datos de identidad). Estilo del CO oficial USMCA.
@@ -3709,7 +3713,7 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   <table>
     <tr><th colspan="4">5. Merchandise Information</th></tr>
     <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Country of Origin</th></tr>
-    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(ce.pais || "—")}</td></tr>
+    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(paisOrigen || "—")}</td></tr>
   </table>
   <table>
     <tr><th colspan="2">6. Value of Originating Material (VOM)</th></tr>
@@ -3799,8 +3803,10 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
       <td>${esc(c.product_sku)}</td>
       <td>${esc(c.product_description)}</td>
       <td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td>
-      <td style="text-align:center"><b>${esc(pref.letter)}</b><div class="sub">${esc(pref.label)}${c.rvc_value ? ` · RVC ${c.rvc_value}%` : ""}</div></td>
-      <td style="text-align:center">${esc(ce.pais || "—")}</td>
+      <td style="text-align:center"><b>${esc(pref.letter)}</b><div class="sub">${esc(pref.label)}</div>${c.rule_text
+        ? `<div class="sub" style="margin-top:3px;text-align:left">${esc(c.rule_text)}</div>`
+        : (c.rvc_value ? `<div class="sub">RVC ${c.rvc_value}%</div>` : "")}</td>
+      <td style="text-align:center">${esc(paisOrigen || "—")}</td>
     </tr>
   </table>
 
