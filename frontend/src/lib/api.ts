@@ -218,6 +218,7 @@ export type Party = {
 export type Qualification = {
   id: number; product: number; treaty: number; treaty_code?: string; status: string;
   status_display: string; criterion: string; rvc_value: string | null;
+  is_stale?: boolean;
 };
 export type Me = {
   username: string; role: string | null; role_display?: string;

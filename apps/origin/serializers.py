@@ -197,6 +197,19 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
 class QualificationSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+    is_stale = serializers.SerializerMethodField()
+
+    def get_is_stale(self, obj):
+        """True si el producto, su BOM o los precios de sus insumos cambiaron DESPUÉS
+        del último cálculo: el resultado (y el certificado que se emita) estaría
+        desactualizado hasta recalcular."""
+        from django.db.models import Max
+        times = [obj.product.updated_at]
+        agg = obj.product.bom_components.aggregate(
+            bc=Max("updated_at"), comp=Max("component__updated_at"))
+        times += [agg.get("bc"), agg.get("comp")]
+        latest = max((t for t in times if t), default=None)
+        return bool(latest and obj.computed_at and latest > obj.computed_at)
 
     class Meta:
         model = Qualification

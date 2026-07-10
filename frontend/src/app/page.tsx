@@ -3709,7 +3709,7 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   <table>
     <tr><th colspan="4">5. Merchandise Information</th></tr>
     <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Country of Origin</th></tr>
-    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(im.pais || ce.pais || "—")}</td></tr>
+    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(ce.pais || "—")}</td></tr>
   </table>
   <table>
     <tr><th colspan="2">6. Value of Originating Material (VOM)</th></tr>
@@ -3800,7 +3800,7 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
       <td>${esc(c.product_description)}</td>
       <td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td>
       <td style="text-align:center"><b>${esc(pref.letter)}</b><div class="sub">${esc(pref.label)}${c.rvc_value ? ` · RVC ${c.rvc_value}%` : ""}</div></td>
-      <td style="text-align:center">${esc(im.pais || ce.pais || "—")}</td>
+      <td style="text-align:center">${esc(ce.pais || "—")}</td>
     </tr>
   </table>
 
@@ -3940,6 +3940,13 @@ function CertificadosEmitirView() {
               : <span className="text-amber-600">sin calcular — usa “Cálculo de origen” primero.</span>}
             {qual && !califica && <span className="ml-2 text-amber-600">El producto NO califica → se emitirá un <strong>affidavit de origen (VOM)</strong> en vez de certificado.</span>}
           </p>
+        )}
+        {qual?.is_stale && (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            ⚠️ <strong>El BOM o los costos de este producto cambiaron después del último cálculo.</strong> El documento
+            saldría con los valores anteriores. Ve a <strong>Cálculo de origen</strong>, vuelve a correr el cálculo para
+            este tratado y regresa aquí para emitir con la información actualizada.
+          </div>
         )}
         {msg && <p className="mt-3 text-sm text-emerald-700">{msg}</p>}
         {err && <p className="mt-3 text-sm text-red-600">{err}</p>}

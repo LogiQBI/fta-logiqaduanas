@@ -558,7 +558,7 @@ def build_certificate_xlsx(cert):
     hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
     vals = [p.sku, p.description, hs_fmt, f"{letter} — {plabel}"
             + (f" · RVC {q.rvc_value}%" if q.rvc_value else ""),
-            im.get("pais") or ce.get("pais") or "—"]
+            ce.get("pais") or "—"]  # país de origen = país del PRODUCTOR, no del importador
     if is_affidavit:
         vals[3] = "NOT ORIGINATING"
     for i, v in enumerate(vals):
