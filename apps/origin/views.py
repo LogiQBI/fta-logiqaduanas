@@ -703,7 +703,8 @@ class BOMComponentViewSet(TenantScopedViewSet):
         parent = self.request.query_params.get("parent")
         if parent:
             qs = qs.filter(parent_id=parent)
-        return qs.order_by("id")
+        # Orden estable por número de parte del insumo (antes salía por id de alta).
+        return qs.order_by("component__sku", "id")
 
     def _require_company(self):
         m = self.membership()
@@ -852,6 +853,7 @@ class CertificateViewSet(TenantScopedViewSet):
             "cargo": prof.signatory_title if prof else "",
         }
         importer = {"nombre": client.name, "rfc": client.tax_id, "pais": client.country,
+                    "direccion": client.address,
                     "email": client.email, "telefono": client.phone}
         cert = Certificate.objects.create(
             tenant=m.tenant, qualification=qual, folio=_next_folio(m.tenant),

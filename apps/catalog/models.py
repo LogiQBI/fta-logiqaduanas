@@ -23,6 +23,8 @@ class Party(TenantOwnedModel):
                             help_text="Identificador único dentro de la empresa.")
     tax_id = models.CharField("RFC / Tax ID", max_length=30, blank=True)
     country = models.CharField("País (ISO-2)", max_length=2, help_text="Ej: MX, US, CN")
+    address = models.CharField("Dirección", max_length=255, blank=True,
+                               help_text="Se imprime en los documentos (ej. Importer del certificado).")
     email = models.EmailField(blank=True)
     phone = models.CharField("Teléfono", max_length=30, blank=True)
 

@@ -521,6 +521,31 @@ def usmca_rule_text(q):
     return f"{txt} — {met}" if met else txt
 
 
+def certificate_importer_data(cert):
+    """importer_data del certificado completado EN VIVO desde Catálogos → Clientes
+    (match por RFC o nombre): si la dirección/tel/email del cliente se capturan
+    DESPUÉS de emitir, los documentos ya emitidos también los imprimen."""
+    im = dict(cert.importer_data or {})
+    missing = [k for k in ("direccion", "telefono", "email", "pais") if not im.get(k)]
+    if not missing:
+        return im
+    from apps.catalog.models import Party
+    p = None
+    if im.get("rfc"):
+        p = Party.objects.filter(tenant_id=cert.tenant_id, kind="customer",
+                                 tax_id=im["rfc"]).first()
+    if p is None and im.get("nombre"):
+        p = Party.objects.filter(tenant_id=cert.tenant_id, kind="customer",
+                                 name=im["nombre"]).first()
+    if p:
+        vals = {"direccion": p.address, "telefono": p.phone,
+                "email": p.email, "pais": p.country}
+        for k in missing:
+            if vals.get(k):
+                im[k] = vals[k]
+    return im
+
+
 _MX_RFC_RE = re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$")
 
 
@@ -551,7 +576,7 @@ def build_certificate_xlsx(cert):
     q = cert.qualification
     p = q.product
     ce = cert.certifier_data or {}
-    im = cert.importer_data or {}
+    im = certificate_importer_data(cert)
     pr = cert.producer_data or ce
     label = _TREATY_LABELS.get(q.treaty.code, q.treaty.code)
     letter, plabel = _usmca_pref(q.criterion, q.status)

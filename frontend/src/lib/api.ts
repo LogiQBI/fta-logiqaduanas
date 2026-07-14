@@ -213,7 +213,7 @@ export type AutomotiveSaved = {
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {
   id: number; kind: string; kind_display?: string; name: string;
-  code: string; slug: string; tax_id: string; country: string;
+  code: string; slug: string; tax_id: string; country: string; address?: string;
   email: string; phone: string; access_users: SupplierUser[];
 };
 export type Qualification = {

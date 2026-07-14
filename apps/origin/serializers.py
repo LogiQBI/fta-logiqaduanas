@@ -278,6 +278,12 @@ class CertificateSerializer(serializers.ModelSerializer):
     pref_letter = serializers.SerializerMethodField()   # criterio USMCA A–D (en inglés)
     pref_label = serializers.SerializerMethodField()
     rule_text = serializers.SerializerMethodField()     # PSR aplicada y cómo se cumplió
+    # Completado en vivo desde Clientes (dirección/tel/email capturados después de emitir).
+    importer_data = serializers.SerializerMethodField()
+
+    def get_importer_data(self, obj):
+        from apps.origin.services import certificate_importer_data
+        return certificate_importer_data(obj)
 
     class Meta:
         model = Certificate

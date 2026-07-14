@@ -2915,7 +2915,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
       supplier: f.supplier === "" ? null : Number(f.supplier),
       hs_code: f.hs_code, unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD",
-      // El país de origen lo define el PROVEEDOR (no la empresa).
+      country_of_origin: f.country_of_origin.trim().toUpperCase(),
       is_active: f.is_active,
     };
     try {
@@ -2965,8 +2965,11 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
         <Field label="Moneda">
           <input value={f.currency} onChange={(e) => set("currency", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} maxLength={3} />
         </Field>
+        <Field label="País de origen (ISO-2)">
+          <input value={f.country_of_origin} onChange={(e) => set("country_of_origin", e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))} className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
+        </Field>
       </div>
-      <p className="mt-2 text-xs text-zinc-400">El <strong>país de origen</strong> lo define el proveedor desde su acceso.</p>
+      <p className="mt-2 text-xs text-zinc-400">El <strong>país de origen</strong> también puede definirlo el proveedor desde su acceso, o traerse de sus declaraciones al armar el BOM.</p>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -3520,7 +3523,7 @@ function ClienteForm({ party, onClose, onSaved }: {
 }) {
   const [f, setF] = useState({
     name: party?.name ?? "", country: party?.country ?? "", tax_id: party?.tax_id ?? "",
-    email: party?.email ?? "", phone: party?.phone ?? "",
+    address: party?.address ?? "", email: party?.email ?? "", phone: party?.phone ?? "",
   });
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v });
@@ -3529,7 +3532,8 @@ function ClienteForm({ party, onClose, onSaved }: {
     setErr(""); setSaving(true);
     const payload = {
       kind: "customer", name: f.name.trim(), country: f.country.trim().toUpperCase(),
-      tax_id: f.tax_id.trim(), email: f.email.trim(), phone: f.phone.trim(),
+      tax_id: f.tax_id.trim(), address: f.address.trim(),
+      email: f.email.trim(), phone: f.phone.trim(),
     };
     try {
       if (party) await api.updateParty(party.id, payload);
@@ -3545,6 +3549,9 @@ function ClienteForm({ party, onClose, onSaved }: {
         </div>
         <Field label="País (ISO-2)"><input value={f.country} onChange={(e) => set("country", e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))} className={cx(inputCls, "uppercase")} placeholder="US" maxLength={2} /></Field>
         <Field label="RFC / Tax ID"><input value={f.tax_id} onChange={(e) => set("tax_id", e.target.value)} className={inputCls} /></Field>
+        <div className="col-span-2">
+          <Field label="Dirección"><input value={f.address} onChange={(e) => set("address", e.target.value)} className={inputCls} placeholder="1 Tesla Road, Austin, TX 78725" /></Field>
+        </div>
         <Field label="Teléfono"><input value={f.phone} onChange={(e) => set("phone", e.target.value)} className={inputCls} /></Field>
         <Field label="Email"><input value={f.email} onChange={(e) => set("email", e.target.value)} className={inputCls} placeholder="compras@cliente.com" /></Field>
       </div>
