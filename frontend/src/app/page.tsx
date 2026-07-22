@@ -777,6 +777,14 @@ function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
             {porVencer > 0 && <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-800">⏳ {porVencer} por vencer (≤7 días)</span>}
             {aTiempo > 0 && <span className="rounded-full bg-emerald-100 px-3 py-1 font-medium text-emerald-700">✓ {aTiempo} a tiempo</span>}
           </div>
+          {!esEmpresa && pend.some((s) => !s.bom_analysis) && (
+            <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              💡 No las respondas una por una: puedes responder <strong>todas en un solo Excel</strong>.{" "}
+              <button onClick={() => go(target)} className="font-semibold text-blue-700 underline hover:text-blue-900">
+                Ir a Solicitudes de cliente → Responder TODO por Excel
+              </button>
+            </div>
+          )}
           <Card className="overflow-x-auto p-0">
             <table className="w-full text-sm">
               <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs text-zinc-500">
@@ -5054,6 +5062,13 @@ function SolicitudBloque({ items, prod, onDone }: {
           <div className="mt-1 text-xs text-zinc-500">{items.length} número(s) de parte · {respondidas}/{items.length} enviado(s)</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {!esBom && respondidas < items.length && (
+            <span role="button" tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); setOpen(true); setLayoutDecl(true); }}
+              className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700">
+              <Upload size={12} className="-mt-0.5 mr-1 inline" />Responder TODO por Excel
+            </span>
+          )}
           {respondidas === items.length
             ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Completa</span>
             : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Pendiente</span>}
