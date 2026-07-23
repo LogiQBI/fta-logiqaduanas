@@ -84,11 +84,17 @@ class UserAdminSerializer(serializers.ModelSerializer):
         tenant = validated_data.pop("tenant", None)
         role = validated_data.pop("role", Membership.Role.ANALYST)
         party = validated_data.pop("party", None)
+        # Usuario MASTER (equipo LogiQ): superusuario sin membresía a empresas.
+        is_super = bool(validated_data.get("is_superuser"))
+        if is_super and not password:
+            raise serializers.ValidationError(
+                {"password": "Un usuario master necesita contraseña."})
         user = User(username=validated_data["username"],
-                    email=validated_data.get("email", ""))
+                    email=validated_data.get("email", ""),
+                    is_superuser=is_super, is_staff=is_super)
         if password:
             user.set_password(password)
         user.save()
-        if tenant:
+        if tenant and not is_super:
             Membership.objects.create(user=user, tenant=tenant, role=role, party=party)
         return user

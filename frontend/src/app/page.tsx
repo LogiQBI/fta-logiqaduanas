@@ -955,7 +955,17 @@ function UsuariosView() {
   const tenants = useList<MasterTenant>(() => api.masterTenants());
   const [f, setF] = useState({ username: "", password: "", tenant: "" as number | "", role: "admin" });
   const [msg, setMsg] = useState("");
+  const esMaster = f.role === "master";
   async function create() {
+    if (esMaster) {
+      // Usuario del equipo LogiQ: superusuario, sin empresa.
+      if (!f.username || !f.password) { setMsg("Un usuario master necesita usuario y contraseña."); return; }
+      try {
+        await api.masterCreateUser({ username: f.username, password: f.password, is_superuser: true });
+        setF({ username: "", password: "", tenant: "", role: "admin" }); setMsg("Usuario master creado."); await reload();
+      } catch (e) { setMsg((e as Error).message); }
+      return;
+    }
     if (!f.username || !f.tenant) { setMsg("Usuario y empresa son obligatorios."); return; }
     try { await api.masterCreateUser(f); setF({ username: "", password: "", tenant: "", role: "admin" }); setMsg("Usuario creado."); await reload(); }
     catch (e) { setMsg((e as Error).message); }
@@ -994,8 +1004,9 @@ function UsuariosView() {
           <input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="Contraseña"
             className="rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
           <select value={f.tenant} onChange={(e) => setF({ ...f, tenant: Number(e.target.value) })}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
-            <option value="">— Empresa —</option>
+            disabled={esMaster}
+            className={cx("rounded-lg border border-zinc-300 px-3 py-2 text-sm", esMaster && "bg-zinc-100 text-zinc-400")}>
+            <option value="">{esMaster ? "— No aplica (equipo LogiQ) —" : "— Empresa —"}</option>
             {tenants.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}
@@ -1003,9 +1014,11 @@ function UsuariosView() {
             <option value="admin">Administrador</option>
             <option value="analyst">Analista</option>
             <option value="auditor">Auditor</option>
+            <option value="master">Master (equipo LogiQ)</option>
           </select>
         </div>
-        <div className="mt-3"><Btn onClick={create}><Plus size={15} className="-mt-0.5 mr-1 inline" />Crear usuario</Btn></div>
+        {esMaster && <p className="mt-2 text-xs text-amber-600">⚠️ Un usuario <strong>master</strong> administra TODO el sistema (empresas, licencias, usuarios) y puede abrir cualquier empresa. Crea solo los necesarios.</p>}
+        <div className="mt-3"><Btn onClick={create}><Plus size={15} className="-mt-0.5 mr-1 inline" />{esMaster ? "Crear usuario master" : "Crear usuario"}</Btn></div>
       </Card>
     </div>
   );
