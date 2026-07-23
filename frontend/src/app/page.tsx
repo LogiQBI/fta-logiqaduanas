@@ -372,7 +372,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     // badge de solicitudes pendientes (empresa o proveedor)
     if (me.role === "master") return;
     api.solicitations().then((r) => {
-      const pend = r.results.filter((s: Solicitation) => s.status !== "responded").length;
+      const pend = r.results.filter((s: Solicitation) => !solAnswered(s)).length;
       setBadges({ pendientes: pend });
     }).catch(() => {});
   }, [me.role, view]);
@@ -750,9 +750,9 @@ function diasInfo(s: Solicitation): { dias: number | null; txt: string; cls: str
 // Panel de solicitudes pendientes de respuesta (empresa o proveedor) con su
 // estado de vencimiento (vencidas / por vencer / días restantes).
 function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
-  const { data, loading } = useList<Solicitation>(() => api.solicitations());
+  const { data, loading, error } = useList<Solicitation>(() => api.solicitations());
   const esEmpresa = !me.is_supplier;
-  const pend = data.filter((s) => s.status !== "responded" && s.status !== "accepted");
+  const pend = data.filter((s) => !solAnswered(s));
   const conInfo = pend.map((s) => ({ s, info: diasInfo(s) }));
   const vencidas = conInfo.filter((x) => x.info.dias !== null && x.info.dias <= 0).length;
   const porVencer = conInfo.filter((x) => x.info.dias !== null && x.info.dias > 0 && x.info.dias <= 7).length;
@@ -771,7 +771,9 @@ function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
   return (
     <div className="mt-8">
       <h2 className="mb-3 text-lg font-bold text-zinc-900">{titulo}</h2>
-      {pend.length === 0 ? (
+      {error ? (
+        <Card className="p-6 text-center text-sm text-red-600">No se pudieron cargar las solicitudes ({error}). Recarga la página.</Card>
+      ) : pend.length === 0 ? (
         <Card className="p-6 text-center text-sm text-zinc-400">No hay solicitudes pendientes. 🎉</Card>
       ) : (
         <>
@@ -4016,7 +4018,7 @@ function periodoTexto(s: Solicitation) {
 }
 // Alerta por fecha límite: vencida / por vencer (si aún no se respondió).
 function dueAlert(s: Solicitation): { label: string; cls: string } | null {
-  if (s.status === "responded" || !s.due_date) return null;
+  if (solAnswered(s) || !s.due_date) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const due = new Date(s.due_date + "T00:00:00");
   const days = Math.round((due.getTime() - today.getTime()) / 86400000);
@@ -4964,6 +4966,11 @@ function ProveedorProductosView() {
 function estadoProveedor(s: Solicitation) {
   return s.status === "sent" ? "Pendiente por responder" : s.status_display;
 }
+// "Ya quedó" para el proveedor: respondida o ya ACEPTADA por el cliente. Antes
+// solo se contaba "responded" y las aceptadas aparecían como pendientes.
+function solAnswered(s: Solicitation) {
+  return s.status === "responded" || s.status === "accepted";
+}
 // Acordeón por producto (modo compacto cuando va dentro de un bloque).
 function SolAccordion({ s, defaultOpen, compact, children }: {
   s: Solicitation; defaultOpen?: boolean; compact?: boolean; children: React.ReactNode;
@@ -5021,11 +5028,11 @@ function SolicitudBloque({ items, prod, onDone }: {
   const [layoutDecl, setLayoutDecl] = useState(false);
   const s0 = items[0];
   const esBom = !!s0.bom_analysis;
-  const pendingIds = items.filter((i) => i.status !== "responded").map((i) => i.id);
+  const pendingIds = items.filter((i) => !solAnswered(i)).map((i) => i.id);
   const alert = dueAlert(s0);
-  const respondidas = items.filter((i) => i.status === "responded").length;
-  const pendientesItems = items.filter((i) => i.status !== "responded");
-  const listas = items.filter((i) => i.bom_analysis && i.submitted_bom?.origin_status && i.status !== "responded");
+  const respondidas = items.filter(solAnswered).length;
+  const pendientesItems = items.filter((i) => !solAnswered(i));
+  const listas = items.filter((i) => i.bom_analysis && i.submitted_bom?.origin_status && !solAnswered(i));
   async function traerTodo() {
     setBusy(true); setMsg("");
     const sinPrevia: string[] = [];
@@ -5118,7 +5125,7 @@ function SolicitudBloque({ items, prod, onDone }: {
   );
 }
 function MisSolicitudesView({ me }: { me: Me }) {
-  const { data, reload, count } = useList<Solicitation>(() => api.solicitations());
+  const { data, reload, count, error } = useList<Solicitation>(() => api.solicitations());
   const products = useList<Product>(() => api.products());
   const prod = (id: number) => products.data.find((p) => p.id === id);
   const cliente = me.tenant?.name;
@@ -5135,7 +5142,7 @@ function MisSolicitudesView({ me }: { me: Me }) {
   const tratados = Array.from(new Set(data.map((s) => s.treaty_code ?? "")));
   const bloquesFiltrados = Array.from(bloques.values()).filter((items) => {
     const s0 = items[0];
-    const completa = items.every((i) => i.status === "responded");
+    const completa = items.every(solAnswered);
     if (estadoF === "pendiente" && completa) return false;
     if (estadoF === "completa" && !completa) return false;
     if (periodoF && periodoTexto(s0) !== periodoF) return false;
@@ -5147,7 +5154,12 @@ function MisSolicitudesView({ me }: { me: Me }) {
     <div>
       <PageTitle title={`Solicitudes de cliente${cliente ? ` (${cliente})` : ""}`}
         desc="Cada bloque es una solicitud (tratado + periodo). Haz clic para ver y responder sus productos." />
-      {count === 0
+      {error ? (
+        <Card className="p-8 text-center text-sm text-red-600">
+          No se pudieron cargar las solicitudes ({error}).{" "}
+          <button onClick={reload} className="font-semibold underline">Reintentar</button>
+        </Card>
+      ) : count === 0
         ? <Card className="p-8 text-center text-zinc-400">No tienes solicitudes pendientes.</Card>
         : <>
             <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -5207,7 +5219,7 @@ function SolCard({ s, product, onDone }: {
   const [vOrig, setVOrig] = useState(""); const [vNon, setVNon] = useState("");
   const [rules, setRules] = useState<OriginRule[]>([]);
   const [saving, setSaving] = useState(false); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
-  const done = s.status === "responded";
+  const done = solAnswered(s);
   useEffect(() => {
     api.rules(`?treaty=${s.treaty}&hs=${encodeURIComponent(s.product_hs ?? "")}`)
       .then((d: { results?: OriginRule[] } | OriginRule[]) =>
@@ -5369,7 +5381,7 @@ function bomSnapshot(lines: BomLine[], rule: number | ""): string {
   });
 }
 function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
-  const done = s.status === "responded";
+  const done = solAnswered(s);
   const [rules, setRules] = useState<OriginRule[]>([]);
   const [ruleId, setRuleId] = useState<number | "">(s.submitted_bom?.rule ?? "");
   const [rvcMethod, setRvcMethod] = useState(s.submitted_bom?.rvc_method ?? "transaction");
