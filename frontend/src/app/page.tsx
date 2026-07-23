@@ -56,7 +56,7 @@ export default function Page() {
       document.documentElement.classList.add("dark");
   }, []);
 
-  const logout = () => { clearToken(); setMe(null); };
+  const logout = () => { clearToken(); clearAsTenant(); setMe(null); };
   if (!ready) return null;
   if (!me) return <Login onLogin={loadMe} />;
   if (me.must_change_password)
@@ -164,6 +164,10 @@ function Login({ onLogin }: { onLogin: () => void }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setError("");
+    // Un "Abrir empresa" viejo (X-As-Tenant) haría que /me/ no responda como
+    // master y el login de admin se rechace: en la pantalla de login no hay
+    // impersonación válida, así que se limpia siempre.
+    clearAsTenant();
     if (mode !== "admin" && !slug.trim())
       return setError("Escribe la empresa (cliente).");
     if (mode === "proveedor" && !supplierSlug.trim())
