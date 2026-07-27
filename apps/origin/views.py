@@ -590,6 +590,53 @@ class ProductViewSet(TenantScopedViewSet):
                          "net_cost": str(net_cost), "vnm": str(vnm),
                          "suggested_rule": suggested_rule, "automotive_core_code": core_code})
 
+    @action(detail=False, methods=["post"], url_path="supercore")
+    def supercore(self, request):
+        """Cálculo SÚPER-CORE (T-MEC, Apéndice automotriz Art. 3.9): trata las
+        partes esenciales (core, Tabla A.1) del catálogo como UNA sola parte y
+        evalúa el VCR combinado por costo neto (con phase-in).
+        Body: {treaty, as_of?, products?: [ids]} — sin `products` toma TODAS las
+        partes core activas del catálogo. El costo neto y el VNM de cada parte
+        salen de su BOM (mismo criterio que el cálculo de origen)."""
+        from decimal import Decimal
+        from django.utils.dateparse import parse_date
+        from apps.origin import engine
+        from apps.origin.services import _resolve_component_origin
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa puede calcular el súper-core.")
+        treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
+        if not treaty or not engine.is_tmec(treaty):
+            return Response({"error": "El súper-core es exclusivo del T-MEC/USMCA."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        as_of = parse_date(request.data.get("as_of") or "") or None
+        ids = request.data.get("products") or []
+        qs = Product.objects.filter(tenant_id=m.tenant_id, is_active=True)
+        if ids:
+            qs = qs.filter(id__in=ids)
+        parts = []
+        for p in qs.prefetch_related("bom_components__component__supplier"):
+            code = engine.core_part_code(p.hs_code or "")
+            if not code:
+                continue
+            total, vnm, has_bom = Decimal("0"), Decimal("0"), False
+            for bc in p.bom_components.all():
+                has_bom = True
+                info = _resolve_component_origin(bc, treaty, None, set())
+                total += info["value"]
+                if not info["originating"]:
+                    vnm += info["value"]
+            net_cost = total + Decimal(str(p.conversion_cost or 0))
+            parts.append({"id": p.id, "sku": p.sku, "description": p.description,
+                          "hs_code": p.hs_code, "core_code": code,
+                          "net_cost": net_cost, "vnm": vnm,
+                          "has_data": has_bom and net_cost > 0})
+        if not parts:
+            return Response({"error": "No hay partes esenciales (core, Tabla A.1) en la "
+                             "selección: ninguna fracción del catálogo coincide."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response(auto.evaluate_supercore(parts, as_of))
+
     @action(detail=True, methods=["get"], url_path="automotive")
     def automotive_get(self, request, pk=None):
         """Devuelve la evaluación automotriz guardada del producto (si existe)."""

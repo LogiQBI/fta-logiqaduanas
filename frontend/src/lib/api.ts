@@ -210,6 +210,15 @@ export type AutomotiveSaved = {
   lvc_pct?: string; lvc_value?: string; wage_usd_h?: string; steel_na_pct?: string;
   aluminum_na_pct?: string; core_parts_originating?: boolean; detail?: AutomotiveResult;
 };
+export type SupercorePart = {
+  id: number; sku: string; description: string; hs_code: string; core_code: string;
+  net_cost: string; vnm: string; rvc: string | null; has_data: boolean;
+};
+export type SupercoreResult = {
+  as_of: string | null; threshold: string; net_cost: string; vnm: string;
+  rvc: string | null; qualifies: boolean; parts: SupercorePart[]; missing: string[];
+  included: number; total_parts: number; disclaimer: string;
+};
 export type SupplierUser = { id: number; username: string; must_change_password: boolean; is_locked: boolean };
 export type Party = {
   id: number; kind: string; kind_display?: string; name: string;
@@ -377,6 +386,8 @@ export const api = {
     req(`/products/${id}/automotive/?treaty=${treaty}`),
   calcAutomotive: (id: number, payload: Record<string, unknown>): Promise<AutomotiveResult> =>
     req(`/products/${id}/calc-automotive/`, { method: "POST", body: JSON.stringify(payload) }),
+  supercore: (payload: Record<string, unknown>): Promise<SupercoreResult> =>
+    req("/products/supercore/", { method: "POST", body: JSON.stringify(payload) }),
   solicitations: () => req("/solicitations/"),
   declarations: () => req("/supplier-declarations/"),
   parties: (kind?: string) => req(kind ? `/parties/?kind=${kind}` : "/parties/"),

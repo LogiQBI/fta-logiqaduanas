@@ -228,3 +228,54 @@ def evaluate(*, vehicle_class, as_of, net_cost, vnm, lvc_pct, wage_usd_h,
                        "acero, aluminio). Verifica umbrales/fechas contra la normativa vigente y "
                        "valida con un especialista antes de uso formal."),
     }
+
+
+# --- Súper-core (Apéndice automotriz T-MEC, Art. 3.9 y Tabla A.1) ---
+
+def supercore_threshold(as_of):
+    """VCR por costo neto exigido a las partes esenciales (Tabla A.1). Mismo
+    phase-in que el vehículo de pasajeros: 66→69→72→75% (75% desde jul-2023)."""
+    return rvc_threshold("passenger", as_of)
+
+
+def evaluate_supercore(parts, as_of):
+    """Cálculo SÚPER-CORE: las partes esenciales (core, Tabla A.1) pueden
+    tratarse como UNA SOLA parte y calcular el VCR del conjunto por costo neto;
+    si el conjunto alcanza el umbral, TODAS se consideran originarias (roll-up).
+
+    `parts` = [{id, sku, description, hs_code, core_code, net_cost, vnm,
+    has_data}]. Las partes sin datos de BOM se listan pero NO suman."""
+    thr = supercore_threshold(as_of)
+    incl = [p for p in parts if p.get("has_data")]
+    total = sum((_d(p["net_cost"]) for p in incl), Decimal("0"))
+    vnm = sum((_d(p["vnm"]) for p in incl), Decimal("0"))
+    rvc = ((total - vnm) / total * 100).quantize(Decimal("0.01")) if total > 0 else None
+    rows = []
+    for p in parts:
+        nc = _d(p.get("net_cost"))
+        pv = _d(p.get("vnm"))
+        rows.append({
+            "id": p.get("id"), "sku": p.get("sku"),
+            "description": p.get("description"), "hs_code": p.get("hs_code"),
+            "core_code": p.get("core_code"),
+            "net_cost": str(nc), "vnm": str(pv),
+            "rvc": (str(((nc - pv) / nc * 100).quantize(Decimal("0.01")))
+                    if p.get("has_data") and nc > 0 else None),
+            "has_data": bool(p.get("has_data")),
+        })
+    return {
+        "as_of": as_of.isoformat() if as_of else None,
+        "threshold": str(thr),
+        "net_cost": str(total), "vnm": str(vnm),
+        "rvc": str(rvc) if rvc is not None else None,
+        "qualifies": bool(rvc is not None and rvc >= thr),
+        "parts": rows,
+        "missing": [p["sku"] for p in parts if not p.get("has_data")],
+        "included": len(incl), "total_parts": len(parts),
+        "disclaimer": (
+            "Súper-core (T-MEC, Apéndice automotriz, Art. 3.9): las partes esenciales de la "
+            "Tabla A.1 pueden promediarse como una sola parte; si el VCR combinado por costo "
+            "neto alcanza el umbral, todas se consideran originarias. El roll-up lo aplica el "
+            "PRODUCTOR DE VEHÍCULOS en su determinación; como proveedor este cálculo es soporte "
+            "para tu OEM. Orientativo; valida con un especialista."),
+    }

@@ -13,7 +13,7 @@ import {
   getAsTenant, getToken, LicenseInfo, setAsTenant,
   MasterTenant, Me, OriginAnalysis, OriginAnalysisDetail, OriginCalcResult, OriginRule, Party,
   Product, ProductChangeLog, Qualification,
-  Solicitation, SolicitationCert, SubmittedBom, SupplierProfile, SupplierUser, Treaty,
+  Solicitation, SolicitationCert, SubmittedBom, SupercoreResult, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
@@ -2076,6 +2076,102 @@ function ProductCombobox({ products, value, onChange, placeholder }: {
   );
 }
 
+// SÚPER-CORE (T-MEC, Apéndice automotriz Art. 3.9): las partes esenciales
+// (Tabla A.1) se tratan como UNA sola parte y se evalúa el VCR del conjunto por
+// costo neto. El backend detecta las partes core del catálogo y suma su costo
+// neto/VNM desde el BOM de cada una.
+function SupercoreModal({ treatyId, onClose }: { treatyId: number; onClose: () => void }) {
+  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
+  const [result, setResult] = useState<SupercoreResult | null>(null);
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
+  // Universo inicial de partes core (para poder re-incluir las excluidas).
+  const [master, setMaster] = useState<SupercoreResult["parts"]>([]);
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const money = (v?: string | null) => {
+    const n = Number(v); return isNaN(n) ? "—" : `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  async function calc(excl: Set<number>, ids: number[], fecha: string) {
+    setBusy(true); setMsg("");
+    try {
+      const products = ids.length ? ids.filter((id) => !excl.has(id)) : undefined;
+      const r = await api.supercore({ treaty: treatyId, as_of: fecha, ...(products ? { products } : {}) });
+      setResult(r);
+      if (!ids.length) setMaster(r.parts);  // universo inicial
+    } catch (e) { setMsg((e as Error).message); setResult(null); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => { calc(new Set(), [], asOf); /* carga inicial: todas las core */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function toggle(id: number) {
+    const next = new Set(excluded);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setExcluded(next);
+    calc(next, master.map((p) => p.id), asOf);
+  }
+  // Se pinta el universo completo; las excluidas quedan sin marcar (re-incluibles).
+  const filas = master.map((m) => result?.parts.find((p) => p.id === m.id) ?? m);
+  return (
+    <Modal title="Súper-core — partes esenciales como una sola (T-MEC)" onClose={onClose} wide>
+      <p className="mb-3 text-sm text-zinc-500">
+        El Apéndice automotriz del T-MEC (Art. 3.9) permite tratar las <strong>partes esenciales
+        (core, Tabla A.1)</strong> como <strong>una sola parte</strong>: se promedia el VCR del
+        conjunto por costo neto y, si alcanza el umbral, <strong>todas</strong> se consideran
+        originarias (roll-up). El costo neto y el VNM de cada parte salen de su BOM.
+      </p>
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <Field label="Fecha (phase-in)">
+          <input type="date" className={inputCls} value={asOf}
+            onChange={(e) => { setAsOf(e.target.value); if (e.target.value) calc(excluded, master.map((p) => p.id), e.target.value); }} />
+        </Field>
+        {result && (
+          <span className={cx("mb-1 rounded-full px-3 py-1 text-sm font-bold",
+            result.qualifies ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+            {result.rvc != null
+              ? `VCR combinado ${result.rvc}% ${result.qualifies ? "≥" : "<"} ${result.threshold}% — ${result.qualifies ? "TODAS originarias (roll-up)" : "NO alcanza el umbral"}`
+              : "Sin datos suficientes"}
+          </span>
+        )}
+        {busy && <span className="mb-1 text-sm text-zinc-400">Calculando…</span>}
+      </div>
+      {msg && <p className="mb-3 text-sm text-red-600">{msg}</p>}
+      {result && (
+        <>
+          <div className="mb-3 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-zinc-100 px-3 py-1">Costo neto del conjunto: <strong>{money(result.net_cost)}</strong></span>
+            <span className="rounded-full bg-zinc-100 px-3 py-1">VNM del conjunto: <strong>{money(result.vnm)}</strong></span>
+            <span className="rounded-full bg-zinc-100 px-3 py-1">{result.included} de {result.total_parts} parte(s) con datos</span>
+          </div>
+          <Table head={["Incluir", "Núm. de parte", "Descripción", "HS (core)", "Costo neto", "VNM", "VCR individual"]}>
+            {filas.map((p) => (
+              <tr key={p.id} className={cx(!p.has_data && "bg-amber-50/60")}>
+                <td className="px-4 py-3">
+                  <input type="checkbox" checked={!excluded.has(p.id)} disabled={busy} onChange={() => toggle(p.id)} />
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
+                <td className="px-4 py-3 text-xs">{p.description}</td>
+                <td className="px-4 py-3 text-xs">{formatHs(p.hs_code)} <span className="text-zinc-400">({formatHs(p.core_code)})</span></td>
+                <td className="px-4 py-3 text-xs">{p.has_data ? money(p.net_cost) : "—"}</td>
+                <td className="px-4 py-3 text-xs">{p.has_data ? money(p.vnm) : "—"}</td>
+                <td className="px-4 py-3 text-xs">
+                  {p.rvc != null ? `${p.rvc}%`
+                    : <span className="text-amber-700">sin BOM/costos — no suma</span>}
+                </td>
+              </tr>
+            ))}
+          </Table>
+          {result.missing.length > 0 && (
+            <p className="mt-2 text-xs text-amber-700">
+              ⚠️ Sin datos de BOM (no suman al conjunto): {result.missing.join(", ")}. Ármales su lista de materiales para incluirlas.
+            </p>
+          )}
+          <p className="mt-3 text-xs text-zinc-400">{result.disclaimer}</p>
+        </>
+      )}
+      <div className="mt-5 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
 // Cálculo de origen del producto de la EMPRESA a partir de su BOM, con toggle
 // por insumo (declaración del proveedor / periodo, o captura manual).
 function CalculoOrigenView() {
@@ -2095,6 +2191,7 @@ function CalculoOrigenView() {
   const [result, setResult] = useState<OriginCalcResult | null>(null);
   const [msg, setMsg] = useState(""); const [calc, setCalc] = useState(false);
   const [ayuda, setAyuda] = useState(false);
+  const [supercoreOpen, setSupercoreOpen] = useState(false);
   const [histKey, setHistKey] = useState(0);  // refresca el histórico tras cada cálculo
   const [autoCore, setAutoCore] = useState<string | null>(null);  // core part SOLO si T-MEC
   const productos = productsL.data.filter((p) => p.kind !== "material");
@@ -2147,9 +2244,17 @@ function CalculoOrigenView() {
     <div>
       <div className="flex items-start justify-between gap-3">
         <PageTitle title="Cálculo de origen" desc="Calcula el origen de tus productos a partir de su BOM. Por cada insumo elige si tomas el origen que declaró el proveedor o lo capturas tú." />
-        <Btn variant="ghost" size="sm" onClick={() => setAyuda(true)}>¿Cómo funciona?</Btn>
+        <div className="flex shrink-0 items-center gap-2">
+          {treatiesL.data.find((t) => t.id === treatyId)?.code === "TMEC" && (
+            <Btn variant="ghost" size="sm" onClick={() => setSupercoreOpen(true)}>🚗 Súper-core</Btn>
+          )}
+          <Btn variant="ghost" size="sm" onClick={() => setAyuda(true)}>¿Cómo funciona?</Btn>
+        </div>
       </div>
       {ayuda && <AyudaOrigenModal onClose={() => setAyuda(false)} />}
+      {supercoreOpen && treatyId !== "" && (
+        <SupercoreModal treatyId={Number(treatyId)} onClose={() => setSupercoreOpen(false)} />
+      )}
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="min-w-[20rem]">
           <span className="mb-1 block text-xs font-semibold text-zinc-700">Producto</span>
