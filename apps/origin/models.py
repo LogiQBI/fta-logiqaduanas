@@ -282,6 +282,15 @@ class Audit(TenantOwnedModel):
         SUBMITTED = "submitted", "Entregada"
         CLOSED = "closed", "Cerrada"
 
+    class Kind(models.TextChoices):
+        CLIENT = "client_audit", "Un cliente audita a la empresa"
+        SUPPLIER = "supplier_audit", "La empresa audita a un proveedor"
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.CLIENT)
+    # Proveedor auditado (solo kind=supplier_audit): él responde desde su portal.
+    supplier = models.ForeignKey("catalog.Party", null=True, blank=True,
+                                 on_delete=models.SET_NULL, related_name="supplier_audits",
+                                 limit_choices_to={"kind": "supplier"})
     title = models.CharField("Título", max_length=200)
     auditor = models.CharField("Auditor (cliente/despacho)", max_length=200, blank=True)
     client = models.ForeignKey("catalog.Party", null=True, blank=True,

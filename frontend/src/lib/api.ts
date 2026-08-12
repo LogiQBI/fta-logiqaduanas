@@ -156,7 +156,8 @@ export type AuditItemRow = {
   treaty: number; treaty_code: string; model_name: string;
 };
 export type AuditRow = {
-  id: number; title: string; auditor: string; client: number | null;
+  id: number; kind: string; kind_display: string; title: string; auditor: string;
+  client: number | null; supplier: number | null; supplier_name: string | null;
   client_name: string | null; notified_at: string | null;
   questionnaire_due: string | null; documents_due: string | null;
   status: string; status_display: string; notes: string;

@@ -1899,13 +1899,32 @@ class AuditViewSet(TenantScopedViewSet):
                 .prefetch_related("items__product", "items__treaty",
                                   "documents__files"))
     serializer_class = s.AuditSerializer
-    supplier_field = None
+    supplier_field = "supplier_id"  # el proveedor auditado ve las suyas
 
     def _require_company(self):
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo la empresa gestiona auditorías.")
         return m
+
+    def _require_member(self):
+        """Empresa o proveedor auditado (el queryset ya acota a lo suyo)."""
+        m = self.membership()
+        if not m:
+            raise PermissionDenied("Sin acceso.")
+        return m
+
+    def update(self, request, *args, **kwargs):
+        self._require_company()
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._require_company()
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._require_company()
+        return super().destroy(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         """Crea la auditoría con su alcance y SIEMBRA el cuestionario estándar
@@ -1922,12 +1941,20 @@ class AuditViewSet(TenantScopedViewSet):
         if not items:
             return Response({"error": "Agrega al menos una parte al alcance."},
                             status=status.HTTP_400_BAD_REQUEST)
+        kind = d.get("kind") or Audit.Kind.CLIENT
+        supplier = None
+        if kind == Audit.Kind.SUPPLIER:
+            supplier = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.SUPPLIER,
+                                            pk=d.get("supplier")).first()
+            if not supplier:
+                return Response({"error": "Elige el proveedor auditado."},
+                                status=status.HTTP_400_BAD_REQUEST)
         client = None
         if d.get("client"):
             client = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.CUSTOMER,
                                           pk=d.get("client")).first()
         audit = Audit.objects.create(
-            tenant=m.tenant, title=d["title"].strip()[:200],
+            tenant=m.tenant, kind=kind, supplier=supplier, title=d["title"].strip()[:200],
             auditor=(d.get("auditor") or "").strip()[:200], client=client,
             notified_at=parse_date(d.get("notified_at") or "") or None,
             questionnaire_due=parse_date(d.get("questionnaire_due") or "") or None,
@@ -1945,8 +1972,9 @@ class AuditViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="update-document")
     def update_document(self, request, pk=None):
-        """Actualiza un renglón del cuestionario: {id, provided?, response?}."""
-        self._require_company()
+        """Actualiza un renglón del cuestionario: {id, provided?, response?}.
+        La empresa siempre; el proveedor auditado, en las suyas."""
+        self._require_member()
         audit = self.get_object()
         doc = AuditDocument.objects.filter(audit=audit, pk=request.data.get("id")).first()
         if not doc:
@@ -1964,7 +1992,7 @@ class AuditViewSet(TenantScopedViewSet):
     def upload_file(self, request, pk=None):
         """Adjunta evidencia a un renglón: {document?, filename, content_type?,
         data_b64}. El contenido vive en BD (disco del contenedor es efímero)."""
-        m = self._require_company()
+        m = self._require_member()
         audit = self.get_object()
         data_b64 = request.data.get("data_b64") or ""
         filename = (request.data.get("filename") or "archivo").strip()[:200]
@@ -1995,7 +2023,7 @@ class AuditViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="delete-file")
     def delete_file(self, request, pk=None):
-        self._require_company()
+        self._require_member()
         audit = self.get_object()
         n, _ = AuditFile.objects.filter(audit=audit, pk=request.data.get("id")).delete()
         return Response({"ok": bool(n)})
@@ -2005,7 +2033,7 @@ class AuditViewSet(TenantScopedViewSet):
         """Descarga un adjunto."""
         import base64
         from django.http import HttpResponse
-        self._require_company()
+        self._require_member()
         audit = self.get_object()
         f = AuditFile.objects.filter(audit=audit, pk=file_id).first()
         if not f:
@@ -2021,7 +2049,7 @@ class AuditViewSet(TenantScopedViewSet):
         """Expediente ZIP: cuestionario respondido + certificados + adjuntos."""
         from django.http import HttpResponse
         from apps.origin.services import build_audit_package
-        self._require_company()
+        self._require_member()
         audit = self.get_object()
         content = build_audit_package(audit)
         resp = HttpResponse(content, content_type="application/zip")

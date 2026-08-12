@@ -923,18 +923,24 @@ def seed_audit(audit):
     from apps.origin import engine
 
     items = list(audit.items.select_related("product", "treaty").all())
+    # Auditoría A UN PROVEEDOR: misma estructura, pero SIN pre-llenado — el
+    # proveedor responde desde su portal con SU información.
+    prefill = audit.kind != "supplier_audit"
     by_treaty = {}
     quals = {}
     for it in items:
         by_treaty.setdefault(it.treaty, []).append(it)
-        quals[it.id] = Qualification.objects.filter(
+        quals[it.id] = (Qualification.objects.filter(
             tenant=audit.tenant, product=it.product, treaty=it.treaty).first()
+            if prefill else None)
     order = 0
     rows = []
 
     def add(kind, section, number, title, response="", provided=False, auto=False):
         nonlocal order
         order += 10
+        if not prefill:  # el proveedor responde: sin auto-respuestas
+            response, provided, auto = "", False, False
         rows.append(AuditDocument(
             tenant=audit.tenant, audit=audit, kind=kind, section=section,
             order=order, number=str(number), title=title, response=response,

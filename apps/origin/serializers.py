@@ -625,12 +625,15 @@ class AuditSerializer(serializers.ModelSerializer):
     items = AuditItemSerializer(many=True, read_only=True)
     documents = AuditDocumentSerializer(many=True, read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True, default=None)
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True, default=None)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Audit
-        fields = ["id", "title", "auditor", "client", "client_name", "notified_at",
+        fields = ["id", "kind", "kind_display", "title", "auditor", "client", "client_name",
+                  "supplier", "supplier_name", "notified_at",
                   "questionnaire_due", "documents_due", "status", "status_display",
                   "notes", "items", "documents", "progress", "created_at"]
         read_only_fields = ["tenant"]

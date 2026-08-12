@@ -324,6 +324,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
       ] },
       { label: "Origen", items: [
         { key: "mis-solicitudes", label: "Solicitudes de cliente", icon: Inbox, badge: badges.pendientes },
+        { key: "auditorias-prov", label: "Auditorías", icon: ShieldCheck },
         { key: "aceptadas", label: "Declaraciones aceptadas", icon: BadgeCheck },
         { key: "mis-declaraciones", label: "Mis declaraciones", icon: FileText },
       ] },
@@ -502,6 +503,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosEmitirView />;
     case "auditorias": return <AuditoriasView />;
+    case "auditorias-prov": return <AuditoriasProveedorView />;
     case "proveedores": return <ProveedoresView me={me} />;
     case "clientes": return <ClientesView />;
     case "licencia": return <LicenciaView />;
@@ -4023,7 +4025,12 @@ function AuditoriasView() {
           return (
             <tr key={a.id}>
               <td className="px-4 py-3"><div className="font-medium">{a.title}</div>
-                <div className="text-[11px] text-zinc-500">{a.auditor || "—"}{a.client_name ? ` · ${a.client_name}` : ""}</div></td>
+                <div className="text-[11px] text-zinc-500">
+                  {a.kind === "supplier_audit"
+                    ? <span className="mr-1 rounded bg-purple-50 px-1 py-0.5 font-medium text-purple-700">a proveedor: {a.supplier_name ?? "—"}</span>
+                    : <span className="mr-1 rounded bg-blue-50 px-1 py-0.5 font-medium text-blue-700">de cliente</span>}
+                  {a.auditor || "—"}{a.client_name ? ` · ${a.client_name}` : ""}
+                </div></td>
               <td className="px-4 py-3 text-xs">{a.items.map((i) => `${i.product_sku} (${treatyLabel(i.treaty_code)})`).join(", ")}</td>
               <td className="px-4 py-3">{vq ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vq.cls)}>{vq.txt}</span> : "—"}</td>
               <td className="px-4 py-3">{vd ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vd.cls)}>{vd.txt}</span> : "—"}</td>
@@ -4046,17 +4053,56 @@ function AuditoriasView() {
   );
 }
 
+
+// Portal del PROVEEDOR: auditorías que su cliente (la empresa) le mandó.
+function AuditoriasProveedorView() {
+  const audits = useList<AuditRow>(() => api.audits());
+  const [abierta, setAbierta] = useState<AuditRow | null>(null);
+  return (
+    <div>
+      <PageTitle title="Auditorías de tu cliente" desc="Tu cliente te está auditando el origen de estas partes: responde el cuestionario, adjunta la evidencia y marca cada renglón como listo antes de la fecha límite." />
+      <Table head={["Auditoría", "Alcance", "Límite cuestionario", "Límite documentos", "Avance", "Estado", ""]}>
+        {audits.data.map((a) => {
+          const vq = venceInfo(a.questionnaire_due); const vd = venceInfo(a.documents_due);
+          return (
+            <tr key={a.id}>
+              <td className="px-4 py-3"><div className="font-medium">{a.title}</div>
+                <div className="text-[11px] text-zinc-500">{a.auditor || "—"}</div></td>
+              <td className="px-4 py-3 text-xs">{a.items.map((i) => `${i.product_sku} (${treatyLabel(i.treaty_code)})`).join(", ")}</td>
+              <td className="px-4 py-3">{vq ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vq.cls)}>{vq.txt}</span> : "—"}</td>
+              <td className="px-4 py-3">{vd ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vd.cls)}>{vd.txt}</span> : "—"}</td>
+              <td className="px-4 py-3 text-xs">{a.progress.provided}/{a.progress.total}</td>
+              <td className="px-4 py-3"><Pill k={a.status === "open" ? "sent" : "accepted"}>{a.status_display}</Pill></td>
+              <td className="px-4 py-3 text-right"><Btn size="sm" onClick={() => setAbierta(a)}>Responder</Btn></td>
+            </tr>
+          );
+        })}
+        {audits.count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">No tienes auditorías pendientes. 🎉</td></tr>}
+      </Table>
+      {abierta && <AuditoriaDetalleModal auditId={abierta.id} proveedor
+        onClose={async () => { setAbierta(null); await audits.reload(); }} />}
+    </div>
+  );
+}
+
 function NuevaAuditoriaModal({ onClose, onSaved }: { onClose: () => void; onSaved: (a: AuditRow) => void }) {
   const productsL = useList<Product>(() => api.products());
   const treatiesL = useList<Treaty>(() => api.treaties());
   const clientsL = useList<Party>(() => api.parties("customer"));
   const [f, setF] = useState({ title: "", auditor: "", client: "" as number | "", notified_at: "", questionnaire_due: "", documents_due: "" });
+  const [kind, setKind] = useState<"client_audit" | "supplier_audit">("client_audit");
+  const [supplierId, setSupplierId] = useState<number | "">("");
+  const suppliersL = useList<Party>(() => api.parties("supplier"));
   const [items, setItems] = useState<{ product: number; treaty: number }[]>([]);
   const [prodId, setProdId] = useState<number | "">("");
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
-  const productos = productsL.data.filter((p) => p.kind !== "material");
-  const nombre = (id: number) => productos.find((p) => p.id === id)?.sku ?? `#${id}`;
+  // Auditoría de cliente: tus productos terminados/subproductos. Auditoría A UN
+  // proveedor: las partes que le compras (cualquier tipo, filtradas por proveedor).
+  const productos = kind === "supplier_audit"
+    ? productsL.data.filter((p) => supplierId !== "" && p.supplier === Number(supplierId))
+    : productsL.data.filter((p) => p.kind !== "material");
+  const nombre = (id: number) => productsL.data.find((p) => p.id === id)?.sku ?? `#${id}`;
   const tcode = (id: number) => treatiesL.data.find((t) => t.id === id)?.code ?? "";
   function agregarItem() {
     if (!prodId || !treatyId) { setErr("Elige la parte y el tratado."); return; }
@@ -4067,25 +4113,45 @@ function NuevaAuditoriaModal({ onClose, onSaved }: { onClose: () => void; onSave
   }
   async function crear() {
     if (!f.title.trim()) { setErr("Ponle un título (ej. “Origin Verification — KMX”)."); return; }
+    if (kind === "supplier_audit" && supplierId === "") { setErr("Elige el proveedor auditado."); return; }
     if (!items.length) { setErr("Agrega al menos una parte al alcance."); return; }
     setErr(""); setSaving(true);
     try {
-      const a = await api.createAudit({ ...f, client: f.client === "" ? null : f.client, items });
+      const a = await api.createAudit({ ...f, kind, supplier: supplierId === "" ? null : supplierId, client: f.client === "" ? null : f.client, items });
       onSaved(a);
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
   return (
     <Modal title="Nueva auditoría de origen" onClose={onClose} wide>
-      <p className="mb-3 text-sm text-zinc-500">Registra la auditoría que te mandó tu cliente. Al crearla, la plataforma <strong>siembra el cuestionario estándar</strong> (documentos requeridos + preguntas por tratado) y lo <strong>pre-llena</strong> con tus cálculos, PSR, certificados y proceso de proveedores.</p>
+      <p className="mb-3 text-sm text-zinc-500">{kind === "supplier_audit"
+        ? <>Audita a un proveedor: la plataforma siembra el cuestionario estándar y <strong>el proveedor lo responde desde su portal</strong> (con evidencia adjunta); tú sigues el avance y descargas el expediente.</>
+        : <>Registra la auditoría que te mandó tu cliente. Al crearla, la plataforma <strong>siembra el cuestionario estándar</strong> (documentos requeridos + preguntas por tratado) y lo <strong>pre-llena</strong> con tus cálculos, PSR, certificados y proceso de proveedores.</>}</p>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1">
+        {([["client_audit", "Un cliente me audita"], ["supplier_audit", "Yo audito a un proveedor"]] as const).map(([k, lbl]) => (
+          <button key={k} onClick={() => { setKind(k); setItems([]); setProdId(""); }}
+            className={cx("rounded-md px-3 py-1.5 text-sm font-medium", kind === k ? "bg-white text-blue-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+            {lbl}
+          </button>
+        ))}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Título"><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} className={inputCls} placeholder="Origin Verification — KMX" autoFocus /></Field>
+        <Field label="Título"><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} className={inputCls} placeholder={kind === "supplier_audit" ? "Verificación de origen — proveedor X" : "Origin Verification — KMX"} autoFocus /></Field>
         <Field label="Auditor (cliente o despacho)"><input value={f.auditor} onChange={(e) => setF({ ...f, auditor: e.target.value })} className={inputCls} placeholder="Pie Consulting" /></Field>
-        <Field label="Cliente relacionado (opcional)">
-          <select value={f.client} onChange={(e) => setF({ ...f, client: e.target.value ? Number(e.target.value) : "" })} className={inputCls}>
-            <option value="">—</option>
-            {clientsL.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
+        {kind === "supplier_audit" ? (
+          <Field label="Proveedor auditado">
+            <select value={supplierId} onChange={(e) => { setSupplierId(e.target.value ? Number(e.target.value) : ""); setItems([]); }} className={inputCls}>
+              <option value="">Elige el proveedor…</option>
+              {suppliersL.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Cliente relacionado (opcional)">
+            <select value={f.client} onChange={(e) => setF({ ...f, client: e.target.value ? Number(e.target.value) : "" })} className={inputCls}>
+              <option value="">—</option>
+              {clientsL.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+        )}
         <div className="grid grid-cols-3 gap-2">
           <Field label="Notificación"><input type="date" value={f.notified_at} onChange={(e) => setF({ ...f, notified_at: e.target.value })} className={inputCls} /></Field>
           <Field label="Límite cuestionario"><input type="date" value={f.questionnaire_due} onChange={(e) => setF({ ...f, questionnaire_due: e.target.value })} className={inputCls} /></Field>
@@ -4123,7 +4189,7 @@ function NuevaAuditoriaModal({ onClose, onSaved }: { onClose: () => void; onSave
   );
 }
 
-function AuditoriaDetalleModal({ auditId, onClose }: { auditId: number; onClose: () => void }) {
+function AuditoriaDetalleModal({ auditId, onClose, proveedor }: { auditId: number; onClose: () => void; proveedor?: boolean }) {
   const [a, setA] = useState<AuditRow | null>(null);
   const [msg, setMsg] = useState("");
   const [resp, setResp] = useState<Record<number, string>>({});
@@ -4173,14 +4239,18 @@ function AuditoriaDetalleModal({ auditId, onClose }: { auditId: number; onClose:
         {vq && <span className={cx("rounded-full px-3 py-1 font-medium", vq.cls)}>Cuestionario: {vq.txt}</span>}
         {vd && <span className={cx("rounded-full px-3 py-1 font-medium", vd.cls)}>Documentos: {vd.txt}</span>}
         <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">{a.progress.provided}/{a.progress.total} listos</span>
-        <select value={a.status} onChange={async (e) => { await api.patchAudit(a.id, { status: e.target.value }); await recargar(); }}
-          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
-          <option value="open">En preparación</option>
-          <option value="submitted">Entregada</option>
-          <option value="closed">Cerrada</option>
-        </select>
+        {proveedor
+          ? <Pill k={a.status === "open" ? "sent" : "accepted"}>{a.status_display}</Pill>
+          : <select value={a.status} onChange={async (e) => { await api.patchAudit(a.id, { status: e.target.value }); await recargar(); }}
+              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+              <option value="open">En preparación</option>
+              <option value="submitted">Entregada</option>
+              <option value="closed">Cerrada</option>
+            </select>}
       </div>
-      <p className="mb-3 text-xs text-zinc-500">Las respuestas marcadas <span className="rounded bg-blue-50 px-1 text-blue-700">auto</span> las pre-llenó la plataforma con tus cálculos — revísalas y ajústalas; se guardan al salir del campo. Marca “Listo” cuando el renglón esté completo y adjunta la evidencia externa donde aplique.</p>
+      <p className="mb-3 text-xs text-zinc-500">{proveedor
+        ? <>Responde cada renglón y adjunta la evidencia que lo respalde; las respuestas se guardan al salir del campo. Marca <strong>“Listo”</strong> cuando el renglón esté completo. Tu cliente ve el avance en tiempo real.</>
+        : <>Las respuestas marcadas <span className="rounded bg-blue-50 px-1 text-blue-700">auto</span> las pre-llenó la plataforma con tus cálculos — revísalas y ajústalas; se guardan al salir del campo. Marca “Listo” cuando el renglón esté completo y adjunta la evidencia externa donde aplique.</>}</p>
       {msg && <p className="mb-2 text-sm text-red-600">{msg}</p>}
       <div className="space-y-4">
         {secciones.map((sec) => (
