@@ -4136,7 +4136,7 @@ function NuevaAuditoriaModal({ onClose, onSaved }: { onClose: () => void; onSave
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Título"><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} className={inputCls} placeholder={kind === "supplier_audit" ? "Verificación de origen — proveedor X" : "Origin Verification — KMX"} autoFocus /></Field>
-        <Field label="Auditor (cliente o despacho)"><input value={f.auditor} onChange={(e) => setF({ ...f, auditor: e.target.value })} className={inputCls} placeholder="Pie Consulting" /></Field>
+        <Field label="Auditor (cliente o despacho)"><input value={f.auditor} onChange={(e) => setF({ ...f, auditor: e.target.value })} className={inputCls} placeholder="SS Commerce / Deloitte / KPMG / EY…" /></Field>
         {kind === "supplier_audit" ? (
           <Field label="Proveedor auditado">
             <select value={supplierId} onChange={(e) => { setSupplierId(e.target.value ? Number(e.target.value) : ""); setItems([]); }} className={inputCls}>
