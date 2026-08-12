@@ -1616,39 +1616,55 @@ def verify_certificate(request, token):
         .filter(verify_token=token).first() if token else None)
     navy = "#043a70"
     if not cert:
-        body = ('<div class="card"><h1 class="bad">Certificado no encontrado</h1>'
-                '<p>El código no corresponde a ningún certificado emitido en LogiQ Aduanas | FTA.</p></div>')
+        body = ('<div class="card"><h1 class="bad">Certificado no encontrado · '
+                'Certificate not found</h1>'
+                '<p>El código no corresponde a ningún certificado emitido en esta plataforma.<br>'
+                '<span class="en">The code does not match any certificate issued on this platform.</span></p></div>')
     else:
         q = cert.qualification
         quals = (list(cert.qualifications.select_related("product").all()) or [q])
         ce = cert.certifier_data or {}
         im = cert.importer_data or {}
         treaty = s.TREATY_LABELS.get(q.treaty.code, q.treaty.code)
+        is_aff = q.status != "QUALIFIES"
+        doc_es, doc_en = (("Affidavit de origen (VOM)", "Affidavit of Origin (VOM)")
+                          if is_aff else ("Certificado de origen", "Certificate of Origin"))
+        # Etiquetas BILINGÜES: quien escanea suele ser la autoridad/importador en EE.UU.
         rows = "".join(
-            f'<tr><td class="k">{escape(k)}</td><td>{escape(str(v))}</td></tr>' for k, v in [
-                ("Folio", cert.folio),
-                ("Producto(s)", "; ".join(f"{x.product.sku} — {x.product.description}"
-                                          for x in quals)),
-                ("Fracción (HS)", ", ".join(sorted({x.product.hs_code or "—"
-                                                    for x in quals}))),
-                ("Tratado", treaty),
-                ("Criterio de origen", q.criterion or q.status),
-                ("Exportador / Productor", ce.get("nombre", cert.tenant.name)),
-                ("Importador", im.get("nombre", "—")),
-                ("Emitido", cert.issued_at.strftime("%Y-%m-%d")),
+            f'<tr><td class="k">{k_es}<br><span class="en">{k_en}</span></td>'
+            f'<td>{escape(str(v))}</td></tr>' for k_es, k_en, v in [
+                ("Folio", "Document No.", cert.folio),
+                ("Documento", "Document type", f"{doc_es} / {doc_en}"),
+                ("Producto(s)", "Product(s)",
+                 "; ".join(f"{x.product.sku} — {x.product.description}" for x in quals)),
+                ("Fracción (HS)", "HS classification",
+                 ", ".join(sorted({x.product.hs_code or "—" for x in quals}))),
+                ("Tratado", "Trade agreement", treaty),
+                ("Exportador / Productor", "Exporter / Producer",
+                 ce.get("nombre", cert.tenant.name)),
+                ("Importador", "Importer", im.get("nombre", "—")),
+                ("Emitido el", "Issued on", cert.issued_at.strftime("%Y-%m-%d")),
             ])
-        body = (f'<div class="card"><h1 class="ok">✓ Certificado válido</h1>'
+        body = (f'<div class="card">'
+                f'<h1 class="ok">✓ Documento auténtico · Authentic document</h1>'
+                f'<p class="sub">Este {doc_es.lower()} <strong>es real</strong>: fue emitido en esta '
+                f'plataforma y su contenido coincide con el registro.<br>'
+                f'<span class="en">This {doc_en.lower()} <strong>is genuine</strong>: it was issued on this '
+                f'platform and its contents match the official record.</span></p>'
                 f'<table>{rows}</table>'
-                f'<p class="note">Verificación pública de autenticidad. LogiQ Aduanas | FTA.</p></div>')
+                f'<p class="note">Verificación pública de autenticidad · Public authenticity '
+                f'verification. LogiQ Aduanas | FTA.</p></div>')
     html = (f'<!doctype html><html lang="es"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>Verificar certificado — LogiQ Aduanas</title><style>'
+            f'<title>Verificación de certificado · Certificate verification</title><style>'
             f'body{{font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;margin:0;padding:24px;color:#1f2937}}'
             f'.card{{max-width:560px;margin:24px auto;background:#fff;border-radius:14px;padding:24px;'
-            f'box-shadow:0 1px 3px rgba(0,0,0,.1)}} h1{{font-size:20px;margin:0 0 16px}}'
-            f'.ok{{color:#15803d}} .bad{{color:#b91c1c}} table{{width:100%;border-collapse:collapse}}'
+            f'box-shadow:0 1px 3px rgba(0,0,0,.1)}} h1{{font-size:20px;margin:0 0 10px}}'
+            f'.ok{{color:#15803d}} .bad{{color:#b91c1c}} .sub{{font-size:14px;margin:0 0 16px}}'
+            f'.en{{color:#6b7280;font-style:italic}} table{{width:100%;border-collapse:collapse}}'
             f'td{{border-bottom:1px solid #eee;padding:8px 6px;font-size:14px;vertical-align:top}}'
-            f'td.k{{color:#6b7280;width:42%}} .note{{margin-top:16px;font-size:12px;color:#9ca3af}}'
+            f'td.k{{color:#374151;width:42%;font-size:13px}} td.k .en{{font-size:11px}}'
+            f'.note{{margin-top:16px;font-size:12px;color:#9ca3af}}'
             f'.brand{{color:{navy};font-weight:bold;font-size:18px;text-align:center}}</style></head>'
             f'<body><div class="brand">LogiQ Aduanas | FTA</div>{body}</body></html>')
     return HttpResponse(html)
