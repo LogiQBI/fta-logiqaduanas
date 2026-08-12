@@ -16,6 +16,7 @@ router.register("certificates", views.CertificateViewSet)
 router.register("solicitation-certificates", views.SolicitationCertificateViewSet)
 router.register("client-layouts", views.ClientLayoutViewSet)
 router.register("solicitations", views.SolicitationRequestViewSet)
+router.register("audits", views.AuditViewSet)
 
 urlpatterns = [
     path("login/", views.login_view, name="api-login"),

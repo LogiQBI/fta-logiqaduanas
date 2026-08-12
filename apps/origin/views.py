@@ -34,8 +34,8 @@ from apps.origin import serializers as s
 from apps.origin import automotive as auto
 from apps.origin import layouts as client_layouts
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, ClientOriginLayout, OriginAnalysis,
-    Qualification, SolicitationCertificate,
+    Audit, AuditDocument, AuditFile, AuditItem, AutomotiveAssessment, Certificate,
+    ClientOriginLayout, OriginAnalysis, Qualification, SolicitationCertificate,
 )
 from apps.origin.services import (
     bom_lines_for, calculate_bom_origin, calculate_product_origin, certificate_elements,
@@ -1890,3 +1890,140 @@ def me(request):
         "supplier": ({"id": m.party_id, "name": m.party.name, "slug": m.party.slug}
                      if m.party_id else None),
     })
+
+
+class AuditViewSet(TenantScopedViewSet):
+    """Auditorías de verificación de origen (el CLIENTE audita a la empresa).
+    Solo la empresa; los proveedores no ven este módulo."""
+    queryset = (Audit.objects.select_related("client")
+                .prefetch_related("items__product", "items__treaty",
+                                  "documents__files"))
+    serializer_class = s.AuditSerializer
+    supplier_field = None
+
+    def _require_company(self):
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo la empresa gestiona auditorías.")
+        return m
+
+    def create(self, request, *args, **kwargs):
+        """Crea la auditoría con su alcance y SIEMBRA el cuestionario estándar
+        pre-llenado. Body: {title, auditor?, client?, notified_at?,
+        questionnaire_due?, documents_due?, items: [{product, treaty}]}."""
+        from django.utils.dateparse import parse_date
+        from apps.origin.services import seed_audit
+        m = self._require_company()
+        d = request.data
+        if not (d.get("title") or "").strip():
+            return Response({"error": "Ponle un título a la auditoría."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        items = d.get("items") or []
+        if not items:
+            return Response({"error": "Agrega al menos una parte al alcance."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        client = None
+        if d.get("client"):
+            client = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.CUSTOMER,
+                                          pk=d.get("client")).first()
+        audit = Audit.objects.create(
+            tenant=m.tenant, title=d["title"].strip()[:200],
+            auditor=(d.get("auditor") or "").strip()[:200], client=client,
+            notified_at=parse_date(d.get("notified_at") or "") or None,
+            questionnaire_due=parse_date(d.get("questionnaire_due") or "") or None,
+            documents_due=parse_date(d.get("documents_due") or "") or None,
+            notes=(d.get("notes") or ""), created_by=request.user)
+        for it in items:
+            product = Product.objects.filter(tenant=m.tenant, pk=it.get("product")).first()
+            treaty = Treaty.objects.filter(pk=it.get("treaty")).first()
+            if product and treaty:
+                AuditItem.objects.get_or_create(
+                    tenant=m.tenant, audit=audit, product=product, treaty=treaty,
+                    defaults={"model_name": (it.get("model_name") or "")[:60]})
+        seed_audit(audit)
+        return Response(s.AuditSerializer(audit).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="update-document")
+    def update_document(self, request, pk=None):
+        """Actualiza un renglón del cuestionario: {id, provided?, response?}."""
+        self._require_company()
+        audit = self.get_object()
+        doc = AuditDocument.objects.filter(audit=audit, pk=request.data.get("id")).first()
+        if not doc:
+            return Response({"error": "Renglón no encontrado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if "provided" in request.data:
+            doc.provided = bool(request.data["provided"])
+        if "response" in request.data:
+            doc.response = str(request.data["response"] or "")
+            doc.auto_filled = False  # ya lo editó la empresa
+        doc.save(update_fields=["provided", "response", "auto_filled", "updated_at"])
+        return Response(s.AuditDocumentSerializer(doc).data)
+
+    @action(detail=True, methods=["post"], url_path="upload-file")
+    def upload_file(self, request, pk=None):
+        """Adjunta evidencia a un renglón: {document?, filename, content_type?,
+        data_b64}. El contenido vive en BD (disco del contenedor es efímero)."""
+        m = self._require_company()
+        audit = self.get_object()
+        data_b64 = request.data.get("data_b64") or ""
+        filename = (request.data.get("filename") or "archivo").strip()[:200]
+        if not data_b64:
+            return Response({"error": "Adjunta el archivo."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(data_b64) > 14_000_000:  # ~10 MB reales
+            return Response({"error": "El archivo es muy grande (máximo ~10 MB)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        doc = None
+        if request.data.get("document"):
+            doc = AuditDocument.objects.filter(audit=audit,
+                                               pk=request.data["document"]).first()
+        import base64
+        try:
+            size = len(base64.b64decode(data_b64))
+        except Exception:
+            return Response({"error": "El archivo no se pudo leer (base64 inválido)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        f = AuditFile.objects.create(
+            tenant=m.tenant, audit=audit, document=doc, filename=filename,
+            content_type=(request.data.get("content_type") or "")[:120],
+            size=size, data_b64=data_b64, uploaded_by=request.user)
+        if doc and not doc.provided:
+            doc.provided = True
+            doc.save(update_fields=["provided", "updated_at"])
+        return Response(s.AuditFileSerializer(f).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="delete-file")
+    def delete_file(self, request, pk=None):
+        self._require_company()
+        audit = self.get_object()
+        n, _ = AuditFile.objects.filter(audit=audit, pk=request.data.get("id")).delete()
+        return Response({"ok": bool(n)})
+
+    @action(detail=True, methods=["get"], url_path="file/(?P<file_id>[0-9]+)")
+    def download_file(self, request, pk=None, file_id=None):
+        """Descarga un adjunto."""
+        import base64
+        from django.http import HttpResponse
+        self._require_company()
+        audit = self.get_object()
+        f = AuditFile.objects.filter(audit=audit, pk=file_id).first()
+        if not f:
+            return Response({"error": "Adjunto no encontrado."},
+                            status=status.HTTP_404_NOT_FOUND)
+        resp = HttpResponse(base64.b64decode(f.data_b64),
+                            content_type=f.content_type or "application/octet-stream")
+        resp["Content-Disposition"] = f'attachment; filename="{f.filename}"'
+        return resp
+
+    @action(detail=True, methods=["get"], url_path="package")
+    def package(self, request, pk=None):
+        """Expediente ZIP: cuestionario respondido + certificados + adjuntos."""
+        from django.http import HttpResponse
+        from apps.origin.services import build_audit_package
+        self._require_company()
+        audit = self.get_object()
+        content = build_audit_package(audit)
+        resp = HttpResponse(content, content_type="application/zip")
+        resp["Content-Disposition"] = 'attachment; filename="expediente_auditoria.zip"'
+        return resp

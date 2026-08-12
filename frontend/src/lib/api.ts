@@ -142,6 +142,27 @@ export type EmittedCertificate = {
   country_of_origin?: string; pref_letter?: string; pref_label?: string; rule_text?: string;
   items?: CertificateItem[]; certification_text?: string;
 };
+export type AuditFileInfo = {
+  id: number; document: number | null; filename: string; content_type: string;
+  size: number; created_at: string;
+};
+export type AuditDoc = {
+  id: number; kind: string; section: string; order: number; number: string;
+  title: string; provided: boolean; response: string; auto_filled: boolean;
+  files: AuditFileInfo[];
+};
+export type AuditItemRow = {
+  id: number; product: number; product_sku: string; product_description: string;
+  treaty: number; treaty_code: string; model_name: string;
+};
+export type AuditRow = {
+  id: number; title: string; auditor: string; client: number | null;
+  client_name: string | null; notified_at: string | null;
+  questionnaire_due: string | null; documents_due: string | null;
+  status: string; status_display: string; notes: string;
+  items: AuditItemRow[]; documents: AuditDoc[];
+  progress: { provided: number; total: number }; created_at: string;
+};
 export type CertificateItem = {
   product: number; product_sku: string; product_description: string; product_hs: string;
   origin_status: string; criterion: string; rvc_value: string | null;
@@ -429,6 +450,22 @@ export const api = {
     req("/certificates/emit/", { method: "POST", body: JSON.stringify(payload) }),
   certificateXlsx: (id: number, folio: string) =>
     downloadFile(`/certificates/${id}/xlsx/`, `certificado_${folio}.xlsx`),
+  audits: () => req("/audits/"),
+  createAudit: (payload: Record<string, unknown>): Promise<AuditRow> =>
+    req("/audits/", { method: "POST", body: JSON.stringify(payload) }),
+  patchAudit: (id: number, payload: Record<string, unknown>): Promise<AuditRow> =>
+    req(`/audits/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteAudit: (id: number) => req(`/audits/${id}/`, { method: "DELETE" }),
+  updateAuditDocument: (id: number, payload: Record<string, unknown>): Promise<AuditDoc> =>
+    req(`/audits/${id}/update-document/`, { method: "POST", body: JSON.stringify(payload) }),
+  uploadAuditFile: (id: number, payload: Record<string, unknown>): Promise<AuditFileInfo> =>
+    req(`/audits/${id}/upload-file/`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteAuditFile: (id: number, fileId: number) =>
+    req(`/audits/${id}/delete-file/`, { method: "POST", body: JSON.stringify({ id: fileId }) }),
+  auditFileDownload: (id: number, fileId: number, filename: string) =>
+    downloadFile(`/audits/${id}/file/${fileId}/`, filename),
+  auditPackage: (id: number, name: string) =>
+    downloadFile(`/audits/${id}/package/`, `expediente_${name}.zip`),
   rules: (params = "") => req(`/origin-rules/${params}`),
   createRule: (payload: Record<string, unknown>) =>
     req("/origin-rules/", { method: "POST", body: JSON.stringify(payload) }),

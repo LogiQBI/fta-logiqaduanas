@@ -5,8 +5,8 @@ from apps.catalog.models import (
     SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
 )
 from apps.origin.models import (
-    AutomotiveAssessment, Certificate, ClientOriginLayout, OriginAnalysis,
-    Qualification, SolicitationCertificate,
+    Audit, AuditDocument, AuditFile, AuditItem, AutomotiveAssessment, Certificate,
+    ClientOriginLayout, OriginAnalysis, Qualification, SolicitationCertificate,
 )
 from apps.treaties.models import OriginRule, Treaty
 
@@ -591,3 +591,51 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
     def get_submitted_bom(self, obj):
         bom = SolicitationBOM.objects.filter(solicitation=obj).prefetch_related("lines").first()
         return SolicitationBOMSerializer(bom).data if bom else None
+
+
+# --- Auditorías de verificación de origen ---
+
+class AuditFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditFile
+        fields = ["id", "document", "filename", "content_type", "size", "created_at"]
+
+
+class AuditDocumentSerializer(serializers.ModelSerializer):
+    files = AuditFileSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = AuditDocument
+        fields = ["id", "kind", "section", "order", "number", "title", "provided",
+                  "response", "auto_filled", "files"]
+
+
+class AuditItemSerializer(serializers.ModelSerializer):
+    product_sku = serializers.CharField(source="product.sku", read_only=True)
+    product_description = serializers.CharField(source="product.description", read_only=True)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True)
+
+    class Meta:
+        model = AuditItem
+        fields = ["id", "product", "product_sku", "product_description",
+                  "treaty", "treaty_code", "model_name"]
+
+
+class AuditSerializer(serializers.ModelSerializer):
+    items = AuditItemSerializer(many=True, read_only=True)
+    documents = AuditDocumentSerializer(many=True, read_only=True)
+    client_name = serializers.CharField(source="client.name", read_only=True, default=None)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    progress = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Audit
+        fields = ["id", "title", "auditor", "client", "client_name", "notified_at",
+                  "questionnaire_due", "documents_due", "status", "status_display",
+                  "notes", "items", "documents", "progress", "created_at"]
+        read_only_fields = ["tenant"]
+
+    def get_progress(self, obj):
+        docs = obj.documents.all()
+        total = len(docs)
+        return {"provided": sum(1 for d in docs if d.provided), "total": total}

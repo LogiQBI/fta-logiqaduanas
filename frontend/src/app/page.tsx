@@ -1,14 +1,14 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   Home, Building2, Users, Package, Truck, ClipboardList, BadgeCheck,
   FileText, ScrollText, BookOpen, Inbox, ChevronDown, LogOut, Search,
   Plus, CheckCircle2, Pencil, Trash2, X, KeyRound, Boxes, Calculator, Upload,
-  Sun, Moon, Download,
+  Sun, Moon, Download, ShieldCheck,
 } from "lucide-react";
 import {
-  api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
+  api, AuditDoc, AuditRow, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
   BulkPreview, BulkResult, CertificateItem, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
   getAsTenant, getToken, LicenseInfo, setAsTenant,
   MasterTenant, Me, OriginAnalysis, OriginAnalysisDetail, OriginCalcResult, OriginRule, Party,
@@ -345,6 +345,7 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
       { key: "calculo-origen", label: "Cálculo de origen", icon: Calculator },
       { key: "calificaciones", label: "Calificaciones", icon: CheckCircle2 },
       { key: "certificados", label: "Emitir certificados", icon: BadgeCheck },
+      { key: "auditorias", label: "Auditorías", icon: ShieldCheck },
       { key: "solicitudes", label: "Solicitudes", icon: ClipboardList, badge: badges.pendientes },
       { key: "aceptadas", label: "Declaraciones aceptadas", icon: BadgeCheck },
     ] },
@@ -500,6 +501,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "asignar-proveedor": return <AsignarProveedorView />;
     case "calificaciones": return <CalificacionesView />;
     case "certificados": return <CertificadosEmitirView />;
+    case "auditorias": return <AuditoriasView />;
     case "proveedores": return <ProveedoresView me={me} />;
     case "clientes": return <ClientesView />;
     case "licencia": return <LicenciaView />;
@@ -3985,6 +3987,248 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const win = window.open("", "_blank", "width=980,height=1000");
   if (!win) { alert("Permite las ventanas emergentes para ver el certificado."); return; }
   win.document.open(); win.document.write(html); win.document.close();
+}
+
+
+/* ============ AUDITORÍAS DE ORIGEN ============ */
+// Días restantes de una fecha límite de auditoría.
+function venceInfo(date: string | null): { txt: string; cls: string } | null {
+  if (!date) return null;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const d = Math.round((new Date(date + "T00:00:00").getTime() - hoy.getTime()) / 86400000);
+  if (d < 0) return { txt: `venció ${date}`, cls: "bg-red-100 text-red-700" };
+  if (d <= 3) return { txt: `${date} (${d} día${d === 1 ? "" : "s"})`, cls: "bg-amber-100 text-amber-800" };
+  return { txt: date, cls: "bg-zinc-100 text-zinc-600" };
+}
+
+// El CLIENTE audita a la empresa: registrar la auditoría, responder el
+// cuestionario (pre-llenado desde la plataforma), adjuntar evidencia y
+// descargar el expediente ZIP.
+function AuditoriasView() {
+  const audits = useList<AuditRow>(() => api.audits());
+  const [crear, setCrear] = useState(false);
+  const [abierta, setAbierta] = useState<AuditRow | null>(null);
+  const [msg, setMsg] = useState("");
+  async function abrir(a: AuditRow) { setAbierta(a); }
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <PageTitle title="Auditorías de origen" desc="Cuando un cliente (o su despacho) te audita: registra la auditoría, la plataforma pre-llena el cuestionario con tus cálculos y certificados, adjunta la evidencia externa y descarga el expediente completo." />
+        <Btn onClick={() => setCrear(true)}><Plus size={15} className="-mt-0.5 mr-1 inline" />Nueva auditoría</Btn>
+      </div>
+      {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      <Table head={["Auditoría", "Alcance", "Límite cuestionario", "Límite documentos", "Avance", "Estado", ""]}>
+        {audits.data.map((a) => {
+          const vq = venceInfo(a.questionnaire_due); const vd = venceInfo(a.documents_due);
+          return (
+            <tr key={a.id}>
+              <td className="px-4 py-3"><div className="font-medium">{a.title}</div>
+                <div className="text-[11px] text-zinc-500">{a.auditor || "—"}{a.client_name ? ` · ${a.client_name}` : ""}</div></td>
+              <td className="px-4 py-3 text-xs">{a.items.map((i) => `${i.product_sku} (${treatyLabel(i.treaty_code)})`).join(", ")}</td>
+              <td className="px-4 py-3">{vq ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vq.cls)}>{vq.txt}</span> : "—"}</td>
+              <td className="px-4 py-3">{vd ? <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", vd.cls)}>{vd.txt}</span> : "—"}</td>
+              <td className="px-4 py-3 text-xs">{a.progress.provided}/{a.progress.total}</td>
+              <td className="px-4 py-3"><Pill k={a.status === "open" ? "sent" : "accepted"}>{a.status_display}</Pill></td>
+              <td className="px-4 py-3 text-right whitespace-nowrap">
+                <span className="mr-1 inline-block"><Btn size="sm" onClick={() => abrir(a)}>Abrir</Btn></span>
+                <Btn size="sm" variant="ghost" onClick={() => api.auditPackage(a.id, a.title.replace(/\s+/g, "_")).catch((e) => setMsg((e as Error).message))}>ZIP</Btn>
+              </td>
+            </tr>
+          );
+        })}
+        {audits.count === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin auditorías registradas. Cuando un cliente te audite, créala aquí con “Nueva auditoría”.</td></tr>}
+      </Table>
+      {crear && <NuevaAuditoriaModal onClose={() => setCrear(false)}
+        onSaved={async (a) => { setCrear(false); await audits.reload(); setAbierta(a); }} />}
+      {abierta && <AuditoriaDetalleModal auditId={abierta.id}
+        onClose={async () => { setAbierta(null); await audits.reload(); }} />}
+    </div>
+  );
+}
+
+function NuevaAuditoriaModal({ onClose, onSaved }: { onClose: () => void; onSaved: (a: AuditRow) => void }) {
+  const productsL = useList<Product>(() => api.products());
+  const treatiesL = useList<Treaty>(() => api.treaties());
+  const clientsL = useList<Party>(() => api.parties("customer"));
+  const [f, setF] = useState({ title: "", auditor: "", client: "" as number | "", notified_at: "", questionnaire_due: "", documents_due: "" });
+  const [items, setItems] = useState<{ product: number; treaty: number }[]>([]);
+  const [prodId, setProdId] = useState<number | "">("");
+  const [treatyId, setTreatyId] = useState<number | "">("");
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const productos = productsL.data.filter((p) => p.kind !== "material");
+  const nombre = (id: number) => productos.find((p) => p.id === id)?.sku ?? `#${id}`;
+  const tcode = (id: number) => treatiesL.data.find((t) => t.id === id)?.code ?? "";
+  function agregarItem() {
+    if (!prodId || !treatyId) { setErr("Elige la parte y el tratado."); return; }
+    setErr("");
+    if (!items.some((i) => i.product === prodId && i.treaty === treatyId))
+      setItems([...items, { product: Number(prodId), treaty: Number(treatyId) }]);
+    setProdId("");
+  }
+  async function crear() {
+    if (!f.title.trim()) { setErr("Ponle un título (ej. “Origin Verification — KMX”)."); return; }
+    if (!items.length) { setErr("Agrega al menos una parte al alcance."); return; }
+    setErr(""); setSaving(true);
+    try {
+      const a = await api.createAudit({ ...f, client: f.client === "" ? null : f.client, items });
+      onSaved(a);
+    } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title="Nueva auditoría de origen" onClose={onClose} wide>
+      <p className="mb-3 text-sm text-zinc-500">Registra la auditoría que te mandó tu cliente. Al crearla, la plataforma <strong>siembra el cuestionario estándar</strong> (documentos requeridos + preguntas por tratado) y lo <strong>pre-llena</strong> con tus cálculos, PSR, certificados y proceso de proveedores.</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Título"><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} className={inputCls} placeholder="Origin Verification — KMX" autoFocus /></Field>
+        <Field label="Auditor (cliente o despacho)"><input value={f.auditor} onChange={(e) => setF({ ...f, auditor: e.target.value })} className={inputCls} placeholder="Pie Consulting" /></Field>
+        <Field label="Cliente relacionado (opcional)">
+          <select value={f.client} onChange={(e) => setF({ ...f, client: e.target.value ? Number(e.target.value) : "" })} className={inputCls}>
+            <option value="">—</option>
+            {clientsL.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-3 gap-2">
+          <Field label="Notificación"><input type="date" value={f.notified_at} onChange={(e) => setF({ ...f, notified_at: e.target.value })} className={inputCls} /></Field>
+          <Field label="Límite cuestionario"><input type="date" value={f.questionnaire_due} onChange={(e) => setF({ ...f, questionnaire_due: e.target.value })} className={inputCls} /></Field>
+          <Field label="Límite documentos"><input type="date" value={f.documents_due} onChange={(e) => setF({ ...f, documents_due: e.target.value })} className={inputCls} /></Field>
+        </div>
+      </div>
+      <div className="mt-4 rounded-lg border border-zinc-200 p-3">
+        <div className="mb-2 text-xs font-semibold text-zinc-700">Alcance: partes auditadas (parte + tratado)</div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[16rem] flex-1"><ProductCombobox products={productos} value={prodId} onChange={setProdId} /></div>
+          <select value={treatyId} onChange={(e) => setTreatyId(e.target.value ? Number(e.target.value) : "")} className={cx(inputCls, "w-56")}>
+            <option value="">Tratado…</option>
+            {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
+          </select>
+          <Btn variant="ghost" onClick={agregarItem}><Plus size={14} className="-mt-0.5 mr-1 inline" />Agregar</Btn>
+        </div>
+        {items.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {items.map((i, ix) => (
+              <span key={ix} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs">
+                <span className="font-mono">{nombre(i.product)}</span>
+                <span className="text-zinc-500">{treatyLabel(tcode(i.treaty))}</span>
+                <button onClick={() => setItems(items.filter((_, j) => j !== ix))} className="text-zinc-400 hover:text-red-600">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={crear} disabled={saving}>{saving ? "Creando…" : "Crear y pre-llenar"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function AuditoriaDetalleModal({ auditId, onClose }: { auditId: number; onClose: () => void }) {
+  const [a, setA] = useState<AuditRow | null>(null);
+  const [msg, setMsg] = useState("");
+  const [resp, setResp] = useState<Record<number, string>>({});
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const [uploadFor, setUploadFor] = useState<number | null>(null);
+  const recargar = useCallback(async () => {
+    try {
+      const list: { results: AuditRow[] } = await api.audits();
+      const found = list.results.find((x) => x.id === auditId) ?? null;
+      setA(found);
+      if (found) setResp(Object.fromEntries(found.documents.map((d) => [d.id, d.response])));
+    } catch (e) { setMsg((e as Error).message); }
+  }, [auditId]);
+  useEffect(() => { recargar(); }, [recargar]);
+  async function guardar(d: AuditDoc, patch: Record<string, unknown>) {
+    setMsg("");
+    try { await api.updateAuditDocument(auditId, { id: d.id, ...patch }); await recargar(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  function pedirArchivo(docId: number) { setUploadFor(docId); fileInput.current?.click(); }
+  async function subir(file: File) {
+    if (file.size > 10_000_000) { setMsg("El archivo es muy grande (máximo ~10 MB)."); return; }
+    const b64 = await new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result).split(",")[1] ?? "");
+      r.onerror = rej; r.readAsDataURL(file);
+    });
+    try {
+      await api.uploadAuditFile(auditId, { document: uploadFor, filename: file.name, content_type: file.type, data_b64: b64 });
+      await recargar();
+    } catch (e) { setMsg((e as Error).message); }
+  }
+  if (!a) return null;
+  const secciones: { nombre: string; docs: AuditDoc[] }[] = [];
+  for (const d of a.documents) {
+    const last = secciones[secciones.length - 1];
+    if (!last || last.nombre !== d.section) secciones.push({ nombre: d.section, docs: [d] });
+    else last.docs.push(d);
+  }
+  const vq = venceInfo(a.questionnaire_due); const vd = venceInfo(a.documents_due);
+  return (
+    <Modal title={`${a.title} — ${a.auditor || "auditoría"}`} onClose={onClose} wide>
+      <input ref={fileInput} type="file" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) subir(f); e.target.value = ""; }} />
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full bg-zinc-100 px-3 py-1">Alcance: <strong>{a.items.map((i) => `${i.product_sku} (${treatyLabel(i.treaty_code)})`).join(", ")}</strong></span>
+        {vq && <span className={cx("rounded-full px-3 py-1 font-medium", vq.cls)}>Cuestionario: {vq.txt}</span>}
+        {vd && <span className={cx("rounded-full px-3 py-1 font-medium", vd.cls)}>Documentos: {vd.txt}</span>}
+        <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">{a.progress.provided}/{a.progress.total} listos</span>
+        <select value={a.status} onChange={async (e) => { await api.patchAudit(a.id, { status: e.target.value }); await recargar(); }}
+          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs">
+          <option value="open">En preparación</option>
+          <option value="submitted">Entregada</option>
+          <option value="closed">Cerrada</option>
+        </select>
+      </div>
+      <p className="mb-3 text-xs text-zinc-500">Las respuestas marcadas <span className="rounded bg-blue-50 px-1 text-blue-700">auto</span> las pre-llenó la plataforma con tus cálculos — revísalas y ajústalas; se guardan al salir del campo. Marca “Listo” cuando el renglón esté completo y adjunta la evidencia externa donde aplique.</p>
+      {msg && <p className="mb-2 text-sm text-red-600">{msg}</p>}
+      <div className="space-y-4">
+        {secciones.map((sec) => (
+          <div key={sec.nombre} className="overflow-hidden rounded-lg border border-zinc-200">
+            <div className="bg-[#043a70] px-4 py-2 text-sm font-semibold text-white">{sec.nombre}</div>
+            <div className="divide-y divide-zinc-100">
+              {sec.docs.map((d) => (
+                <div key={d.id} className="p-3">
+                  <div className="flex items-start gap-2">
+                    <label className="mt-0.5 flex shrink-0 cursor-pointer items-center gap-1 text-xs text-zinc-600">
+                      <input type="checkbox" checked={d.provided} onChange={(e) => guardar(d, { provided: e.target.checked })} /> Listo
+                    </label>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-zinc-800"><span className="font-semibold">{d.number}.</span> {d.title}
+                        {d.auto_filled && <span className="ml-1.5 rounded bg-blue-50 px-1 text-[10px] font-medium text-blue-700">auto</span>}
+                      </div>
+                      <textarea value={resp[d.id] ?? ""} rows={Math.min(5, Math.max(2, Math.ceil((resp[d.id] ?? "").length / 110)))}
+                        onChange={(e) => setResp({ ...resp, [d.id]: e.target.value })}
+                        onBlur={() => { if ((resp[d.id] ?? "") !== d.response) guardar(d, { response: resp[d.id] ?? "" }); }}
+                        placeholder="Respuesta / comentarios…"
+                        className="mt-1.5 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs" />
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {d.files.map((fl) => (
+                          <span key={fl.id} className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px]">
+                            <button className="text-blue-600 hover:underline" onClick={() => api.auditFileDownload(auditId, fl.id, fl.filename)}>{fl.filename}</button>
+                            <button className="text-zinc-400 hover:text-red-600" onClick={async () => { await api.deleteAuditFile(auditId, fl.id); await recargar(); }}>✕</button>
+                          </span>
+                        ))}
+                        <button onClick={() => pedirArchivo(d.id)} className="text-[11px] font-medium text-blue-600 hover:underline">
+                          <Upload size={11} className="-mt-0.5 mr-0.5 inline" />Adjuntar evidencia
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+        <Btn onClick={() => api.auditPackage(a.id, a.title.replace(/\s+/g, "_")).catch((e) => setMsg((e as Error).message))}>
+          <Download size={15} className="-mt-0.5 mr-1 inline" />Descargar expediente (ZIP)
+        </Btn>
+      </div>
+    </Modal>
+  );
 }
 
 function CertificadosEmitirView() {

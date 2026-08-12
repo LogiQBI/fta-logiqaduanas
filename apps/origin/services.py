@@ -868,3 +868,312 @@ def ensure_solicitation_certificate(sr, user, sign_method):
         cert.data = build_solicitation_cert_data(sr)
         cert.save(update_fields=["sign_method", "requested_by", "data", "updated_at"])
     return cert
+
+
+# --- Auditorías de verificación de origen (el cliente audita a la empresa) ---
+
+AUDIT_TREATY_QUESTIONS_TMEC = [
+    ("¿El producto califica como originario bajo el T-MEC/USMCA? Indica la fracción (HS), "
+     "la regla específica (PSR) exacta aplicable y el criterio de origen."),
+    ("¿Es una parte esencial (core) originaria / súper-core? Si sí, explica qué método de "
+     "VCR usas y cómo se calcula."),
+    ("¿Usas el método de VCR por costo neto para calificar? Si sí, explica cómo se calcula "
+     "el costo neto del producto y quién realiza el cálculo."),
+    "¿Declaras Valor de Contenido Laboral (LVC) para este producto? Si sí, explica cómo se calcula.",
+    ("¿Tu empresa ha recibido un CBP Form 28 o CBP Form 29 relacionado con este producto o "
+     "uno similar? Si sí, explica el motivo y el resultado."),
+]
+AUDIT_TREATY_QUESTIONS_GENERIC = [
+    ("¿El producto califica como originario bajo este tratado? Indica la fracción (HS), "
+     "la regla específica (PSR) exacta aplicable y el criterio de origen."),
+    ("¿Usas el método de VCR por costo neto para calificar? Si sí, explica cómo se calcula "
+     "el costo neto del producto y quién realiza el cálculo."),
+]
+
+
+def _audit_treaty_answer(item, q):
+    """Respuesta pre-llenada de '¿califica?' para una parte+tratado desde la
+    calificación vigente."""
+    p = item.product
+    hs = (p.hs_code or "")
+    hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else (hs or "—")
+    if not q:
+        return f"{p.sku}: SIN CÁLCULO en la plataforma — córrelo en «Cálculo de origen»."
+    if q.status != "QUALIFIES":
+        return (f"{p.sku}: NO califica bajo {item.treaty.code} según el último cálculo "
+                f"({q.get_status_display()}).")
+    letter, _label = _usmca_pref(q.criterion, q.status)
+    partes = [f"{p.sku}: SÍ califica. HS {hs_fmt}. Criterio {letter}."]
+    rt = usmca_rule_text(q)
+    if rt:
+        partes.append(rt + ".")
+    if q.rvc_value is not None:
+        partes.append(f"VCR {q.rvc_value}%.")
+    m = usmca_method_of_qualification(q)
+    if m:
+        partes.append(f"Método: {m}.")
+    return " ".join(partes)
+
+
+def seed_audit(audit):
+    """Siembra el cuestionario estándar de una auditoría de verificación de
+    origen (basado en el formato usado por los OEM) y lo PRE-LLENA con lo que la
+    plataforma ya sabe de cada parte del alcance."""
+    from apps.origin.models import AuditDocument, AutomotiveAssessment, Certificate
+    from apps.origin import engine
+
+    items = list(audit.items.select_related("product", "treaty").all())
+    by_treaty = {}
+    quals = {}
+    for it in items:
+        by_treaty.setdefault(it.treaty, []).append(it)
+        quals[it.id] = Qualification.objects.filter(
+            tenant=audit.tenant, product=it.product, treaty=it.treaty).first()
+    order = 0
+    rows = []
+
+    def add(kind, section, number, title, response="", provided=False, auto=False):
+        nonlocal order
+        order += 10
+        rows.append(AuditDocument(
+            tenant=audit.tenant, audit=audit, kind=kind, section=section,
+            order=order, number=str(number), title=title, response=response,
+            provided=provided, auto_filled=auto))
+
+    # --- Documentos requeridos (checklist típico del auditor) ---
+    sec = "Documentos requeridos"
+    hs_txt = "; ".join(f"{it.product.sku}: HS {(it.product.hs_code or '—')}" for it in items)
+    add("document", sec, 1,
+        "Soporte de clasificación arancelaria (HS) y carta del agente aduanal.",
+        response=f"Clasificación en el catálogo de la plataforma: {hs_txt}. "
+                 "Adjunta la carta de tu agente aduanal.", auto=True)
+    folios = []
+    for it in items:
+        q = quals[it.id]
+        if q:
+            cert = (Certificate.objects.filter(tenant=audit.tenant)
+                    .filter(models_q_qual(q)).order_by("-issued_at").first())
+            if cert:
+                folios.append(f"{it.product.sku}: {cert.folio} ({it.treaty.code})")
+    add("document", sec, 2,
+        "Declaración/certificado de origen de las partes auditadas.",
+        response=("Certificados emitidos en la plataforma: " + "; ".join(folios) + ". "
+                  "Descarga el PDF/Excel desde «Emitir certificados» y adjúntalo.")
+                 if folios else
+                 "Aún no hay certificados emitidos para el alcance; emítelos en «Emitir certificados».",
+        provided=bool(folios), auto=True)
+    add("document", sec, 3,
+        "Descripción del proceso de manufactura, con fotografía del producto terminado y su función.")
+    con_calc = [it for it in items if quals[it.id]]
+    add("document", sec, 4,
+        "Lista de materiales (BOM) por cada tratado del alcance, con su cálculo de origen.",
+        response=("Con cálculo en la plataforma: "
+                  + "; ".join(f"{it.product.sku}/{it.treaty.code}" for it in con_calc)
+                  + ". Imprime el «PDF del cálculo» en Calificaciones y adjúntalo por cada tratado.")
+                 if con_calc else
+                 "Sin cálculos aún: corre «Cálculo de origen» por cada parte y tratado del alcance.",
+        provided=False, auto=True)
+    add("document", sec, 5,
+        "Registros de capacitación en tratados (fecha, participantes, instructor y materiales).")
+
+    # --- Cuestionario general ---
+    sec = "I. Información general"
+    add("question", sec, 1,
+        "¿Con qué herramienta o sistema realizas y documentas la determinación de origen, y "
+        "cuál es la metodología?",
+        response=("La determinación de origen se realiza y documenta en la plataforma FTA "
+                  "(LogiQ Aduanas): BOM por producto con origen por insumo (declaración del "
+                  "proveedor o captura), motor de reglas específicas (PSR) por tratado con "
+                  "CTC/VCR/de minimis, histórico de análisis con evidencia descargable y "
+                  "emisión de certificados con folio y verificación pública por QR."),
+        provided=True, auto=True)
+    add("question", sec, 2,
+        "Describe el proceso para recibir, revisar, actualizar y conservar la información de "
+        "origen de tus proveedores.",
+        response=("Las declaraciones de origen de proveedores se solicitan y reciben en la "
+                  "plataforma (módulo Solicitudes): cada declaración queda registrada con "
+                  "tratado, periodo de vigencia y valores; el sistema alerta vencimientos por "
+                  "periodo y el cálculo de origen usa la declaración vigente. La información "
+                  "se conserva digitalmente en el expediente."),
+        provided=True, auto=True)
+    add("question", sec, 3,
+        "Explica cómo verificas la exactitud y validez de las declaraciones de origen de tus "
+        "proveedores antes de usarlas.",
+        response=("A los proveedores se les puede requerir, además de la declaración, el BOM "
+                  "completo de su parte (solicitud modo BOM): la plataforma recalcula el "
+                  "origen con la regla del tratado sobre esa lista de materiales, y el "
+                  "proveedor firma su certificado en su portal. Completa aquí cualquier "
+                  "control adicional propio."),
+        provided=True, auto=True)
+
+    # --- Sección por tratado del alcance ---
+    romanos = ["II", "III", "IV", "V", "VI", "VII"]
+    for idx, (treaty, t_items) in enumerate(by_treaty.items()):
+        sec = f"{romanos[idx % len(romanos)]}. {_TREATY_LABELS.get(treaty.code, treaty.code)}"
+        es_tmec = engine.is_tmec(treaty)
+        preguntas = AUDIT_TREATY_QUESTIONS_TMEC if es_tmec else AUDIT_TREATY_QUESTIONS_GENERIC
+        for n, texto in enumerate(preguntas, start=1):
+            resp, auto, prov = "", False, False
+            if n == 1:  # ¿califica? → desde la calificación vigente
+                resp = " | ".join(_audit_treaty_answer(it, quals[it.id]) for it in t_items)
+                auto = True
+                prov = all(quals[it.id] and quals[it.id].status == "QUALIFIES" for it in t_items)
+            elif es_tmec and n == 2:  # súper-core
+                cores = [(it, engine.core_part_code(it.product.hs_code or "")) for it in t_items]
+                con_core = [f"{it.product.sku}: parte esencial (core, Tabla A.1, código {c})"
+                            for it, c in cores if c]
+                resp = ((". ".join(con_core) + ". El VCR del conjunto se calcula por costo "
+                         "neto con el módulo «Súper-core» de la plataforma (roll-up Art. 3.9).")
+                        if con_core else
+                        "Ninguna parte del alcance es parte esencial (core) de la Tabla A.1.")
+                auto = True
+            elif (es_tmec and n == 3) or (not es_tmec and n == 2):  # método costo neto
+                metodos = []
+                for it in t_items:
+                    q = quals[it.id]
+                    if q:
+                        m = usmca_method_of_qualification(q)
+                        metodos.append(f"{it.product.sku}: {m or '—'}")
+                resp = ("Método por parte (TS=salto arancelario, NC=VCR costo neto, TV=VCR "
+                        "valor de transacción): " + "; ".join(metodos) + ". El costo neto "
+                        "(BOM + mano de obra) y el VNM los calcula la plataforma por insumo.") \
+                    if metodos else ""
+                auto = bool(metodos)
+            elif es_tmec and n == 4:  # LVC
+                lvcs = []
+                for it in t_items:
+                    a = AutomotiveAssessment.objects.filter(
+                        tenant=audit.tenant, product=it.product, treaty=treaty).first()
+                    if a and a.lvc_value:
+                        lvcs.append(f"{it.product.sku}: {a.lvc_value} USD de contenido de "
+                                    "alto salario (proveedores ≥16 USD/h)")
+                resp = ("Sí. " + "; ".join(lvcs) + ". Se reporta como valor en USD; el % se "
+                        "obtiene contra el costo neto.") if lvcs else \
+                    "No se declara LVC para estas partes (requisito del vehículo, no de la parte)."
+                auto = True
+            add("question", sec, n, texto, response=resp, provided=prov, auto=auto)
+
+    AuditDocument.objects.bulk_create(rows)
+    return len(rows)
+
+
+def models_q_qual(q):
+    """Q() para buscar certificados que incluyan una calificación (FK o M2M)."""
+    from django.db.models import Q as DQ
+    return DQ(qualification=q) | DQ(qualifications=q)
+
+
+def build_audit_xlsx(audit):
+    """Cuestionario de la auditoría RESPONDIDO como .xlsx (mismo espíritu que el
+    formato que mandan los auditores): secciones, pregunta, entregado y respuesta."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from io import BytesIO
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Cuestionario"
+    navy = PatternFill("solid", fgColor="043A70")
+    grey = PatternFill("solid", fgColor="EEF2F6")
+    thin = Side(style="thin", color="9CA3AF")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bold = Font(bold=True)
+    white = Font(bold=True, color="FFFFFF")
+    for col, w in zip("ABCDE", (6, 60, 12, 60, 14)):
+        ws.column_dimensions[col].width = w
+
+    def merge(rng, value, *, fill=None, font=None, wrap=True):
+        ws.merge_cells(rng)
+        c = ws[rng.split(":")[0]]
+        c.value = value
+        if fill:
+            c.fill = fill
+        if font:
+            c.font = font
+        c.alignment = Alignment(wrap_text=wrap, vertical="top")
+        for row in ws[rng]:
+            for cc in row:
+                cc.border = box
+
+    r = 1
+    merge(f"A{r}:E{r}", f"AUDITORÍA DE VERIFICACIÓN DE ORIGEN — {audit.title}",
+          font=Font(bold=True, size=13, color="043A70"))
+    r += 1
+    fechas = []
+    if audit.notified_at:
+        fechas.append(f"Notificación: {audit.notified_at}")
+    if audit.questionnaire_due:
+        fechas.append(f"Límite cuestionario: {audit.questionnaire_due}")
+    if audit.documents_due:
+        fechas.append(f"Límite documentos: {audit.documents_due}")
+    merge(f"A{r}:E{r}", (f"Auditor: {audit.auditor or '—'}    " + " · ".join(fechas)))
+    r += 1
+    alcance = "; ".join(f"{it.product.sku} ({it.treaty.code})"
+                        for it in audit.items.select_related("product", "treaty"))
+    merge(f"A{r}:E{r}", f"Alcance: {alcance}")
+    r += 2
+
+    seccion_actual = None
+    for d in audit.documents.all():
+        if d.section != seccion_actual:
+            seccion_actual = d.section
+            merge(f"A{r}:E{r}", seccion_actual, fill=navy, font=white)
+            r += 1
+            for col, h in zip("ABCDE", ("No.", "Documento / pregunta", "Entregado",
+                                        "Respuesta / comentarios", "Adjuntos")):
+                c = ws[f"{col}{r}"]
+                c.value = h; c.fill = grey; c.font = bold; c.border = box
+            r += 1
+        adjuntos = ", ".join(f.filename for f in d.files.all())
+        vals = (d.number, d.title, "SÍ" if d.provided else "NO", d.response, adjuntos)
+        for col, v in zip("ABCDE", vals):
+            c = ws[f"{col}{r}"]
+            c.value = v; c.border = box
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+        lineas = max(len(str(d.title)) // 55, len(str(d.response)) // 55) + 1
+        ws.row_dimensions[r].height = min(15 * lineas, 150)
+        r += 1
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def build_audit_package(audit):
+    """Expediente ZIP de la auditoría: cuestionario respondido (.xlsx), los
+    certificados del alcance (.xlsx) y todos los adjuntos, numerados por sección."""
+    import io
+    import re as _re
+    import zipfile
+    from apps.origin.models import Certificate
+
+    buf = io.BytesIO()
+    limpio = lambda s: _re.sub(r"[^A-Za-z0-9._-]+", "_", s)[:80]
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("00_Cuestionario_respondido.xlsx", build_audit_xlsx(audit))
+        # Certificados de las partes del alcance (evidencia de la declaración de origen).
+        vistos = set()
+        for it in audit.items.select_related("product", "treaty"):
+            q = Qualification.objects.filter(tenant=audit.tenant, product=it.product,
+                                             treaty=it.treaty).first()
+            if not q:
+                continue
+            cert = (Certificate.objects.filter(tenant=audit.tenant)
+                    .filter(models_q_qual(q)).order_by("-issued_at").first())
+            if cert and cert.id not in vistos:
+                vistos.add(cert.id)
+                z.writestr(f"02_Certificado_{limpio(cert.folio)}.xlsx",
+                           build_certificate_xlsx(cert))
+        # Adjuntos, numerados por su renglón del checklist.
+        import base64
+        for f in audit.files.select_related("document").all():
+            pref = f"{f.document.number.zfill(2)}_" if (f.document and f.document.number) else "99_"
+            try:
+                z.writestr(pref + limpio(f.filename), base64.b64decode(f.data_b64))
+            except Exception:
+                logger.exception("Adjunto %s ilegible en el ZIP de auditoría", f.id)
+        indice = [f"Expediente de auditoría — {audit.title}",
+                  f"Generado: {timezone.now():%Y-%m-%d %H:%M}", "",
+                  "Contenido: 00_Cuestionario_respondido.xlsx (respuestas y checklist), "
+                  "02_Certificado_*.xlsx (declaraciones de origen) y adjuntos numerados "
+                  "según la sección del checklist."]
+        z.writestr("INDICE.txt", "\n".join(indice))
+    return buf.getvalue()

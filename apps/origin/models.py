@@ -270,3 +270,105 @@ class ExpedienteDocument(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.doc_type} — {self.file.name}"
+
+
+class Audit(TenantOwnedModel):
+    """Auditoría de verificación de origen que un CLIENTE (o su despacho) le
+    hace a la empresa. La empresa registra el alcance, responde el cuestionario
+    (pre-llenado desde la plataforma), adjunta evidencia y genera el expediente."""
+
+    class Status(models.TextChoices):
+        OPEN = "open", "En preparación"
+        SUBMITTED = "submitted", "Entregada"
+        CLOSED = "closed", "Cerrada"
+
+    title = models.CharField("Título", max_length=200)
+    auditor = models.CharField("Auditor (cliente/despacho)", max_length=200, blank=True)
+    client = models.ForeignKey("catalog.Party", null=True, blank=True,
+                               on_delete=models.SET_NULL, related_name="audits",
+                               limit_choices_to={"kind": "customer"})
+    notified_at = models.DateField("Fecha de notificación", null=True, blank=True)
+    questionnaire_due = models.DateField("Límite del cuestionario", null=True, blank=True)
+    documents_due = models.DateField("Límite de documentos", null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    notes = models.TextField("Notas", blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                   on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Auditoría de origen"
+        verbose_name_plural = "Auditorías de origen"
+
+    def __str__(self):
+        return f"Auditoría {self.title} ({self.get_status_display()})"
+
+
+class AuditItem(TenantOwnedModel):
+    """Alcance de la auditoría: una parte bajo un tratado."""
+
+    audit = models.ForeignKey(Audit, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey("catalog.Product", on_delete=models.CASCADE,
+                                related_name="audit_items")
+    treaty = models.ForeignKey("treaties.Treaty", on_delete=models.CASCADE,
+                               related_name="audit_items")
+    model_name = models.CharField("Modelo/plataforma", max_length=60, blank=True)
+
+    class Meta:
+        unique_together = [("audit", "product", "treaty")]
+        verbose_name = "Parte auditada"
+        verbose_name_plural = "Partes auditadas"
+
+    def __str__(self):
+        return f"{self.product.sku} / {self.treaty.code}"
+
+
+class AuditDocument(TenantOwnedModel):
+    """Renglón del cuestionario/checklist: un documento requerido o una pregunta.
+    Se siembra desde la plantilla estándar y se pre-llena con lo que la
+    plataforma ya sabe; lo externo se responde/adjunta a mano."""
+
+    class Kind(models.TextChoices):
+        DOCUMENT = "document", "Documento requerido"
+        QUESTION = "question", "Pregunta"
+
+    audit = models.ForeignKey(Audit, on_delete=models.CASCADE, related_name="documents")
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.QUESTION)
+    section = models.CharField("Sección", max_length=120)
+    order = models.PositiveSmallIntegerField("Orden", default=0)
+    number = models.CharField("Número", max_length=10, blank=True)
+    title = models.TextField("Documento / pregunta")
+    provided = models.BooleanField("Entregado/respondido", default=False)
+    response = models.TextField("Respuesta / comentarios", blank=True)
+    auto_filled = models.BooleanField("Pre-llenado por la plataforma", default=False)
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name = "Renglón de auditoría"
+        verbose_name_plural = "Renglones de auditoría"
+
+    def __str__(self):
+        return f"{self.section} {self.number}: {self.title[:40]}"
+
+
+class AuditFile(TenantOwnedModel):
+    """Adjunto de la auditoría (evidencia). El contenido va en la BD (base64)
+    porque el disco del contenedor es efímero — mismo patrón que logo/firma."""
+
+    audit = models.ForeignKey(Audit, on_delete=models.CASCADE, related_name="files")
+    document = models.ForeignKey(AuditDocument, null=True, blank=True,
+                                 on_delete=models.CASCADE, related_name="files")
+    filename = models.CharField(max_length=200)
+    content_type = models.CharField(max_length=120, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    data_b64 = models.TextField("Contenido (base64)")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["created_at"]
+        verbose_name = "Adjunto de auditoría"
+        verbose_name_plural = "Adjuntos de auditoría"
+
+    def __str__(self):
+        return self.filename
