@@ -673,7 +673,8 @@ def build_certificate_xlsx(cert):
     merge(f"A{r}:C{r}", doc_title, font=Font(bold=True, size=14, color="043A70"))
     merge(f"D{r}:G{r}", f"Document No.: {cert.folio}", font=bold, align="right")
     r += 1
-    merge(f"A{r}:C{r}", f"{label} (USMCA / T-MEC)", font=Font(italic=True, color="6B7280"))
+    merge(f"A{r}:C{r}", label + (" (USMCA / T-MEC)" if q.treaty.code == "TMEC" else ""),
+          font=Font(italic=True, color="6B7280"))
     merge(f"D{r}:G{r}", f"Issued: {str(cert.issued_at)[:10]}", align="right")
     r += 1
     # Anexo 5-A elemento 1: tipo de certificador
@@ -785,8 +786,7 @@ def build_certificate_xlsx(cert):
           f"Company: {ce.get('nombre','—')}\nDate: {str(cert.issued_at)[:10]}\n"
           f"Tel: {ce.get('telefono','—')}   E-mail: {ce.get('email','—')}", wrap=True)
     r += 2
-    merge(f"A{r}:G{r}", f"Folio {cert.folio} · {label}. Generado por LogiQ Aduanas | FTA. "
-          "Orientativo; validar con un especialista en reglas de origen.",
+    merge(f"A{r}:G{r}", f"Folio {cert.folio} · {label}.",
           font=Font(size=8, color="6B7280"), wrap=True)
 
     buf = BytesIO()
