@@ -3939,13 +3939,13 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   </table>
 
   <div style="border:1px solid #9ca3af;padding:5px 8px;margin:6px 0;font-size:11px">
-    <b>8. Blanket Period:</b> ${esc(periodo)}
+    <b>Blanket Period:</b> ${esc(periodo)}
     &nbsp;•&nbsp; <b>Invoice No. (single shipment):</b> ${esc(c.invoice_number || "—")}
   </div>
 
   <table class="mtbl">
-    <tr><th colspan="5">6. Description &amp; HS Classification · 7. Origin Criteria</th></tr>
-    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No. (6-digit)</th><th>7. Preference Criterion</th><th>Country of Origin</th></tr>
+    <tr><th colspan="7">6. Description &amp; HS Classification · 7–9. Origin Criteria</th></tr>
+    <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No. (6-digit)</th><th>7. Origin Criterion</th><th>8. Certification Indicator</th><th>9. Method of Qualification</th><th>Country of Origin</th></tr>
     ${items.map((it) => `<tr>
       <td>${esc(it.product_sku)}</td>
       <td>${esc(it.product_description)}</td>
@@ -3953,20 +3953,19 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
       <td style="text-align:center"><b>${esc(it.pref_letter)}</b><div class="sub">${esc(it.pref_label)}</div>${it.rule_text
         ? `<div class="sub" style="margin-top:3px;text-align:left">${esc(it.rule_text)}</div>`
         : (it.rvc_value ? `<div class="sub">RVC ${it.rvc_value}%</div>` : "")}</td>
+      <td style="text-align:center"><b>${esc(it.certification_indicator || (ct === "producer" ? "YES" : "NO"))}</b><div class="sub">${ct === "producer" ? "certifier is the producer" : "certifier is not the producer"}</div></td>
+      <td style="text-align:center"><b>${esc(it.method_of_qualification || "—")}</b><div class="sub">${{ TS: "tariff shift", NC: "RVC · net cost", TV: "RVC · transaction value", WO: "wholly obtained" }[it.method_of_qualification ?? ""] ?? ""}</div></td>
       <td style="text-align:center">${esc(paisOrigen || "—")}</td>
     </tr>`).join("")}
   </table>
 
   <div class="cert">
-    <b>9. Certification.</b> I certify that the goods described in this document qualify as originating and the information
-    contained in this document is true and accurate. I assume responsibility for proving such representations and agree to
-    maintain and present upon request or to make available during a verification visit, documentation necessary to support
-    this certification.
+    <b>Certification.</b> ${esc(c.certification_text || "I certify that the goods described in this document qualify as originating and the information contained in this document is true and accurate. I assume responsibility for proving such representations and agree to maintain and present upon request or to make available during a verification visit, documentation necessary to support this certification.")}
   </div>
 
   <table>
     <tr>
-      <td class="box sign"><div class="bt">9. Authorized Signature &amp; Date</div>${firmaImg}</td>
+      <td class="box sign"><div class="bt">Authorized Signature &amp; Date</div>${firmaImg}</td>
       <td class="box">
         <div class="bt">Signatory</div>
         <div class="bl"><b>Name &amp; Title:</b> ${esc(ce.firmante || "—")}${ce.cargo ? `, ${esc(ce.cargo)}` : ""}</div>

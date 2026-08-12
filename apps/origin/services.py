@@ -546,6 +546,47 @@ def certificate_importer_data(cert):
     return im
 
 
+def usmca_method_of_qualification(q):
+    """9. Method of Qualification del layout de brokers USMCA: cómo calificó el
+    bien — TS (salto arancelario), NC (VCR costo neto), TV (VCR valor de
+    transacción), WO (totalmente obtenido). Orientativo."""
+    if q.status != "QUALIFIES":
+        return ""
+    c = (q.criterion or "").upper()
+    if c == "WO":
+        return "WO"
+    if "AUTOMOTRIZ" in c:
+        return "NC"  # régimen automotriz: VCR por costo neto
+    params = (q.rule.params if q.rule_id else {}) or {}
+    rvc = "NC" if params.get("rvc_method") == "net_cost" else "TV"
+    if c == "CTC":
+        return "TS"
+    if c == "RVC":
+        return rvc
+    if c == "CTC_AND_RVC":
+        return f"TS + {rvc}"
+    return "TS"
+
+
+# Texto COMPLETO de certificación USMCA (3 compromisos + número de páginas),
+# como lo exigen los agentes aduanales; sustituye a la versión corta.
+def usmca_certification_text(pages=1):
+    return (
+        "I CERTIFY THAT: (1) the goods described in this document qualify as originating "
+        "under the United States–Mexico–Canada Agreement and the information contained in "
+        "this document is true and accurate, and I assume responsibility for proving such "
+        "representations and agree to maintain and present upon request or to make available "
+        "during a verification visit, documentation necessary to support this certification; "
+        "(2) I agree to inform, in writing, all persons to whom the certificate was given of "
+        "any changes that could affect the accuracy or validity of this certificate; and "
+        "(3) there has been no further production or any other operation outside the "
+        "territories of the Parties other than unloading, reloading, or any other operation "
+        "necessary to preserve the goods in good condition or to transport them into the "
+        "territory of the importing Party, and the goods did not leave the custody of the "
+        "customs authorities while outside the territories of the Parties. "
+        f"THIS CERTIFICATE CONSISTS OF {pages} PAGE(S), INCLUDING ALL ATTACHMENTS.")
+
+
 _MX_RFC_RE = re.compile(r"^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$")
 
 
@@ -605,7 +646,7 @@ def build_certificate_xlsx(cert):
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
     bold = Font(bold=True)
     white = Font(bold=True, color="FFFFFF")
-    for col, w in zip("ABCDE", (22, 30, 16, 20, 18)):
+    for col, w in zip("ABCDEFG", (20, 26, 12, 22, 15, 15, 13)):
         ws.column_dimensions[col].width = w
 
     def merge(rng, value, *, fill=None, font=None, wrap=False, align=None):
@@ -630,15 +671,15 @@ def build_certificate_xlsx(cert):
 
     r = 1
     merge(f"A{r}:C{r}", doc_title, font=Font(bold=True, size=14, color="043A70"))
-    merge(f"D{r}:E{r}", f"Document No.: {cert.folio}", font=bold, align="right")
+    merge(f"D{r}:G{r}", f"Document No.: {cert.folio}", font=bold, align="right")
     r += 1
     merge(f"A{r}:C{r}", f"{label} (USMCA / T-MEC)", font=Font(italic=True, color="6B7280"))
-    merge(f"D{r}:E{r}", f"Issued: {str(cert.issued_at)[:10]}", align="right")
+    merge(f"D{r}:G{r}", f"Issued: {str(cert.issued_at)[:10]}", align="right")
     r += 1
     # Anexo 5-A elemento 1: tipo de certificador
     ct = cert.certifier_type
     ck = lambda t: "☑" if ct == t else "☐"
-    merge(f"A{r}:E{r}", f"1. Certifier is the:   {ck('exporter')} Exporter    "
+    merge(f"A{r}:G{r}", f"1. Certifier is the:   {ck('exporter')} Exporter    "
           f"{ck('producer')} Producer    {ck('importer')} Importer", font=bold)
     r += 1
     # 2 certifier / 3 exportador
@@ -649,21 +690,23 @@ def build_certificate_xlsx(cert):
                  f"Address: {ce.get('direccion','—')}{(' ['+ce['pais']+']') if ce.get('pais') else ''}\n"
                  f"Tel: {ce.get('telefono','—')}   E-mail: {ce.get('email','—')}")
     merge(f"A{r}:C{r}", certifier, wrap=True); ws[f"A{r}"].font = Font(size=10)
-    merge(f"D{r}:E{r}", "3. Exporter\n" + party_lines(ce), wrap=True)
+    merge(f"D{r}:G{r}", "3. Exporter\n" + party_lines(ce), wrap=True)
     r += 1
     # 4 productor / 5 importador
     ws.row_dimensions[r].height = 76
     merge(f"A{r}:C{r}", "4. Producer\n" + (party_lines(pr) if pr is not ce else "Same as certifier"), wrap=True)
-    merge(f"D{r}:E{r}", "5. Importer\n" + party_lines(im), wrap=True)
+    merge(f"D{r}:G{r}", "5. Importer\n" + party_lines(im), wrap=True)
     r += 1
     # 8 blanket period + factura
-    merge(f"A{r}:E{r}", f"8. Blanket Period: {periodo}    •    "
+    merge(f"A{r}:G{r}", f"Blanket Period: {periodo}    •    "
           f"Invoice No. (single shipment): {cert.invoice_number or '—'}", font=bold)
     r += 1
     # 6/7 mercancía
-    merge(f"A{r}:E{r}", "6. Description & HS Classification  ·  7. Origin Criteria", fill=navy, font=white)
+    merge(f"A{r}:G{r}", "6. Description & HS Classification  ·  7–9. Origin Criteria", fill=navy, font=white)
     r += 1
-    heads = ["Serial / Part No.", "Description of Good(s)", "HS No. (6-digit)", "7. Preference Criterion", "Country of Origin"]
+    heads = ["Serial / Part No.", "Description of Good(s)", "HS No. (6-digit)",
+             "7. Origin Criterion", "8. Certification Indicator",
+             "9. Method of Qualification", "Country of Origin"]
     for i, h in enumerate(heads):
         c = ws.cell(row=r, column=1 + i, value=h)
         c.fill = navy; c.font = white; c.border = box
@@ -676,14 +719,19 @@ def build_certificate_xlsx(cert):
         hs = pp.hs_code or ""
         hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
         if is_affidavit:
-            crit = "NOT ORIGINATING"
+            crit, cert_ind, method = "NOT ORIGINATING", "—", "—"
         else:
             letter_i, plabel_i = _usmca_pref(qq.criterion, qq.status)
             rule_txt = usmca_rule_text(qq)
             crit = f"{letter_i} — {plabel_i}" + (f"\n{rule_txt}" if rule_txt else
                                                  (f" · RVC {qq.rvc_value}%" if qq.rvc_value else ""))
+            # 8. Certification Indicator: el certificador ¿es el productor del bien?
+            cert_ind = "YES" if cert.certifier_type == "producer" else "NO"
+            # 9. Method of Qualification: TS / NC / TV / WO.
+            method = usmca_method_of_qualification(qq) or "—"
         ws.row_dimensions[r].height = 58
-        for i, v in enumerate([pp.sku, pp.description, hs_fmt, crit, pais_origen]):
+        for i, v in enumerate([pp.sku, pp.description, hs_fmt, crit, cert_ind,
+                               method, pais_origen]):
             c = ws.cell(row=r, column=1 + i, value=v)
             c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
         r += 1
@@ -692,14 +740,12 @@ def build_certificate_xlsx(cert):
     def _money(v):
         return "—" if v is None else f"${float(v):,.2f}"
 
-    n_cert, n_sign = (7, 8) if is_affidavit else (9, 9)
     if is_affidavit:
-        merge(f"A{r}:E{r}", "6. Value of Originating Material (VOM)", fill=navy, font=white)
+        merge(f"A{r}:G{r}", "6. Value of Originating Material (VOM)", fill=navy, font=white)
         r += 1
         # Una fila por parte + fila TOTAL (los valores salen del último cálculo).
-        for h, col in (("Part No.", "A"), ("Total value (net cost)", "C"),
-                       ("Non-originating (VNM)", "D"), ("Originating (VOM)", "E")):
-            rng = f"A{r}:B{r}" if col == "A" else f"{col}{r}:{col}{r}"
+        for h, rng in (("Part No.", f"A{r}:B{r}"), ("Total value (net cost)", f"C{r}:D{r}"),
+                       ("Non-originating (VNM)", f"E{r}:F{r}"), ("Originating (VOM)", f"G{r}:G{r}")):
             merge(rng, h, fill=grey, font=bold)
         r += 1
         tot_sum, vnm_sum, con_datos = Decimal("0"), Decimal("0"), False
@@ -710,42 +756,36 @@ def build_certificate_xlsx(cert):
                 con_datos = True
                 tot_sum += t; vnm_sum += v
             merge(f"A{r}:B{r}", qq.product.sku)
-            for col, val in (("C", t), ("D", v if t is not None else None), ("E", vom_i)):
-                c = ws[f"{col}{r}"]
-                c.value = _money(val); c.border = box
-                c.alignment = Alignment(horizontal="right")
+            for rng, val in ((f"C{r}:D{r}", t), (f"E{r}:F{r}", v if t is not None else None),
+                             (f"G{r}:G{r}", vom_i)):
+                merge(rng, _money(val), align="right")
             r += 1
         merge(f"A{r}:B{r}", "TOTAL", font=bold)
-        for col, val in (("C", tot_sum if con_datos else None),
-                         ("D", vnm_sum if con_datos else None),
-                         ("E", (tot_sum - vnm_sum) if con_datos else None)):
-            c = ws[f"{col}{r}"]
-            c.value = _money(val); c.border = box
-            c.font = bold; c.alignment = Alignment(horizontal="right")
+        for rng, val in ((f"C{r}:D{r}", tot_sum if con_datos else None),
+                         (f"E{r}:F{r}", vnm_sum if con_datos else None),
+                         (f"G{r}:G{r}", (tot_sum - vnm_sum) if con_datos else None)):
+            merge(rng, _money(val), font=bold, align="right")
         r += 1
     if is_affidavit:
-        cert_txt = (f"{n_cert}. Certification. I certify that the good described does NOT qualify as originating "
+        cert_txt = ("Certification. I certify that the good described does NOT qualify as originating "
                     f"under the {label}, and that the Value of Originating Material (VOM) stated is true and accurate. "
                     "This affidavit lets the recipient account for the originating content in its own RVC "
                     "determination. I assume responsibility for proving these representations.")
     else:
-        cert_txt = (f"{n_cert}. Certification. I certify that the goods described in this document qualify as "
-                    "originating and the information contained in this document is true and accurate. I assume "
-                    "responsibility for proving such representations and agree to maintain and present upon request "
-                    "or to make available during a verification visit, documentation necessary to support this "
-                    "certification.")
-    merge(f"A{r}:E{r}", cert_txt, wrap=True)
-    ws.row_dimensions[r].height = 60
+        # Texto COMPLETO exigido por los agentes aduanales (3 compromisos + páginas).
+        cert_txt = "Certification. " + usmca_certification_text(pages=1)
+    merge(f"A{r}:G{r}", cert_txt, wrap=True)
+    ws.row_dimensions[r].height = 60 if is_affidavit else 118
     r += 1
     ws.row_dimensions[r].height = 60
-    merge(f"A{r}:C{r}", f"{n_sign}. Authorized Signature\n\n_______________________________", wrap=True)
-    merge(f"D{r}:E{r}",
+    merge(f"A{r}:C{r}", "Authorized Signature & Date\n\n_______________________________", wrap=True)
+    merge(f"D{r}:G{r}",
           f"Name & Title: {ce.get('firmante','—')}"
           f"{(', '+ce['cargo']) if ce.get('cargo') else ''}\n"
           f"Company: {ce.get('nombre','—')}\nDate: {str(cert.issued_at)[:10]}\n"
           f"Tel: {ce.get('telefono','—')}   E-mail: {ce.get('email','—')}", wrap=True)
     r += 2
-    merge(f"A{r}:E{r}", f"Folio {cert.folio} · {label}. Generado por LogiQ Aduanas | FTA. "
+    merge(f"A{r}:G{r}", f"Folio {cert.folio} · {label}. Generado por LogiQ Aduanas | FTA. "
           "Orientativo; validar con un especialista en reglas de origen.",
           font=Font(size=8, color="6B7280"), wrap=True)
 

@@ -279,6 +279,7 @@ class CertificateSerializer(serializers.ModelSerializer):
     pref_label = serializers.SerializerMethodField()
     rule_text = serializers.SerializerMethodField()     # PSR aplicada y cómo se cumplió
     items = serializers.SerializerMethodField()         # partes del documento (multi-línea)
+    certification_text = serializers.SerializerMethodField()  # texto completo (3 compromisos)
     # Completado en vivo desde Clientes (dirección/tel/email capturados después de emitir).
     importer_data = serializers.SerializerMethodField()
 
@@ -293,7 +294,8 @@ class CertificateSerializer(serializers.ModelSerializer):
                   "invoice_number", "issued_at", "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
                   "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value",
-                  "country_of_origin", "pref_letter", "pref_label", "rule_text", "items"]
+                  "country_of_origin", "pref_letter", "pref_label", "rule_text", "items",
+                  "certification_text"]
 
     def get_country_of_origin(self, obj):
         from apps.origin.services import certificate_country_of_origin
@@ -344,9 +346,13 @@ class CertificateSerializer(serializers.ModelSerializer):
 
     def get_items(self, obj):
         """Una entrada por parte del documento: identidad del bien, criterio de
-        preferencia (inglés), PSR aplicada y valores VOM propios."""
+        preferencia (inglés), PSR aplicada, indicadores del layout USMCA de
+        brokers (certification indicator / method of qualification) y VOM propio."""
         from decimal import Decimal
-        from apps.origin.services import _usmca_pref, usmca_rule_text
+        from apps.origin.services import (_usmca_pref, usmca_method_of_qualification,
+                                          usmca_rule_text)
+        # 8. Certification Indicator: ¿el certificador ES el productor del bien?
+        cert_ind = "YES" if obj.certifier_type == "producer" else "NO"
         out = []
         for q in self._quals(obj):
             letter, label = _usmca_pref(q.criterion, q.status)
@@ -365,11 +371,17 @@ class CertificateSerializer(serializers.ModelSerializer):
                 "rvc_value": str(q.rvc_value) if q.rvc_value is not None else None,
                 "pref_letter": letter, "pref_label": label,
                 "rule_text": usmca_rule_text(q),
+                "certification_indicator": cert_ind if q.status == "QUALIFIES" else "",
+                "method_of_qualification": usmca_method_of_qualification(q),
                 "total_value": str(t) if t is not None else None,
                 "vnm": str(v) if v is not None else None,
                 "originating_value": vom,
             })
         return out
+
+    def get_certification_text(self, obj):
+        from apps.origin.services import usmca_certification_text
+        return usmca_certification_text(pages=1)
 
     def get_total_value(self, obj):
         v = self._vom_vals(obj)[0]
