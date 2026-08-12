@@ -574,22 +574,26 @@ def build_certificate_xlsx(cert):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from io import BytesIO
     q = cert.qualification
-    p = q.product
+    # Documento MULTI-LÍNEA: todas las partes (certificados viejos: solo la FK).
+    quals = (list(cert.qualifications.select_related("product", "treaty", "rule").all())
+             or [q])
     ce = cert.certifier_data or {}
     im = certificate_importer_data(cert)
     pr = cert.producer_data or ce
     label = _TREATY_LABELS.get(q.treaty.code, q.treaty.code)
-    letter, plabel = _usmca_pref(q.criterion, q.status)
     periodo = (f"{cert.blanket_from} → {cert.blanket_to}"
                if cert.blanket_from and cert.blanket_to else "Single shipment")
-    # No originario → AFFIDAVIT (Value of Originating Material / VOM).
+    # No originario → AFFIDAVIT (Value of Originating Material / VOM). La emisión
+    # garantiza estados uniformes entre las partes del documento.
     is_affidavit = q.status != "QUALIFIES"
-    an = OriginAnalysis.objects.filter(
-        tenant_id=cert.tenant_id, product_id=q.product_id,
-        treaty_id=q.treaty_id).order_by("-created_at").first()
-    tot = an.total_value if (an and an.total_value is not None) else None
-    vnm_v = (an.vnm if an and an.vnm is not None else Decimal("0"))
-    vom = (tot - vnm_v) if tot is not None else None
+
+    def _vom_for(qq):
+        an = OriginAnalysis.objects.filter(
+            tenant_id=cert.tenant_id, product_id=qq.product_id,
+            treaty_id=qq.treaty_id).order_by("-created_at").first()
+        t = an.total_value if (an and an.total_value is not None) else None
+        v = (an.vnm if an and an.vnm is not None else Decimal("0"))
+        return t, v
     doc_title = "AFFIDAVIT OF ORIGIN (VOM)" if is_affidavit else "CERTIFICATE OF ORIGIN"
 
     wb = openpyxl.Workbook()
@@ -665,21 +669,25 @@ def build_certificate_xlsx(cert):
         c.fill = navy; c.font = white; c.border = box
         c.alignment = Alignment(wrap_text=True, vertical="top")
     r += 1
-    hs = p.hs_code or ""
-    hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
-    rule_txt = usmca_rule_text(q)
-    crit = f"{letter} — {plabel}" + (f"\n{rule_txt}" if rule_txt else
-                                     (f" · RVC {q.rvc_value}%" if q.rvc_value else ""))
     # País de origen = país del PRODUCTOR (con fallbacks), no del importador.
-    vals = [p.sku, p.description, hs_fmt, crit,
-            certificate_country_of_origin(cert) or "—"]
-    if is_affidavit:
-        vals[3] = "NOT ORIGINATING"
-    ws.row_dimensions[r].height = 58
-    for i, v in enumerate(vals):
-        c = ws.cell(row=r, column=1 + i, value=v)
-        c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
-    r += 2
+    pais_origen = certificate_country_of_origin(cert) or "—"
+    for qq in quals:
+        pp = qq.product
+        hs = pp.hs_code or ""
+        hs_fmt = (hs[:4] + "." + hs[4:6]) if len(hs) >= 6 else hs
+        if is_affidavit:
+            crit = "NOT ORIGINATING"
+        else:
+            letter_i, plabel_i = _usmca_pref(qq.criterion, qq.status)
+            rule_txt = usmca_rule_text(qq)
+            crit = f"{letter_i} — {plabel_i}" + (f"\n{rule_txt}" if rule_txt else
+                                                 (f" · RVC {qq.rvc_value}%" if qq.rvc_value else ""))
+        ws.row_dimensions[r].height = 58
+        for i, v in enumerate([pp.sku, pp.description, hs_fmt, crit, pais_origen]):
+            c = ws.cell(row=r, column=1 + i, value=v)
+            c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
+        r += 1
+    r += 1
 
     def _money(v):
         return "—" if v is None else f"${float(v):,.2f}"
@@ -688,13 +696,33 @@ def build_certificate_xlsx(cert):
     if is_affidavit:
         merge(f"A{r}:E{r}", "6. Value of Originating Material (VOM)", fill=navy, font=white)
         r += 1
-        for lbl, v in (("Total value of the good (net cost)", tot),
-                       ("Non-originating materials (VNM)", vnm_v),
-                       ("Originating material value (VOM)", vom)):
-            merge(f"A{r}:D{r}", lbl)
-            c = ws.cell(row=r, column=5, value=_money(v))
-            c.border = box; c.alignment = Alignment(horizontal="right")
+        # Una fila por parte + fila TOTAL (los valores salen del último cálculo).
+        for h, col in (("Part No.", "A"), ("Total value (net cost)", "C"),
+                       ("Non-originating (VNM)", "D"), ("Originating (VOM)", "E")):
+            rng = f"A{r}:B{r}" if col == "A" else f"{col}{r}:{col}{r}"
+            merge(rng, h, fill=grey, font=bold)
+        r += 1
+        tot_sum, vnm_sum, con_datos = Decimal("0"), Decimal("0"), False
+        for qq in quals:
+            t, v = _vom_for(qq)
+            vom_i = (t - v) if t is not None else None
+            if t is not None:
+                con_datos = True
+                tot_sum += t; vnm_sum += v
+            merge(f"A{r}:B{r}", qq.product.sku)
+            for col, val in (("C", t), ("D", v if t is not None else None), ("E", vom_i)):
+                c = ws[f"{col}{r}"]
+                c.value = _money(val); c.border = box
+                c.alignment = Alignment(horizontal="right")
             r += 1
+        merge(f"A{r}:B{r}", "TOTAL", font=bold)
+        for col, val in (("C", tot_sum if con_datos else None),
+                         ("D", vnm_sum if con_datos else None),
+                         ("E", (tot_sum - vnm_sum) if con_datos else None)):
+            c = ws[f"{col}{r}"]
+            c.value = _money(val); c.border = box
+            c.font = bold; c.alignment = Alignment(horizontal="right")
+        r += 1
     if is_affidavit:
         cert_txt = (f"{n_cert}. Certification. I certify that the good described does NOT qualify as originating "
                     f"under the {label}, and that the Value of Originating Material (VOM) stated is true and accurate. "

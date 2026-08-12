@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   api, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkPreview, BulkResult, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
+  BulkPreview, BulkResult, CertificateItem, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
   getAsTenant, getToken, LicenseInfo, setAsTenant,
   MasterTenant, Me, OriginAnalysis, OriginAnalysisDetail, OriginCalcResult, OriginRule, Party,
   Product, ProductChangeLog, Qualification,
@@ -3805,6 +3805,14 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   const pref = { letter: c.pref_letter || fallbackPref.letter, label: c.pref_label || fallbackPref.label };
   // País de origen = país del PRODUCTOR; el backend resuelve fallbacks (perfil, RFC).
   const paisOrigen = c.country_of_origin || pr.pais || ce.pais || "";
+  // Partes del DOCUMENTO (multi-línea); certificados viejos: una sola desde los campos planos.
+  const items: CertificateItem[] = (c.items && c.items.length) ? c.items : [{
+    product: 0, product_sku: c.product_sku, product_description: c.product_description,
+    product_hs: c.product_hs, origin_status: c.origin_status, criterion: c.criterion,
+    rvc_value: c.rvc_value, pref_letter: pref.letter, pref_label: pref.label,
+    rule_text: c.rule_text ?? "", total_value: c.total_value ?? null, vnm: c.vnm ?? null,
+    originating_value: c.originating_value ?? null,
+  }];
   const contacto = (d: Record<string, string> = {}) =>
     [d.direccion, d.pais].filter(Boolean).join(" — ");
   // Bloque de una parte (1..6 datos de identidad). Estilo del CO oficial USMCA.
@@ -3852,13 +3860,13 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   <table>
     <tr><th colspan="4">5. Merchandise Information</th></tr>
     <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No.</th><th>Country of Origin</th></tr>
-    <tr><td>${esc(c.product_sku)}</td><td>${esc(c.product_description)}</td><td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td><td style="text-align:center">${esc(paisOrigen || "—")}</td></tr>
+    ${items.map((it) => `<tr><td>${esc(it.product_sku)}</td><td>${esc(it.product_description)}</td><td>${esc(it.product_hs ? formatHs(it.product_hs) : "—")}</td><td style="text-align:center">${esc(paisOrigen || "—")}</td></tr>`).join("")}
   </table>
   <table>
-    <tr><th colspan="2">6. Value of Originating Material (VOM)</th></tr>
-    <tr><td>Total value of the good (net cost)</td><td class="num">${money(c.total_value)}</td></tr>
-    <tr><td>Non-originating materials (VNM)</td><td class="num">${money(c.vnm)}</td></tr>
-    <tr><td><b>Originating material value (VOM)</b></td><td class="num"><b>${money(c.originating_value)}</b></td></tr>
+    <tr><th colspan="4">6. Value of Originating Material (VOM)</th></tr>
+    <tr><th>Part No.</th><th>Total value (net cost)</th><th>Non-originating (VNM)</th><th>Originating (VOM)</th></tr>
+    ${items.map((it) => `<tr><td>${esc(it.product_sku)}</td><td class="num">${money(it.total_value)}</td><td class="num">${money(it.vnm)}</td><td class="num">${money(it.originating_value)}</td></tr>`).join("")}
+    <tr><td><b>TOTAL</b></td><td class="num"><b>${money(c.total_value)}</b></td><td class="num"><b>${money(c.vnm)}</b></td><td class="num"><b>${money(c.originating_value)}</b></td></tr>
   </table>
   <div class="cert">
     <span class="badge">NOT ORIGINATING under ${esc(c.treaty_label)}</span><br><br>
@@ -3938,15 +3946,15 @@ function generarCertificadoRegistro(c: EmittedCertificate) {
   <table class="mtbl">
     <tr><th colspan="5">6. Description &amp; HS Classification · 7. Origin Criteria</th></tr>
     <tr><th>Serial / Part No.</th><th>Description of Good(s)</th><th>HS No. (6-digit)</th><th>7. Preference Criterion</th><th>Country of Origin</th></tr>
-    <tr>
-      <td>${esc(c.product_sku)}</td>
-      <td>${esc(c.product_description)}</td>
-      <td>${esc(c.product_hs ? formatHs(c.product_hs) : "—")}</td>
-      <td style="text-align:center"><b>${esc(pref.letter)}</b><div class="sub">${esc(pref.label)}</div>${c.rule_text
-        ? `<div class="sub" style="margin-top:3px;text-align:left">${esc(c.rule_text)}</div>`
-        : (c.rvc_value ? `<div class="sub">RVC ${c.rvc_value}%</div>` : "")}</td>
+    ${items.map((it) => `<tr>
+      <td>${esc(it.product_sku)}</td>
+      <td>${esc(it.product_description)}</td>
+      <td>${esc(it.product_hs ? formatHs(it.product_hs) : "—")}</td>
+      <td style="text-align:center"><b>${esc(it.pref_letter)}</b><div class="sub">${esc(it.pref_label)}</div>${it.rule_text
+        ? `<div class="sub" style="margin-top:3px;text-align:left">${esc(it.rule_text)}</div>`
+        : (it.rvc_value ? `<div class="sub">RVC ${it.rvc_value}%</div>` : "")}</td>
       <td style="text-align:center">${esc(paisOrigen || "—")}</td>
-    </tr>
+    </tr>`).join("")}
   </table>
 
   <div class="cert">
@@ -3985,7 +3993,8 @@ function CertificadosEmitirView() {
   const treatiesL = useList<Treaty>(() => api.treaties());
   const clientsL = useList<Party>(() => api.parties("customer"));
   const qualsL = useList<Qualification>(() => api.qualifications());
-  const [productId, setProductId] = useState<number | "">("");
+  const [productId, setProductId] = useState<number | "">("");  // combobox = agregador
+  const [selIds, setSelIds] = useState<number[]>([]);           // partes del documento
   const [treatyId, setTreatyId] = useState<number | "">("");
   const [clientId, setClientId] = useState<number | "">("");
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
@@ -3994,7 +4003,9 @@ function CertificadosEmitirView() {
   const [msg, setMsg] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const emitidos = useList<EmittedCertificate>(() => api.certificates());
   const [qReg, setQReg] = useState("");
-  const visCerts = smartFilter(emitidos.data, qReg, (c) => [c.folio, c.product_sku, c.product_description, c.importer_data?.nombre, c.treaty_label]);
+  const visCerts = smartFilter(emitidos.data, qReg, (c) => [c.folio, c.product_sku, c.product_description,
+    ...(c.items ?? []).flatMap((it) => [it.product_sku, it.product_description]),
+    c.importer_data?.nombre, c.treaty_label]);
   function exportarCerts() {
     exportCSV("certificados_emitidos", ["Folio", "Producto", "Descripción", "Tratado", "Cliente", "Criterio", "VCR", "Emitido"],
       visCerts.map((c) => [c.folio, c.product_sku, c.product_description, c.treaty_label, c.importer_data?.nombre ?? "", c.criterion, c.rvc_value ?? "", c.issued_at?.slice(0, 10) ?? ""]));
@@ -4009,29 +4020,51 @@ function CertificadosEmitirView() {
     : productos.filter((p) => (p.customers ?? []).includes(Number(clientId)));
   const clienteSinPartes = clientId !== "" && asignadasCliente.length === 0;
   const productosCliente = clienteSinPartes ? productos : asignadasCliente;
-  // Si cambia el cliente y el producto elegido ya no le corresponde, se limpia.
+  // Si cambia el cliente, se limpian las partes que ya no le corresponden.
   useEffect(() => {
-    if (productId !== "" && clientId !== "" && !productosCliente.some((p) => p.id === productId)) {
-      setProductId("");
+    if (clientId !== "" && !clienteSinPartes) {
+      setSelIds((ids) => ids.filter((id) => productosCliente.some((p) => p.id === id)));
     }
+    setProductId("");
   }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const qual = qualsL.data.find((q) => q.product === Number(productId) && q.treaty === Number(treatyId));
+  // El combobox AGREGA a la lista (documento multi-línea).
+  function agregar(id: number | "") {
+    if (id === "") { setProductId(""); return; }
+    setSelIds((ids) => (ids.includes(Number(id)) ? ids : [...ids, Number(id)]));
+    setProductId("");
+  }
+  const seleccionadas = selIds
+    .map((id) => productos.find((p) => p.id === id))
+    .filter((p): p is Product => !!p);
+  const qualDe = (pid: number) =>
+    qualsL.data.find((q) => q.product === pid && q.treaty === Number(treatyId));
+  const qualsSel = seleccionadas.map((p) => ({ p, q: qualDe(p.id) }));
+  const sinCalculo = qualsSel.filter((x) => !x.q).map((x) => x.p.sku);
+  const conQual = qualsSel.filter((x) => !!x.q);
+  const todasCalifican = conQual.length > 0 && conQual.every((x) => x.q!.status === "QUALIFIES");
+  const ningunaCalifica = conQual.length > 0 && conQual.every((x) => x.q!.status !== "QUALIFIES");
+  const mezcla = conQual.length > 0 && !todasCalifican && !ningunaCalifica;
+  const algunaStale = conQual.some((x) => x.q!.is_stale);
+  const listoParaEmitir = selIds.length > 0 && treatyId !== "" && clientId !== "" &&
+    sinCalculo.length === 0 && !mezcla && conQual.length === selIds.length;
   const profileOk = !!profile && !!profile.legal_name;
-  const califica = qual?.status === "QUALIFIES";
+  const califica = todasCalifican;
   function vistaPrevia() {
-    const p = productos.find((x) => x.id === Number(productId));
+    if (selIds.length !== 1) { setErr("La vista previa es de UNA parte; para varias, emite y se abre el documento completo."); return; }
+    const p = productos.find((x) => x.id === selIds[0]);
     const client = clientsL.data.find((x) => x.id === Number(clientId));
     const treaty = treatiesL.data.find((x) => x.id === Number(treatyId));
     if (!p || !client || !treaty || !profile) { setErr("Elige producto, tratado y cliente."); return; }
     setErr("");
-    generarCertificadoEmpresa({ product: p, treatyCode: treaty.code, client, profile, qual, blanketFrom: from, blanketTo: to });
+    generarCertificadoEmpresa({ product: p, treatyCode: treaty.code, client, profile, qual: qualDe(p.id), blanketFrom: from, blanketTo: to });
   }
   async function emitirRegistrar() {
-    if (!productId || !treatyId || !clientId) { setErr("Elige producto, tratado y cliente."); return; }
+    if (!selIds.length || !treatyId || !clientId) { setErr("Agrega al menos una parte y elige tratado y cliente."); return; }
     setBusy(true); setErr(""); setMsg("");
     try {
-      const cert = await api.emitCertificate({ product: productId, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null, invoice_number: invoiceNo || "" });
-      setMsg(`${cert.origin_status === "QUALIFIES" ? "Certificado" : "Affidavit"} ${cert.folio} emitido y registrado.`);
+      const cert = await api.emitCertificate({ products: selIds, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null, invoice_number: invoiceNo || "" });
+      setMsg(`${cert.origin_status === "QUALIFIES" ? "Certificado" : "Affidavit"} ${cert.folio} emitido y registrado con ${selIds.length} parte(s).`);
+      setSelIds([]);
       await emitidos.reload();
       generarCertificadoRegistro(cert);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -4051,8 +4084,15 @@ function CertificadosEmitirView() {
       )}
       <Card className="p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Producto">
-            <ProductCombobox products={productosCliente} value={productId} onChange={setProductId} />
+          <Field label="Partes del documento (agrega una o varias)">
+            <div className="flex items-center gap-2">
+              <div className="flex-1"><ProductCombobox products={productosCliente.filter((p) => !selIds.includes(p.id))} value={productId} onChange={agregar} /></div>
+              {clientId !== "" && !clienteSinPartes && productosCliente.length > selIds.length && (
+                <Btn variant="ghost" size="sm" onClick={() => setSelIds(Array.from(new Set([...selIds, ...productosCliente.map((p) => p.id)])))}>
+                  + Todas ({productosCliente.length})
+                </Btn>
+              )}
+            </div>
             {clientId !== "" && (clienteSinPartes
               ? <p className="mt-1 text-[11px] text-amber-600">Este cliente no tiene números de parte asignados; mostrando todos. Asígnalos en el producto (campo “Cliente(s)”).</p>
               : <p className="mt-1 text-[11px] text-zinc-500">Mostrando los números de parte de este cliente ({productosCliente.length}).</p>)}
@@ -4079,27 +4119,49 @@ function CertificadosEmitirView() {
             </Field>
           </div>
         </div>
-        {productId && treatyId && (
-          <p className="mt-3 text-xs text-zinc-500">
-            Resultado de origen: {qual ? <Pill k={qual.status}>{qual.status_display}{qual.rvc_value ? ` · ${qual.rvc_value}%` : ""}</Pill>
-              : <span className="text-amber-600">sin calcular — usa “Cálculo de origen” primero.</span>}
-            {qual && !califica && <span className="ml-2 text-amber-600">El producto NO califica → se emitirá un <strong>affidavit de origen (VOM)</strong> en vez de certificado.</span>}
-          </p>
+        {seleccionadas.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1 text-xs font-semibold text-zinc-700">{seleccionadas.length} parte(s) en el documento:</div>
+            <div className="flex flex-wrap gap-1.5">
+              {qualsSel.map(({ p, q }) => (
+                <span key={p.id} className={cx("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+                  !q ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : q.status === "QUALIFIES" ? "border-green-200 bg-green-50 text-green-800"
+                    : "border-red-200 bg-red-50 text-red-700")}>
+                  <span className="font-mono">{p.sku}</span>
+                  <span>{!q ? "sin calcular" : q.status === "QUALIFIES" ? `✓${q.rvc_value ? ` ${q.rvc_value}%` : ""}` : "no califica"}</span>
+                  {q?.is_stale && <span title="cálculo desactualizado">⚠️</span>}
+                  <button onClick={() => setSelIds(selIds.filter((id) => id !== p.id))} className="text-zinc-400 hover:text-red-600">✕</button>
+                </span>
+              ))}
+            </div>
+          </div>
         )}
-        {qual?.is_stale && (
+        {treatyId !== "" && sinCalculo.length > 0 && (
+          <p className="mt-3 text-xs text-amber-600">Sin calcular para este tratado: <strong>{sinCalculo.join(", ")}</strong> — córrelas en “Cálculo de origen” primero.</p>
+        )}
+        {mezcla && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            ⚠️ <strong>No se pueden mezclar</strong> partes que califican con partes que no en un mismo documento
+            (certificado vs affidavit). Quita unas u otras y emite dos documentos.
+          </div>
+        )}
+        {ningunaCalifica && !mezcla && (
+          <p className="mt-3 text-xs text-amber-600">Ninguna parte califica → se emitirá un <strong>affidavit de origen (VOM)</strong> con todas.</p>
+        )}
+        {algunaStale && (
           <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            ⚠️ <strong>El BOM o los costos de este producto cambiaron después del último cálculo.</strong> El documento
-            saldría con los valores anteriores. Ve a <strong>Cálculo de origen</strong>, vuelve a correr el cálculo para
-            este tratado y regresa aquí para emitir con la información actualizada.
+            ⚠️ <strong>El BOM o los costos de alguna parte (⚠️) cambiaron después del último cálculo.</strong> El documento
+            saldría con los valores anteriores. Recalcula en <strong>Cálculo de origen</strong> y regresa a emitir.
           </div>
         )}
         {msg && <p className="mt-3 text-sm text-emerald-700">{msg}</p>}
         {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
         <div className="mt-5 flex flex-wrap gap-2">
-          <Btn onClick={emitirRegistrar} disabled={busy || !productId || !treatyId || !clientId || !qual}>
-            {busy ? "Emitiendo…" : califica ? "Emitir certificado" : "Emitir affidavit (VOM)"}
+          <Btn onClick={emitirRegistrar} disabled={busy || !listoParaEmitir}>
+            {busy ? "Emitiendo…" : califica ? `Emitir certificado${selIds.length > 1 ? ` (${selIds.length} partes)` : ""}` : `Emitir affidavit (VOM)${selIds.length > 1 ? ` (${selIds.length} partes)` : ""}`}
           </Btn>
-          <Btn variant="ghost" onClick={vistaPrevia} disabled={!productId || !treatyId || !clientId}>Vista previa (sin registrar)</Btn>
+          <Btn variant="ghost" onClick={vistaPrevia} disabled={selIds.length !== 1 || !treatyId || !clientId}>Vista previa (sin registrar)</Btn>
         </div>
       </Card>
       <p className="mt-3 text-xs text-zinc-500">📄 Se abre en una ventana nueva; usa “Imprimir / Guardar PDF”. Si el producto CALIFICA se emite un <strong>certificado de origen</strong>; si NO califica, un <strong>affidavit (VOM)</strong>. Requiere haber calculado el origen; queda registrado con folio.</p>
@@ -4111,7 +4173,14 @@ function CertificadosEmitirView() {
           {visCerts.map((c) => (
             <tr key={c.id}>
               <td className="px-4 py-3 font-mono text-xs font-semibold">{c.folio}</td>
-              <td className="px-4 py-3"><span className="font-mono text-xs">{c.product_sku}</span><div className="text-[11px] text-zinc-500">{c.product_description}</div></td>
+              <td className="px-4 py-3">
+                {(c.items && c.items.length > 1)
+                  ? <>
+                      <span className="font-mono text-xs">{c.items.map((it) => it.product_sku).join(", ")}</span>
+                      <div className="text-[11px] text-zinc-500">{c.items.length} partes en el documento</div>
+                    </>
+                  : <><span className="font-mono text-xs">{c.product_sku}</span><div className="text-[11px] text-zinc-500">{c.product_description}</div></>}
+              </td>
               <td className="px-4 py-3">{c.treaty_label}</td>
               <td className="px-4 py-3 text-xs">{c.importer_data?.nombre ?? "—"}</td>
               <td className="px-4 py-3 text-xs">{c.origin_status === "QUALIFIES" ? `${c.criterion}${c.rvc_value ? ` · ${c.rvc_value}%` : ""}` : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">Affidavit (VOM)</span>}</td>

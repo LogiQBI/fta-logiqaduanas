@@ -140,6 +140,13 @@ export type EmittedCertificate = {
   total_value?: string | null; vnm?: string | null; originating_value?: string | null;
   verify_url?: string; qr_data_uri?: string;
   country_of_origin?: string; pref_letter?: string; pref_label?: string; rule_text?: string;
+  items?: CertificateItem[];
+};
+export type CertificateItem = {
+  product: number; product_sku: string; product_description: string; product_hs: string;
+  origin_status: string; criterion: string; rvc_value: string | null;
+  pref_letter: string; pref_label: string; rule_text: string;
+  total_value: string | null; vnm: string | null; originating_value: string | null;
 };
 
 export type HsLog = {

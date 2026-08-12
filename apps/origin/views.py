@@ -864,27 +864,51 @@ class CertificateViewSet(TenantScopedViewSet):
     @action(detail=False, methods=["post"])
     def emit(self, request):
         """La EMPRESA emite y REGISTRA un certificado de origen (con folio) para
-        un producto que CALIFICA en un tratado, dirigido a un cliente.
-        Body: {product, treaty, client, blanket_from?, blanket_to?}."""
+        UNO O VARIOS productos en un tratado, dirigido a un cliente. Todas las
+        partes salen en el MISMO documento (multi-línea).
+        Body: {products: [ids]} o {product: id} + {treaty, client, blanket_from?,
+        blanket_to?, invoice_number?}. Los estados deben ser uniformes: todas
+        CALIFICAN (certificado) o ninguna (affidavit VOM)."""
         from django.utils.dateparse import parse_date
 
         from apps.origin.services import _next_folio
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo la empresa puede emitir certificados.")
-        product = Product.objects.filter(tenant=m.tenant, pk=request.data.get("product")).first()
+        ids = request.data.get("products") or []
+        if not ids and request.data.get("product"):
+            ids = [request.data.get("product")]
+        products = list(Product.objects.filter(tenant=m.tenant, pk__in=ids))
+        product = products[0] if products else None
         treaty = Treaty.objects.filter(pk=request.data.get("treaty")).first()
         client = Party.objects.filter(tenant=m.tenant, kind=Party.Kind.CUSTOMER,
                                       pk=request.data.get("client")).first()
-        if not (product and treaty and client):
-            return Response({"error": "Selecciona producto, tratado y cliente válidos."},
+        if not (products and len(products) == len(set(ids)) and treaty and client):
+            return Response({"error": "Selecciona producto(s), tratado y cliente válidos."},
                             status=status.HTTP_400_BAD_REQUEST)
-        qual = Qualification.objects.filter(tenant=m.tenant, product=product, treaty=treaty).first()
-        if not qual:
-            return Response({"error": "Primero calcula el origen del producto en "
-                             "“Cálculo de origen” para este tratado."},
+        quals, sin_calculo = [], []
+        for p in products:
+            q = Qualification.objects.filter(tenant=m.tenant, product=p, treaty=treaty).first()
+            if q:
+                quals.append(q)
+            else:
+                sin_calculo.append(p.sku)
+        if sin_calculo:
+            return Response({"error": "Primero calcula el origen en “Cálculo de origen” "
+                             f"para: {', '.join(sin_calculo)}."},
                             status=status.HTTP_400_BAD_REQUEST)
-        # Si CALIFICA → certificado de origen. Si NO califica → affidavit (VOM):
+        # Un documento no puede mezclar bienes que califican con bienes que no:
+        # el certificado declara que TODOS califican; el affidavit que NO.
+        estados = {q.status == "QUALIFIES" for q in quals}
+        if len(estados) > 1:
+            si = [q.product.sku for q in quals if q.status == "QUALIFIES"]
+            no = [q.product.sku for q in quals if q.status != "QUALIFIES"]
+            return Response({"error": "No se pueden mezclar en un documento: "
+                             f"CALIFICAN ({', '.join(si)}) y NO califican ({', '.join(no)}). "
+                             "Emítelos por separado (certificado vs affidavit)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        qual = quals[0]
+        # Si CALIFICAN → certificado de origen. Si NO califican → affidavit (VOM):
         # el documento se determina por el estado de la calificación al imprimir.
         prof = getattr(m.tenant, "profile", None)
         certifier = {
@@ -912,6 +936,7 @@ class CertificateViewSet(TenantScopedViewSet):
             blanket_to=parse_date(request.data.get("blanket_to") or "") or None,
             invoice_number=(request.data.get("invoice_number") or "").strip()[:60],
             issued_by=request.user)
+        cert.qualifications.set(quals)  # todas las partes del documento (multi-línea)
         return Response(s.CertificateSerializer(cert, context={"request": request}).data,
                         status=status.HTTP_201_CREATED)
 
@@ -1595,14 +1620,17 @@ def verify_certificate(request, token):
                 '<p>El código no corresponde a ningún certificado emitido en LogiQ Aduanas | FTA.</p></div>')
     else:
         q = cert.qualification
+        quals = (list(cert.qualifications.select_related("product").all()) or [q])
         ce = cert.certifier_data or {}
         im = cert.importer_data or {}
         treaty = s.TREATY_LABELS.get(q.treaty.code, q.treaty.code)
         rows = "".join(
             f'<tr><td class="k">{escape(k)}</td><td>{escape(str(v))}</td></tr>' for k, v in [
                 ("Folio", cert.folio),
-                ("Producto", f"{q.product.sku} — {q.product.description}"),
-                ("Fracción (HS)", q.product.hs_code or "—"),
+                ("Producto(s)", "; ".join(f"{x.product.sku} — {x.product.description}"
+                                          for x in quals)),
+                ("Fracción (HS)", ", ".join(sorted({x.product.hs_code or "—"
+                                                    for x in quals}))),
                 ("Tratado", treaty),
                 ("Criterio de origen", q.criterion or q.status),
                 ("Exportador / Productor", ce.get("nombre", cert.tenant.name)),

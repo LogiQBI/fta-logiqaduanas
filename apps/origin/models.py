@@ -132,6 +132,11 @@ class Certificate(TenantOwnedModel):
 
     qualification = models.ForeignKey(Qualification, on_delete=models.PROTECT,
                                       related_name="certificates")
+    # Documento MULTI-LÍNEA: todas las partes del certificado (incluida la
+    # principal). Vacío en certificados viejos → se usa `qualification` sola.
+    qualifications = models.ManyToManyField(
+        Qualification, blank=True, related_name="multi_certificates",
+        verbose_name="Partes del documento")
     folio = models.CharField("Folio", max_length=40)
     # Token aleatorio para verificación pública (QR). Único globalmente.
     verify_token = models.CharField("Token de verificación", max_length=32, blank=True,

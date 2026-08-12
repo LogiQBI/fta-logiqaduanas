@@ -278,6 +278,7 @@ class CertificateSerializer(serializers.ModelSerializer):
     pref_letter = serializers.SerializerMethodField()   # criterio USMCA A–D (en inglés)
     pref_label = serializers.SerializerMethodField()
     rule_text = serializers.SerializerMethodField()     # PSR aplicada y cómo se cumplió
+    items = serializers.SerializerMethodField()         # partes del documento (multi-línea)
     # Completado en vivo desde Clientes (dirección/tel/email capturados después de emitir).
     importer_data = serializers.SerializerMethodField()
 
@@ -292,7 +293,7 @@ class CertificateSerializer(serializers.ModelSerializer):
                   "invoice_number", "issued_at", "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
                   "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value",
-                  "country_of_origin", "pref_letter", "pref_label", "rule_text"]
+                  "country_of_origin", "pref_letter", "pref_label", "rule_text", "items"]
 
     def get_country_of_origin(self, obj):
         from apps.origin.services import certificate_country_of_origin
@@ -312,15 +313,63 @@ class CertificateSerializer(serializers.ModelSerializer):
         from apps.origin.services import usmca_rule_text
         return usmca_rule_text(obj.qualification)
 
-    def _vom_vals(self, obj):
+    def _quals(self, obj):
+        """Todas las partes del documento (multi-línea); certificados viejos
+        solo tienen la FK principal."""
+        qs = list(obj.qualifications.select_related("product", "treaty", "rule").all())
+        return qs or [obj.qualification]
+
+    @staticmethod
+    def _vom_for(tenant_id, qual):
         from apps.origin.models import OriginAnalysis
         a = OriginAnalysis.objects.filter(
-            tenant_id=obj.tenant_id, product_id=obj.qualification.product_id,
-            treaty_id=obj.qualification.treaty_id).order_by("-created_at").first()
+            tenant_id=tenant_id, product_id=qual.product_id,
+            treaty_id=qual.treaty_id).order_by("-created_at").first()
         if a and a.total_value is not None:
             return a.total_value, (a.vnm or 0)
-        d = obj.qualification.detail or {}
+        d = qual.detail or {}
         return d.get("total_value"), d.get("vnm")
+
+    def _vom_vals(self, obj):
+        """Totales del DOCUMENTO: suma de todas sus partes con datos."""
+        from decimal import Decimal
+        tot, vnm, con_datos = Decimal("0"), Decimal("0"), False
+        for q in self._quals(obj):
+            t, v = self._vom_for(obj.tenant_id, q)
+            if t is not None:
+                con_datos = True
+                tot += Decimal(str(t))
+                vnm += Decimal(str(v or 0))
+        return (tot, vnm) if con_datos else (None, None)
+
+    def get_items(self, obj):
+        """Una entrada por parte del documento: identidad del bien, criterio de
+        preferencia (inglés), PSR aplicada y valores VOM propios."""
+        from decimal import Decimal
+        from apps.origin.services import _usmca_pref, usmca_rule_text
+        out = []
+        for q in self._quals(obj):
+            letter, label = _usmca_pref(q.criterion, q.status)
+            t, v = self._vom_for(obj.tenant_id, q)
+            vom = None
+            try:
+                if t is not None:
+                    vom = str(Decimal(str(t)) - Decimal(str(v or 0)))
+            except Exception:
+                pass
+            out.append({
+                "product": q.product_id, "product_sku": q.product.sku,
+                "product_description": q.product.description,
+                "product_hs": q.product.hs_code,
+                "origin_status": q.status, "criterion": q.criterion,
+                "rvc_value": str(q.rvc_value) if q.rvc_value is not None else None,
+                "pref_letter": letter, "pref_label": label,
+                "rule_text": usmca_rule_text(q),
+                "total_value": str(t) if t is not None else None,
+                "vnm": str(v) if v is not None else None,
+                "originating_value": vom,
+            })
+        return out
 
     def get_total_value(self, obj):
         v = self._vom_vals(obj)[0]
