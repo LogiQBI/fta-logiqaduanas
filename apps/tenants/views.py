@@ -7,7 +7,8 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAdminUser
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.catalog.models import BOMComponent
@@ -119,3 +120,154 @@ class MasterUserViewSet(viewsets.ModelViewSet):
         sec.failed_attempts = 0
         sec.save(update_fields=["is_locked", "failed_attempts", "updated_at"])
         return Response({"ok": True})
+
+
+# Roles que el ADMIN de una empresa puede asignar a su equipo (el rol proveedor
+# se gestiona aparte, en Catálogos → Proveedores → Crear acceso).
+TEAM_ROLES = [Membership.Role.ADMIN, Membership.Role.ANALYST, Membership.Role.AUDITOR]
+
+
+class CompanyUserViewSet(viewsets.ViewSet):
+    """Usuarios del EQUIPO de la empresa (administrador/analista/auditor),
+    gestionados por el ADMINISTRADOR del tenant desde la propia empresa.
+    Niveles: admin = todo + usuarios; analista = opera todo; auditor = solo lectura."""
+    permission_classes = [IsAuthenticated]
+
+    def _admin_membership(self, request):
+        from apps.origin.views import active_membership
+        m = active_membership(request)
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden ver esta sección.")
+        if m.role != Membership.Role.ADMIN:
+            raise PermissionDenied(
+                "Solo el ADMINISTRADOR de la empresa puede gestionar usuarios.")
+        return m
+
+    def _team_membership(self, m, user_id):
+        """Membresía de un usuario del EQUIPO de mi tenant (nunca proveedores,
+        nunca usuarios de otras empresas)."""
+        return (Membership.objects.select_related("user")
+                .filter(tenant=m.tenant, user_id=user_id, role__in=TEAM_ROLES)
+                .exclude(user__is_superuser=True).first())
+
+    def _row(self, mem):
+        sec = UserSecurity.objects.filter(user=mem.user).first()
+        return {
+            "id": mem.user_id, "username": mem.user.username,
+            "email": mem.user.email, "role": mem.role,
+            "role_display": mem.get_role_display(),
+            "is_locked": bool(sec and sec.is_locked),
+            "must_change_password": mem.must_change_password,
+            "created_at": mem.created_at,
+        }
+
+    def list(self, request):
+        m = self._admin_membership(request)
+        mems = (Membership.objects.select_related("user")
+                .filter(tenant=m.tenant, role__in=TEAM_ROLES)
+                .exclude(user__is_superuser=True).order_by("user__username"))
+        rows = [self._row(x) for x in mems]
+        # Mismo formato paginado que el resto de la API (el front usa useList).
+        return Response({"results": rows, "count": len(rows)})
+
+    def create(self, request):
+        """Alta de un usuario del equipo: {username, role, email?, password?}.
+        Sin password se genera una TEMPORAL; en ambos casos deberá cambiarla
+        en su primer ingreso. Respeta el máximo de usuarios de la licencia."""
+        m = self._admin_membership(request)
+        username = (request.data.get("username") or "").strip()
+        role = request.data.get("role") or Membership.Role.ANALYST
+        if not username:
+            return Response({"error": "Escribe el nombre de usuario."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if role not in TEAM_ROLES:
+            return Response({"error": "Rol inválido. Usa administrador, analista o auditor."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(username__iexact=username).exists():
+            return Response({"error": f"El usuario “{username}” ya está ocupado. Elige otro."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        lic = getattr(m.tenant, "license", None)
+        if lic and lic.max_users:
+            actuales = Membership.objects.filter(
+                tenant=m.tenant, role__in=TEAM_ROLES).count()
+            if actuales >= lic.max_users:
+                return Response(
+                    {"error": f"Tu licencia permite hasta {lic.max_users} usuarios y ya "
+                              f"tienes {actuales}. Contacta a LogiQ Aduanas para ampliarla."},
+                    status=status.HTTP_400_BAD_REQUEST)
+        password = request.data.get("password") or _temp_password()
+        user = User(username=username, email=(request.data.get("email") or "").strip())
+        user.set_password(password)
+        user.save()
+        mem = Membership.objects.create(user=user, tenant=m.tenant, role=role,
+                                        must_change_password=True)
+        row = self._row(mem)
+        row["temp_password"] = password
+        return Response(row, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="set-password")
+    def set_password(self, request, pk=None):
+        """Restablece la contraseña de un usuario del equipo: {password?}.
+        Sin password se genera una TEMPORAL; deberá cambiarla al ingresar."""
+        m = self._admin_membership(request)
+        mem = self._team_membership(m, pk)
+        if not mem:
+            return Response({"error": "Usuario no encontrado en tu empresa."},
+                            status=status.HTTP_404_NOT_FOUND)
+        password = request.data.get("password") or _temp_password()
+        mem.user.set_password(password)
+        mem.user.save(update_fields=["password"])
+        mem.must_change_password = True
+        mem.save(update_fields=["must_change_password", "updated_at"])
+        return Response({"username": mem.user.username, "temp_password": password})
+
+    @action(detail=True, methods=["post"])
+    def unlock(self, request, pk=None):
+        m = self._admin_membership(request)
+        mem = self._team_membership(m, pk)
+        if not mem:
+            return Response({"error": "Usuario no encontrado en tu empresa."},
+                            status=status.HTTP_404_NOT_FOUND)
+        sec, _ = UserSecurity.objects.get_or_create(user=mem.user)
+        sec.is_locked = False
+        sec.failed_attempts = 0
+        sec.save(update_fields=["is_locked", "failed_attempts", "updated_at"])
+        return Response({"ok": True})
+
+    @action(detail=True, methods=["post"], url_path="set-role")
+    def set_role(self, request, pk=None):
+        """Cambia el nivel de un usuario del equipo: {role}."""
+        m = self._admin_membership(request)
+        if str(request.user.id) == str(pk) and not request.user.is_superuser:
+            return Response({"error": "No puedes cambiar tu propio rol."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        mem = self._team_membership(m, pk)
+        if not mem:
+            return Response({"error": "Usuario no encontrado en tu empresa."},
+                            status=status.HTTP_404_NOT_FOUND)
+        role = request.data.get("role")
+        if role not in TEAM_ROLES:
+            return Response({"error": "Rol inválido. Usa administrador, analista o auditor."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        mem.role = role
+        mem.save(update_fields=["role", "updated_at"])
+        return Response(self._row(mem))
+
+    def destroy(self, request, pk=None):
+        """Elimina (quita el acceso de) un usuario del equipo."""
+        m = self._admin_membership(request)
+        if str(request.user.id) == str(pk):
+            return Response({"error": "No puedes eliminar tu propia cuenta."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        mem = self._team_membership(m, pk)
+        if not mem:
+            return Response({"error": "Usuario no encontrado en tu empresa."},
+                            status=status.HTTP_404_NOT_FOUND)
+        user = mem.user
+        # Si solo pertenece a esta empresa se elimina la cuenta completa;
+        # si tuviera otras membresías, solo se le quita el acceso a esta.
+        if user.memberships.exclude(tenant=m.tenant).exists():
+            mem.delete()
+        else:
+            user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -195,6 +195,12 @@ export type Product = {
   customers?: number[]; customer_names?: { id: number; name: string }[];
 };
 export type Treaty = { id: number; code: string; name: string };
+export type ProductOriginDoc = {
+  id: number; product: number; supplier: number | null; supplier_name?: string | null;
+  treaty: number | null; treaty_code?: string | null; filename: string;
+  content_type: string; size: number; valid_from: string | null; valid_to: string | null;
+  notes: string; uploaded_by_name?: string | null; has_declaration: boolean; created_at: string;
+};
 export type ComponentDeclaration = {
   treaty_code?: string; valid_from: string | null; valid_to: string | null;
   is_originating: boolean; country: string;
@@ -259,6 +265,14 @@ export type Qualification = {
   id: number; product: number; treaty: number; treaty_code?: string; status: string;
   status_display: string; criterion: string; rvc_value: string | null;
   is_stale?: boolean;
+};
+export type BulkSpec = {
+  sheet: string; instructions: string[];
+  columns: { key: string; label: string; example: string; required: boolean; help: string }[];
+};
+export type CompanyUser = {
+  id: number; username: string; email: string; role: string; role_display: string;
+  is_locked: boolean; must_change_password: boolean; created_at: string;
 };
 export type Me = {
   username: string; role: string | null; role_display?: string;
@@ -377,6 +391,15 @@ export const api = {
     req(`/products/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteProduct: (id: number) =>
     req(`/products/${id}/`, { method: "DELETE" }),
+  // Certificados de origen (PDF) que la empresa ya tiene de un insumo.
+  productOriginDocs: (id: number): Promise<{ results: ProductOriginDoc[]; count: number }> =>
+    req(`/products/${id}/origin-docs/`),
+  uploadProductOriginDoc: (id: number, payload: Record<string, unknown>): Promise<ProductOriginDoc> =>
+    req(`/products/${id}/origin-docs/`, { method: "POST", body: JSON.stringify(payload) }),
+  downloadProductOriginDoc: (id: number, docId: number, filename: string) =>
+    downloadFile(`/products/${id}/origin-docs/${docId}/download/`, filename),
+  deleteProductOriginDoc: (id: number, docId: number) =>
+    req(`/products/${id}/origin-docs/${docId}/delete/`, { method: "POST" }),
   suggestHs: (productId: number, hs_suggested: string, note: string) =>
     req(`/products/${productId}/suggest-hs/`, {
       method: "POST", body: JSON.stringify({ hs_suggested, note }),
@@ -533,6 +556,7 @@ export const api = {
   companyProfile: (): Promise<CompanyProfile> => req("/company-profile/"),
   updateCompanyProfile: (payload: Partial<CompanyProfile>) =>
     req("/company-profile/", { method: "PATCH", body: JSON.stringify(payload) }),
+  bulkSpec: (type: string): Promise<BulkSpec> => req(`/bulk/spec/?type=${type}`),
   bulkTemplate: (type: string) => downloadFile(`/bulk/template/?type=${type}`, `plantilla_${type}.xlsx`),
   bulkImport: (type: string, file: File): Promise<BulkResult> => uploadFile(`/bulk/import/?type=${type}`, file),
   bulkPreview: (type: string, file: File): Promise<BulkPreview> => uploadFile(`/bulk/import/?type=${type}&dry=1`, file),
@@ -543,6 +567,19 @@ export const api = {
     downloadPost(`/solicitations/declaration-template/`, { ids }, "plantilla_declaracion_origen.xlsx"),
   importSolicitudDeclarations: (ids: number[], file: File) =>
     uploadForm(`/solicitations/import-declarations/`, { file, ids: ids.join(",") }),
+
+  // --- Usuarios del equipo (los gestiona el ADMIN de la empresa) ---
+  companyUsers: (): Promise<{ results: CompanyUser[]; count: number }> => req("/company/users/"),
+  companyCreateUser: (payload: Record<string, unknown>): Promise<CompanyUser & { temp_password?: string }> =>
+    req("/company/users/", { method: "POST", body: JSON.stringify(payload) }),
+  companyResetPassword: (id: number): Promise<{ username: string; temp_password: string }> =>
+    req(`/company/users/${id}/set-password/`, { method: "POST", body: JSON.stringify({}) }),
+  companyUnlockUser: (id: number) =>
+    req(`/company/users/${id}/unlock/`, { method: "POST" }),
+  companySetRole: (id: number, role: string): Promise<CompanyUser> =>
+    req(`/company/users/${id}/set-role/`, { method: "POST", body: JSON.stringify({ role }) }),
+  companyDeleteUser: (id: number) =>
+    req(`/company/users/${id}/`, { method: "DELETE" }),
 
   // --- Master (LogiQ) ---
   masterTenants: () => req("/master/tenants/"),

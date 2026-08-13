@@ -25,8 +25,9 @@ from rest_framework.response import Response
 
 from apps.catalog.models import (
     BOMComponent, CompanyProfile, HsChangeLog, Party, Product, ProductChangeLog,
-    RuleDisplay, SolicitationBOM, SolicitationBOMLine, SolicitationLog,
-    SolicitationRequest, SupplierDeclaration, SupplierProfile, log_product_changes,
+    ProductOriginDocument, RuleDisplay, SolicitationBOM, SolicitationBOMLine,
+    SolicitationLog, SolicitationRequest, SupplierDeclaration, SupplierProfile,
+    log_product_changes,
 )
 from apps.catalog.uom import clean_uom
 from apps.catalog.services import generate_solicitations
@@ -135,6 +136,18 @@ def is_impersonating(request):
     return bool(user and user.is_superuser and request.headers.get("X-As-Tenant"))
 
 
+READ_ONLY_ROLE_MSG = ("Tu perfil de AUDITOR es de solo lectura: puedes consultar "
+                      "toda la información, pero no crearla ni modificarla.")
+
+
+def forbid_read_only(m, request):
+    """El rol AUDITOR de la empresa es de SOLO LECTURA: bloquea cualquier
+    método que no sea de consulta. No aplica a proveedores (tienen su flujo)."""
+    if (m and not m.is_supplier and m.role == Membership.Role.AUDITOR
+            and request.method not in ("GET", "HEAD", "OPTIONS")):
+        raise PermissionDenied(READ_ONLY_ROLE_MSG)
+
+
 class TenantScopedViewSet(viewsets.ModelViewSet):
     """Acota por tenant y, si el usuario es proveedor, por su Party.
 
@@ -147,6 +160,11 @@ class TenantScopedViewSet(viewsets.ModelViewSet):
 
     def membership(self):
         return active_membership(self.request)
+
+    def initial(self, request, *args, **kwargs):
+        # Guardia central de roles: el AUDITOR no escribe en ningún recurso.
+        super().initial(request, *args, **kwargs)
+        forbid_read_only(self.membership(), request)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -432,6 +450,114 @@ class ProductViewSet(TenantScopedViewSet):
             after={"country_of_origin": product.country_of_origin},
             source=ProductChangeLog.Source.SUPPLIER, user=request.user)
         return Response(s.ProductSerializer(product).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="origin-docs")
+    def origin_docs(self, request, pk=None):
+        """Certificados de origen (PDF) que la EMPRESA ya tiene de este insumo,
+        subidos sin pasar por el portal del proveedor.
+        GET: lista. POST: {filename, data_b64, content_type?, supplier?, treaty?,
+        valid_from?, valid_to?, notes?, register_declaration?, is_originating?,
+        country_of_origin?}. Con register_declaration=true además registra la
+        declaración de origen (requiere tratado, vigencia y proveedor) para que
+        el cálculo de origen la tome como si la hubiera respondido el proveedor."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden gestionar estos documentos.")
+        product = self.get_object()
+        if request.method == "GET":
+            docs = product.origin_documents.select_related("supplier", "treaty", "uploaded_by")
+            rows = s.ProductOriginDocumentSerializer(docs, many=True).data
+            # Mismo formato paginado que el resto de la API (el front usa useList).
+            return Response({"results": rows, "count": len(rows)})
+
+        data_b64 = request.data.get("data_b64") or ""
+        filename = (request.data.get("filename") or "certificado.pdf").strip()[:200]
+        if not data_b64:
+            return Response({"error": "Adjunta el archivo."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(data_b64) > 14_000_000:  # ~10 MB reales
+            return Response({"error": "El archivo es muy grande (máximo ~10 MB)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        import base64
+        try:
+            size = len(base64.b64decode(data_b64))
+        except Exception:
+            return Response({"error": "El archivo no se pudo leer (base64 inválido)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        supplier = None
+        if request.data.get("supplier"):
+            supplier = Party.objects.filter(tenant=m.tenant, pk=request.data["supplier"],
+                                            kind=Party.Kind.SUPPLIER).first()
+        supplier = supplier or product.supplier
+        treaty = None
+        if request.data.get("treaty"):
+            treaty = Treaty.objects.filter(pk=request.data["treaty"]).first()
+        valid_from = request.data.get("valid_from") or None
+        valid_to = request.data.get("valid_to") or None
+
+        declaration = None
+        if request.data.get("register_declaration"):
+            faltan = []
+            if not treaty:
+                faltan.append("tratado")
+            if not (valid_from and valid_to):
+                faltan.append("vigencia (desde/hasta)")
+            if not supplier:
+                faltan.append("proveedor (asigna uno al insumo o elígelo aquí)")
+            if faltan:
+                return Response(
+                    {"error": "Para registrar la declaración de origen falta: "
+                              + ", ".join(faltan) + "."},
+                    status=status.HTTP_400_BAD_REQUEST)
+            declaration = SupplierDeclaration.objects.create(
+                tenant=m.tenant, supplier=supplier, product=product, treaty=treaty,
+                is_originating=bool(request.data.get("is_originating", True)),
+                country_of_origin=(request.data.get("country_of_origin") or "").strip().upper()[:2],
+                valid_from=valid_from, valid_to=valid_to)
+
+        doc = ProductOriginDocument.objects.create(
+            tenant=m.tenant, product=product, supplier=supplier, treaty=treaty,
+            declaration=declaration, filename=filename,
+            content_type=(request.data.get("content_type") or "application/pdf")[:120],
+            size=size, data_b64=data_b64, valid_from=valid_from, valid_to=valid_to,
+            notes=(request.data.get("notes") or "")[:255], uploaded_by=request.user)
+        return Response(s.ProductOriginDocumentSerializer(doc).data,
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="origin-docs/(?P<doc_id>[0-9]+)/download")
+    def download_origin_doc(self, request, pk=None, doc_id=None):
+        """Descarga el certificado adjunto."""
+        import base64
+        from django.http import HttpResponse
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden descargar estos documentos.")
+        product = self.get_object()
+        doc = product.origin_documents.filter(pk=doc_id).first()
+        if not doc:
+            return Response({"error": "Documento no encontrado."},
+                            status=status.HTTP_404_NOT_FOUND)
+        resp = HttpResponse(base64.b64decode(doc.data_b64),
+                            content_type=doc.content_type or "application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{doc.filename}"'
+        return resp
+
+    @action(detail=True, methods=["post"], url_path="origin-docs/(?P<doc_id>[0-9]+)/delete")
+    def delete_origin_doc(self, request, pk=None, doc_id=None):
+        """Elimina el certificado adjunto (y, si se creó junto con él, su
+        declaración de origen ligada)."""
+        m = self.membership()
+        if not m or m.is_supplier:
+            raise PermissionDenied("Solo usuarios de empresa pueden borrar estos documentos.")
+        product = self.get_object()
+        doc = product.origin_documents.filter(pk=doc_id).first()
+        if not doc:
+            return Response({"error": "Documento no encontrado."},
+                            status=status.HTTP_404_NOT_FOUND)
+        if doc.declaration_id:
+            SupplierDeclaration.objects.filter(pk=doc.declaration_id).delete()
+        doc.delete()
+        return Response({"ok": True})
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
@@ -1746,6 +1872,38 @@ def bulk_template(request):
     return resp
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def bulk_spec(request):
+    """Especificación de un layout de carga masiva, para explicarlo EN la app:
+    instrucciones generales y, por columna, etiqueta/obligatoriedad/ayuda/ejemplo."""
+    from apps.origin import bulk
+    t = request.query_params.get("type", "")
+    if t == "bom_response":
+        cols, sheet = bulk.BOM_RESPONSE_COLUMNS, "Respuesta BOM"
+        instructions, col_help = bulk.BOM_RESPONSE_INSTRUCTIONS, bulk.BOM_RESPONSE_HELP
+    elif t == "declaration_response":
+        cols, sheet = bulk.DECLARATION_RESPONSE_COLUMNS, "Declaración de origen"
+        instructions, col_help = (bulk.DECLARATION_RESPONSE_INSTRUCTIONS,
+                                  bulk.DECLARATION_RESPONSE_HELP)
+    elif t in bulk.SPECS:
+        spec = bulk.SPECS[t]
+        cols, sheet = spec["columns"], spec["sheet"]
+        instructions, col_help = spec.get("instructions", ""), spec.get("help", {})
+    else:
+        return Response({"error": "Tipo de plantilla inválido."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        "sheet": sheet,
+        "instructions": [p for p in (instructions or "").split("\n") if p.strip()],
+        "columns": [{
+            "key": key, "label": label, "example": str(example),
+            "required": bool(col_help.get(key, {}).get("req")),
+            "help": col_help.get(key, {}).get("help", ""),
+        } for key, label, example in cols],
+    })
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def bulk_import(request):
@@ -1755,6 +1913,7 @@ def bulk_import(request):
     m = active_membership(request)
     if not m or m.is_supplier:
         raise PermissionDenied("Solo la empresa puede hacer carga masiva de catálogos.")
+    forbid_read_only(m, request)
     t = request.query_params.get("type", "")
     if t not in bulk.SPECS:
         return Response({"error": "Tipo de carga inválido."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1800,6 +1959,7 @@ def company_profile_view(request):
     m = active_membership(request)
     if not m or m.is_supplier:
         raise PermissionDenied("Solo la empresa puede gestionar los datos de la empresa.")
+    forbid_read_only(m, request)
     prof, created = CompanyProfile.objects.get_or_create(tenant=m.tenant)
     # La identidad (razón social y RFC) la fija el administrador de LogiQ desde el
     # alta del tenant; se siembra aquí y NO la puede cambiar el usuario de empresa

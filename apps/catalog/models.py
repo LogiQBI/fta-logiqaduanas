@@ -353,6 +353,40 @@ class SupplierDeclaration(TenantOwnedModel):
         return f"{self.product.sku} / {self.treaty.code}: {estado}"
 
 
+class ProductOriginDocument(TenantOwnedModel):
+    """Certificado/evidencia de origen (PDF) que la EMPRESA ya tiene de un
+    insumo y sube directamente, sin pasar por el portal del proveedor. El
+    contenido vive en BD (base64) porque el disco del contenedor es efímero."""
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE,
+                                related_name="origin_documents")
+    supplier = models.ForeignKey(Party, null=True, blank=True, on_delete=models.SET_NULL,
+                                 related_name="origin_documents")
+    treaty = models.ForeignKey("treaties.Treaty", null=True, blank=True,
+                               on_delete=models.SET_NULL, related_name="origin_documents")
+    # Si al subir se registró también la declaración de origen, queda ligada
+    # aquí para que el certificado sea su evidencia documental.
+    declaration = models.ForeignKey(SupplierDeclaration, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="documents")
+    filename = models.CharField(max_length=200)
+    content_type = models.CharField(max_length=120, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    data_b64 = models.TextField("Contenido (base64)")
+    valid_from = models.DateField("Vigente desde", null=True, blank=True)
+    valid_to = models.DateField("Vigente hasta", null=True, blank=True)
+    notes = models.CharField("Notas", max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Certificado de origen de insumo"
+        verbose_name_plural = "Certificados de origen de insumos"
+
+    def __str__(self):
+        return f"{self.product.sku}: {self.filename}"
+
+
 def _new_token():
     import secrets
     return secrets.token_urlsafe(32)

@@ -9,10 +9,10 @@ import {
 } from "lucide-react";
 import {
   api, AuditDoc, AuditRow, AutomotiveResult, AutomotiveSaved, BomComponent, BomLine, BomOriginComponent,
-  BulkPreview, BulkResult, CertificateItem, clearAsTenant, clearToken, ClientLayout, EmittedCertificate,
+  BulkPreview, BulkResult, BulkSpec, CertificateItem, clearAsTenant, clearToken, ClientLayout, CompanyUser, EmittedCertificate,
   getAsTenant, getToken, LicenseInfo, setAsTenant,
   MasterTenant, Me, OriginAnalysis, OriginAnalysisDetail, OriginCalcResult, OriginRule, Party,
-  Product, ProductChangeLog, Qualification,
+  Product, ProductChangeLog, ProductOriginDoc, Qualification,
   Solicitation, SolicitationCert, SubmittedBom, SupercoreResult, SupplierProfile, SupplierUser, Treaty,
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
@@ -334,6 +334,8 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
     { items: [{ key: "home", label: "Inicio", icon: Home }] },
     { label: "Mi empresa", items: [
       { key: "datos-empresa", label: "Datos de la empresa", icon: Building2 },
+      // Solo el ADMINISTRADOR de la empresa gestiona los usuarios de su equipo.
+      ...(me.role === "admin" ? [{ key: "equipo", label: "Usuarios", icon: Users }] : []),
       { key: "licencia", label: "Licencia", icon: BadgeCheck },
     ] },
     { label: "Catálogos", items: [
@@ -494,6 +496,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "home": return <HomeView me={me} go={go} />;
     case "empresas": return <EmpresasView />;
     case "usuarios": return <UsuariosView />;
+    case "equipo": return <EquipoView me={me} />;
     case "tratados": return <TratadosView />;
     case "reglas": return <ReglasView me={me} />;
     case "productos": return <ProductosView />;
@@ -1054,6 +1057,134 @@ function UsuariosView() {
   );
 }
 
+/* ==== Usuarios del equipo (los gestiona el ADMIN de la empresa) ==== */
+const ROLE_LEVELS: { value: string; label: string; desc: string }[] = [
+  { value: "admin", label: "Administrador", desc: "Todo: opera el sistema, edita datos de la empresa y gestiona usuarios." },
+  { value: "analyst", label: "Analista de origen", desc: "Opera todo (catálogos, BOM, cálculos, certificados, solicitudes) pero no gestiona usuarios." },
+  { value: "auditor", label: "Auditor (solo lectura)", desc: "Consulta toda la información sin poder crearla ni modificarla." },
+];
+function EquipoView({ me }: { me: Me }) {
+  const { data, reload } = useList<CompanyUser>(() => api.companyUsers());
+  const [f, setF] = useState({ username: "", email: "", role: "analyst", password: "" });
+  const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
+  async function crear() {
+    if (!f.username.trim()) { setErr("Escribe el nombre de usuario."); return; }
+    setErr(""); setMsg("");
+    try {
+      const r = await api.companyCreateUser({ ...f, username: f.username.trim() });
+      if (r.temp_password) setTemp({ username: r.username, password: r.temp_password });
+      setF({ username: "", email: "", role: "analyst", password: "" });
+      setMsg(`Usuario “${r.username}” creado.`); await reload();
+    } catch (e) { setErr((e as Error).message); }
+  }
+  async function reset(u: CompanyUser) {
+    if (!confirm(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`)) return;
+    setErr(""); setMsg("");
+    try {
+      const r = await api.companyResetPassword(u.id);
+      setTemp({ username: u.username, password: r.temp_password }); await reload();
+    } catch (e) { setErr((e as Error).message); }
+  }
+  async function cambiarRol(u: CompanyUser, role: string) {
+    setErr(""); setMsg("");
+    try { await api.companySetRole(u.id, role); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  async function desbloquear(u: CompanyUser) {
+    setErr(""); try { await api.companyUnlockUser(u.id); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  async function eliminar(u: CompanyUser) {
+    if (!confirm(`¿Quitar el acceso de “${u.username}”? Ya no podrá entrar al sistema.`)) return;
+    setErr(""); setMsg("");
+    try { await api.companyDeleteUser(u.id); if (temp?.username === u.username) setTemp(null); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+  return (
+    <div>
+      <PageTitle title="Usuarios" desc="Cuentas de tu equipo y su nivel de permisos." />
+      {msg && <p className="mb-3 text-sm text-emerald-700">{msg}</p>}
+      {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+      {temp && (
+        <div className="mb-4 max-w-xl rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+          <div className="font-semibold text-emerald-800">Contraseña temporal de “{temp.username}”</div>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="rounded bg-white px-2 py-1 font-mono text-emerald-900 ring-1 ring-emerald-200">{temp.password}</code>
+            <button onClick={() => navigator.clipboard?.writeText(temp.password)}
+              className="text-xs text-emerald-700 hover:underline">Copiar</button>
+          </div>
+          <div className="mt-1 text-xs text-emerald-700">Cópiala y compártela con el usuario: deberá cambiarla en su primer ingreso. No se volverá a mostrar.</div>
+        </div>
+      )}
+      <Table head={["Usuario", "Email", "Nivel", "Estado", ""]}>
+        {data.map((u) => {
+          const soyYo = u.username === me.username;
+          return (
+            <tr key={u.id}>
+              <td className="px-4 py-3 font-medium">{u.username}{soyYo && <span className="ml-1.5 text-xs text-zinc-400">(tú)</span>}</td>
+              <td className="px-4 py-3">{u.email || <span className="text-zinc-400">—</span>}</td>
+              <td className="px-4 py-3">
+                {soyYo ? u.role_display : (
+                  <select value={u.role} onChange={(e) => cambiarRol(u, e.target.value)}
+                    className="rounded-lg border border-zinc-300 px-2 py-1 text-sm">
+                    {ROLE_LEVELS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                )}
+              </td>
+              <td className="px-4 py-3">
+                {u.is_locked
+                  ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Bloqueado</span>
+                  : <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Activo</span>}
+                {u.must_change_password && <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">contraseña temporal</span>}
+              </td>
+              <td className="px-4 py-3 text-right">
+                <div className="flex items-center justify-end gap-1">
+                  {u.is_locked && <Btn size="sm" onClick={() => desbloquear(u)}>Desbloquear</Btn>}
+                  <Btn size="sm" variant="ghost" onClick={() => reset(u)}>Restablecer contraseña</Btn>
+                  {!soyYo && (
+                    <button onClick={() => eliminar(u)} title="Quitar acceso"
+                      className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+        {data.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-zinc-400">Aún no hay usuarios de equipo.</td></tr>}
+      </Table>
+      <Card className="mt-6 max-w-2xl p-5">
+        <h3 className="mb-1 font-semibold">Nuevo usuario</h3>
+        <p className="mb-3 text-sm text-zinc-500">
+          Si no escribes contraseña se genera una <strong>temporal</strong>; en ambos casos el
+          usuario deberá cambiarla en su primer ingreso.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} placeholder="Usuario"
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+          <input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="Email (opcional)"
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+          <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm">
+            {ROLE_LEVELS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="Contraseña (opcional: se genera temporal)"
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">{ROLE_LEVELS.find((r) => r.value === f.role)?.desc}</p>
+        <div className="mt-3"><Btn onClick={crear}><Plus size={15} className="-mt-0.5 mr-1 inline" />Crear usuario</Btn></div>
+      </Card>
+      <Card className="mt-4 max-w-2xl p-4 text-sm text-zinc-600">
+        <div className="font-semibold text-zinc-800">Niveles de permisos</div>
+        <ul className="mt-1 list-disc space-y-0.5 pl-5">
+          {ROLE_LEVELS.map((r) => <li key={r.value}><strong>{r.label}:</strong> {r.desc}</li>)}
+        </ul>
+        <p className="mt-2 text-xs text-zinc-400">Los accesos de <strong>proveedores</strong> se crean en Catálogos → Proveedores → Crear acceso.</p>
+      </Card>
+    </div>
+  );
+}
+
 /* ============ CATÁLOGOS ============ */
 function TratadosView() {
   const { data, count } = useList<Treaty & { name: string; code: string }>(() => api.treaties());
@@ -1532,12 +1663,12 @@ function ProductosView() {
       )}
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
       {bulk === "products" && (
-        <CargaMasivaModal title="Carga masiva de productos / números de parte" onClose={() => setBulk(null)} onDone={reload}
+        <CargaMasivaModal specType="products" title="Carga masiva de productos / números de parte" onClose={() => setBulk(null)} onDone={reload}
           hint="Da de alta o actualiza muchos productos a la vez (incluye terminados con la columna 'tipo' = terminado). Los que YA existen se actualizan por SKU exacto; los nuevos se crean."
           templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} previewFn={(f) => api.bulkPreview("products", f)} />
       )}
       {bulk === "bom" && (
-        <CargaMasivaModal title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
+        <CargaMasivaModal specType="bom" title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
           hint="Arma las listas de materiales en lote: cada fila liga un producto (padre) con un insumo (componente) por SKU. Incluye unidad de medida y país de origen opcional."
           templateFn={() => api.bulkTemplate("bom")} importFn={(f) => api.bulkImport("bom", f)} />
       )}
@@ -1661,8 +1792,8 @@ function BomEditorModal({ product, allProducts, onClose }: {
 }
 
 // Modal reutilizable de carga masiva por Excel (.xlsx).
-function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, previewFn }: {
-  title: string; hint?: string; onClose: () => void; onDone: () => void;
+function CargaMasivaModal({ title, hint, specType, onClose, onDone, templateFn, importFn, previewFn }: {
+  title: string; hint?: string; specType?: string; onClose: () => void; onDone: () => void;
   templateFn: () => Promise<void>; importFn: (file: File) => Promise<unknown>;
   previewFn?: (file: File) => Promise<BulkPreview>;
 }) {
@@ -1672,6 +1803,16 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
   const [result, setResult] = useState<BulkResult | null>(null);
   const [ok, setOk] = useState(false);
   const [preview, setPreview] = useState<BulkPreview | null>(null);
+  // Especificación del layout: qué va en cada columna (misma fuente que la
+  // hoja "Instrucciones" de la plantilla, pero visible aquí sin descargar).
+  const [spec, setSpec] = useState<BulkSpec | null>(null);
+  const [specOpen, setSpecOpen] = useState(false);
+  useEffect(() => {
+    if (!specType) return;
+    let alive = true;
+    api.bulkSpec(specType).then((sp) => { if (alive) setSpec(sp); }).catch(() => {});
+    return () => { alive = false; };
+  }, [specType]);
   async function descargar() {
     setErr(""); try { await templateFn(); } catch (e) { setErr((e as Error).message); }
   }
@@ -1699,6 +1840,54 @@ function CargaMasivaModal({ title, hint, onClose, onDone, templateFn, importFn, 
   return (
     <Modal title={title} onClose={onClose} wide>
       {hint && <p className="mb-3 text-sm text-zinc-500">{hint}</p>}
+      {spec && (
+        <div className="mb-4 overflow-hidden rounded-lg border border-zinc-200">
+          <button onClick={() => setSpecOpen(!specOpen)}
+            className="flex w-full items-center justify-between bg-zinc-50 px-3 py-2 text-left text-sm font-semibold text-zinc-700 hover:bg-zinc-100">
+            <span>📋 ¿Qué va en cada columna del Excel?</span>
+            <ChevronDown size={15} className={cx("transition-transform", specOpen && "rotate-180")} />
+          </button>
+          {specOpen && (
+            <div className="p-3">
+              {spec.instructions.length > 0 && (
+                <ul className="mb-3 list-disc space-y-0.5 pl-5 text-xs text-zinc-600">
+                  {spec.instructions.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-200 text-left text-zinc-500">
+                      <th className="py-1.5 pr-3 font-semibold">Columna</th>
+                      <th className="py-1.5 pr-3 font-semibold">¿Obligatoria?</th>
+                      <th className="py-1.5 pr-3 font-semibold">Qué va</th>
+                      <th className="py-1.5 font-semibold">Ejemplo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spec.columns.map((c) => (
+                      <tr key={c.key} className="border-b border-zinc-100 align-top last:border-0">
+                        <td className="py-1.5 pr-3 font-medium text-zinc-800">{c.label}</td>
+                        <td className="py-1.5 pr-3">
+                          {c.required
+                            ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">Sí</span>
+                            : <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-500">Opcional</span>}
+                        </td>
+                        <td className="py-1.5 pr-3 text-zinc-600">{c.help}</td>
+                        <td className="py-1.5 font-mono text-[11px] text-zinc-500">{c.example}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-[11px] text-zinc-400">
+                La misma explicación viene dentro de la plantilla (hoja «Instrucciones») y en el
+                comentario de cada encabezado del Excel.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       <ol className="space-y-3 text-sm">
         <li className="flex items-center gap-3">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">1</span>
@@ -2928,7 +3117,7 @@ function AsignarProveedorView() {
         {!loading && sinProv.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-zinc-400">Todos los insumos tienen proveedor asignado. 🎉</td></tr>}
       </Table>
       {bulk && (
-        <CargaMasivaModal title="Asignar proveedor por layout" onClose={() => setBulk(false)} onDone={reload}
+        <CargaMasivaModal specType="supplier_assign" title="Asignar proveedor por layout" onClose={() => setBulk(false)} onDone={reload}
           hint="Sube el número de parte (SKU) y el código de proveedor. Si el proveedor no existe, se precarga automáticamente (complétalo luego en Proveedores)."
           templateFn={() => api.bulkTemplate("supplier_assign")} importFn={(f) => api.bulkImport("supplier_assign", f)} />
       )}
@@ -2942,6 +3131,7 @@ function InsumosView() {
   const [logFor, setLogFor] = useState<Product | null>(null);
   const [histFor, setHistFor] = useState<Product | null>(null);
   const [bomFor, setBomFor] = useState<Product | null>(null);
+  const [docsFor, setDocsFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
@@ -3025,6 +3215,8 @@ function InsumosView() {
               {p.kind !== "material" && (
                 <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
               )}
+              <button onClick={() => setDocsFor(p)} title="Certificados de origen (PDF) de este insumo"
+                className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600"><FileText size={15} /></button>
               <button onClick={() => setEditing(p)} title="Editar"
                 className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
               <button onClick={() => del(p)} title="Eliminar"
@@ -3041,13 +3233,14 @@ function InsumosView() {
       {logFor && <HsLogModal product={logFor} onClose={() => setLogFor(null)} />}
       {histFor && <PriceHistoryModal product={histFor} onClose={() => setHistFor(null)} />}
       {bomFor && <BomEditorModal product={bomFor} allProducts={data} onClose={() => setBomFor(null)} />}
+      {docsFor && <OriginDocsModal product={docsFor} suppliers={suppliers} onClose={() => setDocsFor(null)} />}
       {bulk === "products" && (
-        <CargaMasivaModal title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
+        <CargaMasivaModal specType="products" title="Carga masiva de números de parte" onClose={() => setBulk(null)} onDone={reload}
           hint="Da de alta o actualiza muchos insumos/productos a la vez. Los que YA existen NO se duplican: se actualizan sus datos (precio, descripción, HS, país…) con lo que traiga el Excel; los que no existen se crean. La columna 'tipo' acepta material, subensamble o terminado; el código de proveedor liga (o precarga) al proveedor."
           templateFn={() => api.bulkTemplate("products")} importFn={(f) => api.bulkImport("products", f)} previewFn={(f) => api.bulkPreview("products", f)} />
       )}
       {bulk === "bom" && (
-        <CargaMasivaModal title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
+        <CargaMasivaModal specType="bom" title="Carga masiva de BOM" onClose={() => setBulk(null)} onDone={reload}
           hint="Arma las listas de materiales en lote: cada fila liga un producto (padre) con un insumo (componente) por SKU. El país de origen es opcional (lo deja en manual)."
           templateFn={() => api.bulkTemplate("bom")} importFn={(f) => api.bulkImport("bom", f)} />
       )}
@@ -3065,6 +3258,13 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     currency: insumo?.currency ?? "USD", country_of_origin: insumo?.country_of_origin ?? "",
     is_active: insumo?.is_active ?? true,
   });
+  // Un PRODUCTO (terminado) se relaciona con CLIENTES que lo compran; un
+  // insumo/subproducto, con el PROVEEDOR que lo surte.
+  const esProducto = f.kind === "finished";
+  const clientes = useList<Party>(() => api.parties("customer"));
+  const [customers, setCustomers] = useState<number[]>(insumo?.customers ?? []);
+  const toggleCustomer = (id: number) =>
+    setCustomers((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
   const set = (k: keyof typeof f, v: string | number | boolean) => setF({ ...f, [k]: v });
   async function save() {
@@ -3074,11 +3274,14 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     setErr(""); setSaving(true);
     const payload = {
       sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
-      supplier: f.supplier === "" ? null : Number(f.supplier),
       hs_code: f.hs_code, unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
       is_active: f.is_active,
+      // Solo se envía la relación que aplica al tipo (PATCH parcial: la otra no se toca).
+      ...(esProducto
+        ? { customers }
+        : { supplier: f.supplier === "" ? null : Number(f.supplier) }),
     };
     try {
       if (insumo) await api.updateProduct(insumo.id, payload);
@@ -3114,12 +3317,31 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
           </Field>
         </div>
         <div className="col-span-2">
-          <Field label="Proveedor">
-            <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
-              <option value="">— Selecciona un proveedor —</option>
-              {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
-            </select>
-          </Field>
+          {esProducto ? (
+            <Field label="Cliente(s) que compran esta parte">
+              {clientes.data.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-400">
+                  No tienes clientes. Agrégalos en Catálogos → Clientes.
+                </p>
+              ) : (
+                <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 p-2">
+                  {clientes.data.map((c) => (
+                    <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-zinc-50">
+                      <input type="checkbox" checked={customers.includes(c.id)} onChange={() => toggleCustomer(c.id)} />
+                      <span>{c.name}{c.code ? ` (${c.code})` : ""}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </Field>
+          ) : (
+            <Field label="Proveedor">
+              <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+                <option value="">— Selecciona un proveedor —</option>
+                {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
+              </select>
+            </Field>
+          )}
         </div>
         <Field label="Precio unitario">
           <input type="number" step="0.0001" value={f.unit_cost} onChange={(e) => set("unit_cost", e.target.value)} className={inputCls} />
@@ -3136,6 +3358,142 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
       <div className="mt-5 flex justify-end gap-2">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : insumo ? "Guardar cambios" : "Crear número de parte"}</Btn>
+      </div>
+    </Modal>
+  );
+}
+/* ==== Certificados de origen (PDF) que la empresa ya tiene de un insumo ==== */
+function OriginDocsModal({ product, suppliers, onClose }: {
+  product: Product; suppliers: Party[]; onClose: () => void;
+}) {
+  const docs = useList<ProductOriginDoc>(() => api.productOriginDocs(product.id));
+  const treaties = useList<Treaty>(() => api.treaties());
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [f, setF] = useState({
+    supplier: (product.supplier ?? "") as number | "", treaty: "" as number | "",
+    valid_from: "", valid_to: "", notes: "",
+    register: false, is_originating: true, country: product.country_of_origin ?? "",
+  });
+  const set = (k: keyof typeof f, v: string | number | boolean) => setF({ ...f, [k]: v });
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  async function subir() {
+    if (!file) { setErr("Elige el archivo PDF del certificado."); return; }
+    if (file.size > 10_000_000) { setErr("El archivo es muy grande (máximo ~10 MB)."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const b64 = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(",")[1] ?? "");
+        r.onerror = rej; r.readAsDataURL(file);
+      });
+      await api.uploadProductOriginDoc(product.id, {
+        filename: file.name, content_type: file.type || "application/pdf", data_b64: b64,
+        supplier: f.supplier === "" ? null : f.supplier,
+        treaty: f.treaty === "" ? null : f.treaty,
+        valid_from: f.valid_from || null, valid_to: f.valid_to || null,
+        notes: f.notes, register_declaration: f.register,
+        is_originating: f.is_originating, country_of_origin: f.country,
+      });
+      setFile(null); if (fileInput.current) fileInput.current.value = "";
+      await docs.reload();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function borrar(d: ProductOriginDoc) {
+    if (!confirm(`¿Eliminar “${d.filename}”?${d.has_declaration ? " También se eliminará la declaración de origen que se registró con él." : ""}`)) return;
+    setErr(""); setBusy(true);
+    try { await api.deleteProductOriginDoc(product.id, d.id); await docs.reload(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  const kb = (n: number) => n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`;
+  return (
+    <Modal title={`Certificados de origen — ${product.sku}`} onClose={onClose}>
+      <p className="mb-4 text-sm text-zinc-500">
+        Si ya tienes el <strong>certificado de origen en PDF</strong> de este insumo (te lo dio tu
+        proveedor por fuera), súbelo aquí directamente: no hace falta que el proveedor entre a su
+        portal. Queda guardado como evidencia del expediente.
+      </p>
+      <div className="mb-4 overflow-hidden rounded-lg border border-zinc-200">
+        {docs.data.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">Aún no hay certificados subidos para este insumo.</div>}
+        {docs.data.map((d) => (
+          <div key={d.id} className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 last:border-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <FileText size={14} className="shrink-0 text-emerald-600" />
+                <button onClick={() => api.downloadProductOriginDoc(product.id, d.id, d.filename)}
+                  className="truncate text-sm font-medium text-blue-700 hover:underline" title="Descargar">{d.filename}</button>
+                {d.has_declaration && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">con declaración</span>}
+              </div>
+              <div className="mt-0.5 text-[11px] text-zinc-400">
+                {d.treaty_code ? `${treatyLabel(d.treaty_code)} · ` : ""}{d.supplier_name ? `${d.supplier_name} · ` : ""}
+                {d.valid_from && d.valid_to ? `vigencia ${d.valid_from} → ${d.valid_to} · ` : ""}{kb(d.size)}
+                {d.uploaded_by_name ? ` · subió ${d.uploaded_by_name}` : ""}{d.notes ? ` · ${d.notes}` : ""}
+              </div>
+            </div>
+            <button onClick={() => borrar(d)} disabled={busy} title="Eliminar"
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+          </div>
+        ))}
+      </div>
+      <h4 className="mb-2 text-sm font-semibold text-zinc-800">Subir certificado</h4>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <Field label="Archivo (PDF)">
+            <input ref={fileInput} type="file" accept=".pdf,application/pdf,image/*"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
+          </Field>
+        </div>
+        <Field label="Proveedor que lo emitió">
+          <select value={f.supplier} onChange={(e) => set("supplier", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+            <option value="">— Sin especificar —</option>
+            {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
+          </select>
+        </Field>
+        <Field label="Tratado que ampara">
+          <select value={f.treaty} onChange={(e) => set("treaty", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+            <option value="">— Sin especificar —</option>
+            {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
+          </select>
+        </Field>
+        <Field label="Vigente desde">
+          <input type="date" value={f.valid_from} onChange={(e) => set("valid_from", e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Vigente hasta">
+          <input type="date" value={f.valid_to} onChange={(e) => set("valid_to", e.target.value)} className={inputCls} />
+        </Field>
+        <div className="col-span-2">
+          <Field label="Notas (opcional)">
+            <input value={f.notes} onChange={(e) => set("notes", e.target.value)} className={inputCls} placeholder="Folio, observaciones…" />
+          </Field>
+        </div>
+      </div>
+      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
+        <input type="checkbox" checked={f.register} onChange={(e) => set("register", e.target.checked)} className="mt-0.5" />
+        <span>
+          <strong>Registrar también la declaración de origen</strong> con este certificado como
+          respaldo, para que el <strong>cálculo de origen</strong> la tome en cuenta (igual que si
+          el proveedor la hubiera respondido). Requiere tratado, vigencia y proveedor.
+        </span>
+      </label>
+      {f.register && (
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <Field label="¿El insumo es originario?">
+            <select value={f.is_originating ? "1" : "0"} onChange={(e) => set("is_originating", e.target.value === "1")} className={inputCls}>
+              <option value="1">Sí, originario</option>
+              <option value="0">No originario</option>
+            </select>
+          </Field>
+          <Field label="País de origen (ISO-2)">
+            <input value={f.country} onChange={(e) => set("country", e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))}
+              className={cx(inputCls, "uppercase")} placeholder="MX" maxLength={2} />
+          </Field>
+        </div>
+      )}
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+        <Btn onClick={subir} disabled={busy || !file}><Upload size={15} className="-mt-0.5 mr-1 inline" />{busy ? "Subiendo…" : "Subir certificado"}</Btn>
       </div>
     </Modal>
   );
@@ -3272,7 +3630,7 @@ function ProveedoresView({ me }: { me: Me }) {
           onClose={() => setAccess(null)} onChanged={reload} />
       )}
       {bulk && (
-        <CargaMasivaModal title="Carga masiva de proveedores" onClose={() => setBulk(false)} onDone={reload}
+        <CargaMasivaModal specType="suppliers" title="Carga masiva de proveedores" onClose={() => setBulk(false)} onDone={reload}
           hint="Da de alta o actualiza muchos proveedores a la vez. Se busca por código (o por nombre) para actualizar el existente."
           templateFn={() => api.bulkTemplate("suppliers")} importFn={(f) => api.bulkImport("suppliers", f)} />
       )}
@@ -3673,7 +4031,7 @@ function ClientesView() {
         onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); }} />}
       {layoutsFor && <ClientLayoutsModal client={layoutsFor} onClose={() => setLayoutsFor(null)} />}
       {bulk && (
-        <CargaMasivaModal title="Carga masiva de clientes" onClose={() => setBulk(false)} onDone={reload}
+        <CargaMasivaModal specType="customers" title="Carga masiva de clientes" onClose={() => setBulk(false)} onDone={reload}
           hint="Da de alta o actualiza muchos clientes (importadores) a la vez."
           templateFn={() => api.bulkTemplate("customers")} importFn={(f) => api.bulkImport("customers", f)} />
       )}
@@ -5635,7 +5993,7 @@ function SolicitudBloque({ items, prod, onDone }: {
             </div>
           )}
           {layoutDecl && (
-            <CargaMasivaModal title="Responder por layout (declaración de origen)" onClose={() => setLayoutDecl(false)} onDone={onDone}
+            <CargaMasivaModal specType="declaration_response" title="Responder por layout (declaración de origen)" onClose={() => setLayoutDecl(false)} onDone={onDone}
               hint="Descarga la plantilla (ya viene con todos los números de parte de esta solicitud), marca por cada uno si es originario, su país y los valores, y súbela. Cada parte quedará respondida."
               templateFn={() => api.solicitudDeclarationTemplate(pendingIds)}
               importFn={(f) => api.importSolicitudDeclarations(pendingIds, f)} />
@@ -6029,7 +6387,7 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
         {msg && <span className="text-xs text-emerald-700">{msg}</span>}
       </div>
       {layout && (
-        <CargaMasivaModal title="Responder por layout (Excel)" onClose={() => setLayout(false)} onDone={onDone}
+        <CargaMasivaModal specType="bom_response" title="Responder por layout (Excel)" onClose={() => setLayout(false)} onDone={onDone}
           hint="Para solicitudes grandes: descarga la plantilla, captura todos los componentes y súbela. Reemplaza el detalle del BOM; luego revisa, calcula el origen y envía."
           templateFn={() => api.solicitudBomTemplate()} importFn={(f) => api.importSolicitudBom(s.id, f)} />
       )}

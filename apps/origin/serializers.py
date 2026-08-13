@@ -1,8 +1,9 @@
 from rest_framework import serializers
 
 from apps.catalog.models import (
-    BOMComponent, CompanyProfile, Party, Product, SolicitationBOM,
-    SolicitationBOMLine, SolicitationRequest, SupplierDeclaration, SupplierProfile,
+    BOMComponent, CompanyProfile, Party, Product, ProductOriginDocument,
+    SolicitationBOM, SolicitationBOMLine, SolicitationRequest, SupplierDeclaration,
+    SupplierProfile,
 )
 from apps.origin.models import (
     Audit, AuditDocument, AuditFile, AuditItem, AutomotiveAssessment, Certificate,
@@ -112,6 +113,24 @@ class ProductSerializer(serializers.ModelSerializer):
         # El tenant y la sugerencia los gestiona el servidor (acciones dedicadas).
         read_only_fields = ["tenant", "hs_suggested", "hs_suggestion_status",
                             "hs_suggestion_note", "hs_suggested_by"]
+
+
+class ProductOriginDocumentSerializer(serializers.ModelSerializer):
+    """Metadatos del certificado de origen subido por la empresa (sin el
+    contenido base64: ese solo viaja en la descarga)."""
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True, default=None)
+    treaty_code = serializers.CharField(source="treaty.code", read_only=True, default=None)
+    uploaded_by_name = serializers.CharField(source="uploaded_by.username", read_only=True, default=None)
+    has_declaration = serializers.SerializerMethodField()
+
+    def get_has_declaration(self, obj):
+        return obj.declaration_id is not None
+
+    class Meta:
+        model = ProductOriginDocument
+        fields = ["id", "product", "supplier", "supplier_name", "treaty", "treaty_code",
+                  "filename", "content_type", "size", "valid_from", "valid_to",
+                  "notes", "uploaded_by_name", "has_declaration", "created_at"]
 
 
 class BOMComponentSerializer(serializers.ModelSerializer):

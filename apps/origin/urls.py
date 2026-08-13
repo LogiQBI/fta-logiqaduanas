@@ -2,8 +2,11 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from apps.origin import views
+from apps.tenants.views import CompanyUserViewSet
 
 router = DefaultRouter()
+# Usuarios del equipo de la empresa (los gestiona el ADMIN del tenant).
+router.register("company/users", CompanyUserViewSet, basename="company-users")
 router.register("treaties", views.TreatyViewSet)
 router.register("origin-rules", views.OriginRuleViewSet)
 router.register("parties", views.PartyViewSet)
@@ -28,5 +31,6 @@ urlpatterns = [
     path("verify/<str:token>/", views.verify_certificate, name="verify-certificate"),
     path("verify-origin/<str:token>/", views.verify_solicitation_certificate, name="verify-origin"),
     path("bulk/template/", views.bulk_template, name="bulk-template"),
+    path("bulk/spec/", views.bulk_spec, name="bulk-spec"),
     path("bulk/import/", views.bulk_import, name="bulk-import"),
 ] + router.urls
