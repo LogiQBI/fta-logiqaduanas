@@ -559,6 +559,10 @@ export const api = {
     req("/master/users/", { method: "POST", body: JSON.stringify(payload) }),
   masterUnlockUser: (id: number) =>
     req(`/master/users/${id}/unlock/`, { method: "POST" }),
+  // Restablece la contraseña de un usuario de cualquier empresa: se genera una
+  // temporal y el usuario deberá cambiarla en su próximo ingreso.
+  masterResetPassword: (id: number) =>
+    req(`/master/users/${id}/set_password/`, { method: "POST", body: JSON.stringify({}) }),
 };
 
 export type LicenseInfo = {

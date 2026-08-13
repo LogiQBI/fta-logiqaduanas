@@ -60,14 +60,25 @@ class UserAdminSerializer(serializers.ModelSerializer):
         queryset=Party.objects.all(), write_only=True, required=False, allow_null=True)
     membership = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
+    must_change_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "is_superuser", "is_active",
-                  "password", "tenant", "role", "party", "membership", "is_locked"]
+                  "password", "tenant", "role", "party", "membership", "is_locked",
+                  "must_change_password"]
 
     def get_is_locked(self, obj):
         return UserSecurity.objects.filter(user=obj, is_locked=True).exists()
+
+    def get_must_change_password(self, obj):
+        """Contraseña temporal pendiente de cambio (membresía o, para masters
+        sin membresía, el registro de seguridad)."""
+        m = obj.memberships.first()
+        if m:
+            return m.must_change_password
+        return UserSecurity.objects.filter(
+            user=obj, must_change_password=True).exists()
 
     def get_membership(self, obj):
         m = obj.memberships.select_related("tenant", "party").first()

@@ -1,5 +1,7 @@
 """Panel master (LogiQ): gestión de empresas, licencias y usuarios.
 Todo aquí requiere ser superusuario (perfil master)."""
+import secrets
+
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils.text import slugify
@@ -10,8 +12,14 @@ from rest_framework.response import Response
 
 from apps.catalog.models import BOMComponent
 from apps.origin.models import Certificate
-from apps.tenants.models import License, Tenant, UserSecurity
+from apps.tenants.models import License, Membership, Tenant, UserSecurity
 from apps.tenants.serializers import TenantSerializer, UserAdminSerializer
+
+
+def _temp_password(n=8):
+    """Contraseña temporal legible (sin caracteres ambiguos)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
+    return "".join(secrets.choice(alphabet) for _ in range(n))
 
 
 class IsMaster(IsAdminUser):
@@ -88,14 +96,19 @@ class MasterUserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def set_password(self, request, pk=None):
-        """Restablece la contraseña de un usuario: {password}."""
+        """Restablece la contraseña de un usuario de CUALQUIER empresa (o master).
+        Body {password?}: si no se da, se genera una TEMPORAL. En ambos casos el
+        usuario deberá cambiarla en su próximo ingreso; la respuesta trae la
+        contraseña para que el master se la comparta (no se vuelve a mostrar)."""
         user = self.get_object()
-        pwd = request.data.get("password")
-        if not pwd:
-            return Response({"error": "Falta 'password'."}, status=status.HTTP_400_BAD_REQUEST)
+        pwd = request.data.get("password") or _temp_password()
         user.set_password(pwd)
         user.save(update_fields=["password"])
-        return Response({"ok": True})
+        Membership.objects.filter(user=user).update(must_change_password=True)
+        sec, _ = UserSecurity.objects.get_or_create(user=user)
+        sec.must_change_password = True
+        sec.save(update_fields=["must_change_password", "updated_at"])
+        return Response({"username": user.username, "temp_password": pwd})
 
     @action(detail=True, methods=["post"])
     def unlock(self, request, pk=None):

@@ -91,6 +91,11 @@ class UserSecurity(TimeStampedModel):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="security")
     failed_attempts = models.PositiveIntegerField("Intentos fallidos", default=0)
     is_locked = models.BooleanField("Bloqueado", default=False)
+    # Espejo de Membership.must_change_password para usuarios SIN membresía
+    # (equipo master de LogiQ): reset de contraseña → cambio obligatorio.
+    must_change_password = models.BooleanField(
+        "Debe cambiar contraseña", default=False,
+        help_text="Activo cuando tiene una contraseña temporal; se apaga al cambiarla.")
 
     class Meta:
         verbose_name = "Seguridad de usuario"

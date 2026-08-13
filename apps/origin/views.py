@@ -1852,6 +1852,7 @@ def change_password(request):
     user.save(update_fields=["password"])
     # El token de autenticación NO cambia: el usuario sigue logueado.
     Membership.objects.filter(user=user).update(must_change_password=False)
+    UserSecurity.objects.filter(user=user).update(must_change_password=False)
     return Response({"ok": True})
 
 
@@ -1864,10 +1865,12 @@ def me(request):
     # esté "abriendo" una empresa (X-As-Tenant): en ese caso responde como admin
     # de esa empresa pero conservando is_master + impersonating.
     if request.user.is_superuser and not impersonating:
+        sec = UserSecurity.objects.filter(user=request.user).first()
         return Response({
             "username": request.user.username,
             "role": "master", "role_display": "Master (LogiQ)",
             "is_master": True, "is_supplier": False, "impersonating": False,
+            "must_change_password": bool(sec and sec.must_change_password),
             "tenant": None, "supplier": None,
         })
     m = active_membership(request)

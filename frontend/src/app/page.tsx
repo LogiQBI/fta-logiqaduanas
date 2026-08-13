@@ -955,10 +955,12 @@ function EditTenantModal({ tenant, onClose, onSaved }: {
 }
 
 function UsuariosView() {
-  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; membership: { tenant: string; role_display: string; party: string | null } | null }>(() => api.masterUsers());
+  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; must_change_password: boolean; membership: { tenant: string; role_display: string; party: string | null } | null }>(() => api.masterUsers());
   const tenants = useList<MasterTenant>(() => api.masterTenants());
   const [f, setF] = useState({ username: "", password: "", tenant: "" as number | "", role: "admin" });
   const [msg, setMsg] = useState("");
+  // Última contraseña temporal generada (para mostrarla/copiarla una sola vez).
+  const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
   const esMaster = f.role === "master";
   async function create() {
     if (esMaster) {
@@ -978,10 +980,30 @@ function UsuariosView() {
     setMsg(""); try { await api.masterUnlockUser(id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
+  async function resetPwd(u: { id: number; username: string }) {
+    if (!confirm(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`)) return;
+    setMsg("");
+    try {
+      const r = await api.masterResetPassword(u.id) as { username: string; temp_password: string };
+      setTemp({ username: u.username, password: r.temp_password });
+      await reload();
+    } catch (e) { setMsg((e as Error).message); }
+  }
   return (
     <div>
       <PageTitle title="Usuarios" desc="Accesos de empresas y proveedores." />
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
+      {temp && (
+        <div className="mb-4 max-w-xl rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+          <div className="font-semibold text-emerald-800">Contraseña temporal de “{temp.username}”</div>
+          <div className="mt-1 flex items-center gap-2">
+            <code className="rounded bg-white px-2 py-1 font-mono text-emerald-900 ring-1 ring-emerald-200">{temp.password}</code>
+            <button onClick={() => navigator.clipboard?.writeText(temp.password)}
+              className="text-xs text-emerald-700 hover:underline">Copiar</button>
+          </div>
+          <div className="mt-1 text-xs text-emerald-700">Cópiala y compártela con el usuario: deberá cambiarla en su próximo ingreso. No se volverá a mostrar.</div>
+        </div>
+      )}
       <Table head={["Usuario", "Empresa", "Rol", "Proveedor", "Estado", ""]}>
         {data.map((u) => (
           <tr key={u.id}>
@@ -993,9 +1015,13 @@ function UsuariosView() {
               {u.is_locked
                 ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Bloqueado</span>
                 : <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Activo</span>}
+              {u.must_change_password && <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">contraseña temporal</span>}
             </td>
             <td className="px-4 py-3 text-right">
-              {u.is_locked && <Btn size="sm" onClick={() => unlock(u.id)}>Desbloquear</Btn>}
+              <div className="flex items-center justify-end gap-1">
+                {u.is_locked && <Btn size="sm" onClick={() => unlock(u.id)}>Desbloquear</Btn>}
+                <Btn size="sm" variant="ghost" onClick={() => resetPwd(u)}>Restablecer contraseña</Btn>
+              </div>
             </td>
           </tr>
         ))}
