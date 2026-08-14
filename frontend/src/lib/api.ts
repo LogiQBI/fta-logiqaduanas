@@ -131,6 +131,7 @@ export type BulkPreview = {
 export type EmittedCertificate = {
   id: number; folio: string;
   certifier_type?: string; certifier_type_display?: string; invoice_number?: string;
+  language?: string;
   certifier_data: Record<string, string>; importer_data: Record<string, string>;
   producer_data?: Record<string, string>; exporter_data?: Record<string, string>;
   blanket_from: string | null; blanket_to: string | null; issued_at: string;
@@ -184,7 +185,7 @@ export type ProductChangeLog = {
   changed_by: string | null; created_at: string;
 };
 export type Product = {
-  id: number; sku: string; description: string; kind: string;
+  id: number; sku: string; description: string; description_en?: string; kind: string;
   kind_display?: string; hs_code: string; unit_cost: string; conversion_cost?: string;
   currency: string; country_of_origin: string; supplier: number | null;
   supplier_name?: string | null; supplier_code?: string | null;

@@ -2956,6 +2956,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
 }) {
   const [f, setF] = useState({
     sku: product?.sku ?? "", description: product?.description ?? "",
+    description_en: product?.description_en ?? "",
     kind: product?.kind ?? "finished", hs_code: product?.hs_code ?? "",
     unit_cost: product?.unit_cost ?? "0", currency: product?.currency ?? "USD",
     conversion_cost: product?.conversion_cost ?? "0",
@@ -2974,7 +2975,8 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
     }
     setErr(""); setSaving(true);
     const payload = {
-      sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
+      sku: f.sku.trim(), description: f.description.trim(),
+      description_en: f.description_en.trim(), kind: f.kind,
       hs_code: f.hs_code.trim(), unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD", conversion_cost: f.conversion_cost || "0",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
@@ -2999,8 +3001,13 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
           </select>
         </Field>
         <div className="col-span-2">
-          <Field label="Descripción">
+          <Field label="Descripción (español)">
             <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} placeholder="Nombre del producto" />
+          </Field>
+        </div>
+        <div className="col-span-2">
+          <Field label="Descripción en inglés (para el certificado, opcional)">
+            <input value={f.description_en} onChange={(e) => set("description_en", e.target.value)} className={inputCls} placeholder="Product name in English" />
           </Field>
         </div>
         <Field label="Fracción arancelaria (HS, 6 dígitos)">
@@ -3252,6 +3259,7 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
 }) {
   const [f, setF] = useState({
     sku: insumo?.sku ?? "", description: insumo?.description ?? "",
+    description_en: insumo?.description_en ?? "",
     kind: insumo?.kind ?? "material",
     supplier: (insumo?.supplier ?? "") as number | "",
     hs_code: insumo?.hs_code ?? "", unit_cost: insumo?.unit_cost ?? "0",
@@ -3273,7 +3281,8 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     }
     setErr(""); setSaving(true);
     const payload = {
-      sku: f.sku.trim(), description: f.description.trim(), kind: f.kind,
+      sku: f.sku.trim(), description: f.description.trim(),
+      description_en: f.description_en.trim(), kind: f.kind,
       hs_code: f.hs_code, unit_cost: f.unit_cost || "0",
       currency: f.currency || "USD",
       country_of_origin: f.country_of_origin.trim().toUpperCase(),
@@ -3312,8 +3321,13 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
           <HsInput value={f.hs_code} onChange={(v) => set("hs_code", v)} />
         </Field>
         <div className="col-span-2">
-          <Field label="Descripción">
+          <Field label="Descripción (español)">
             <input value={f.description} onChange={(e) => set("description", e.target.value)} className={inputCls} placeholder="Nombre del insumo" />
+          </Field>
+        </div>
+        <div className="col-span-2">
+          <Field label="Descripción en inglés (para el certificado, opcional)">
+            <input value={f.description_en} onChange={(e) => set("description_en", e.target.value)} className={inputCls} placeholder="Part name in English" />
           </Field>
         </div>
         <div className="col-span-2">
@@ -4696,6 +4710,8 @@ function CertificadosEmitirView() {
   const [clientId, setClientId] = useState<number | "">("");
   const [from, setFrom] = useState(""); const [to, setTo] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
+  // Idioma de las DESCRIPCIONES del documento (el layout no cambia).
+  const [lang, setLang] = useState<"es" | "en">("es");
   const [profile, setProfile] = useState<ProfileShape | null>(null);
   const [msg, setMsg] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const emitidos = useList<EmittedCertificate>(() => api.certificates());
@@ -4753,13 +4769,15 @@ function CertificadosEmitirView() {
     const treaty = treatiesL.data.find((x) => x.id === Number(treatyId));
     if (!p || !client || !treaty || !profile) { setErr("Elige producto, tratado y cliente."); return; }
     setErr("");
-    generarCertificadoEmpresa({ product: p, treatyCode: treaty.code, client, profile, qual: qualDe(p.id), blanketFrom: from, blanketTo: to });
+    // La vista previa respeta el idioma elegido (descripción EN con fallback a ES).
+    const pLang = lang === "en" && p.description_en ? { ...p, description: p.description_en } : p;
+    generarCertificadoEmpresa({ product: pLang, treatyCode: treaty.code, client, profile, qual: qualDe(p.id), blanketFrom: from, blanketTo: to });
   }
   async function emitirRegistrar() {
     if (!selIds.length || !treatyId || !clientId) { setErr("Agrega al menos una parte y elige tratado y cliente."); return; }
     setBusy(true); setErr(""); setMsg("");
     try {
-      const cert = await api.emitCertificate({ products: selIds, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null, invoice_number: invoiceNo || "" });
+      const cert = await api.emitCertificate({ products: selIds, treaty: treatyId, client: clientId, blanket_from: from || null, blanket_to: to || null, invoice_number: invoiceNo || "", language: lang });
       setMsg(`${cert.origin_status === "QUALIFIES" ? "Certificado" : "Affidavit"} ${cert.folio} emitido y registrado con ${selIds.length} parte(s).`);
       setSelIds([]);
       await emitidos.reload();
@@ -4810,12 +4828,23 @@ function CertificadosEmitirView() {
             <Field label="Periodo desde"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} /></Field>
             <Field label="Periodo hasta"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} /></Field>
           </div>
-          <div className="sm:col-span-2">
-            <Field label="Número de factura (solo envío único, opcional)">
-              <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={inputCls} placeholder="Ej. INV-2026-00123" />
-            </Field>
-          </div>
+          <Field label="Número de factura (solo envío único, opcional)">
+            <input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} className={inputCls} placeholder="Ej. INV-2026-00123" />
+          </Field>
+          <Field label="Idioma de las descripciones">
+            <select value={lang} onChange={(e) => setLang(e.target.value as "es" | "en")} className={inputCls}>
+              <option value="es">Español (como se capturaron)</option>
+              <option value="en">Inglés (usa la descripción en inglés de cada parte)</option>
+            </select>
+          </Field>
         </div>
+        {lang === "en" && (
+          <p className="mt-2 text-xs text-amber-700">
+            Se imprime la <strong>descripción en inglés</strong> de cada parte; si a alguna le
+            falta, se usa su descripción en español. Captúrala en Números de parte (o por carga
+            masiva, columna «Descripción en inglés»).
+          </p>
+        )}
         {seleccionadas.length > 0 && (
           <div className="mt-4">
             <div className="mb-1 text-xs font-semibold text-zinc-700">{seleccionadas.length} parte(s) en el documento:</div>

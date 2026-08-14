@@ -89,6 +89,8 @@ def import_products(tenant, rows, user):
                     # Actualiza SOLO lo que venga con valor (no pisa con vacíos).
                     if _has(r.get("descripcion")):
                         existing.description = str(r.get("descripcion")).strip()
+                    if _has(r.get("descripcion_en")):
+                        existing.description_en = str(r.get("descripcion_en")).strip()
                     if _has(r.get("tipo")):
                         existing.kind = KIND_MAP.get(str(r.get("tipo")).strip().lower(), existing.kind)
                     if _has(r.get("hs_code")):
@@ -116,6 +118,7 @@ def import_products(tenant, rows, user):
                     final = Product.objects.create(
                         tenant=tenant, sku=sku,
                         description=str(r.get("descripcion") or "").strip(),
+                        description_en=str(r.get("descripcion_en") or "").strip(),
                         kind=kind, hs_code=_digits(r.get("hs_code"), 8),
                         unit_cost=_dec(r.get("costo_unitario")),
                         currency=(str(r.get("moneda") or "USD").strip().upper() or "USD")[:3],
@@ -310,7 +313,8 @@ SPECS = {
         "sheet": "Insumos y productos",
         "columns": [
             ("sku", "SKU / Núm. de parte", "MAT-001"),
-            ("descripcion", "Descripción", "Lámina de acero"),
+            ("descripcion", "Descripción (español)", "Lámina de acero"),
+            ("descripcion_en", "Descripción en inglés (opcional)", "Steel sheet"),
             ("tipo", "Tipo (material/subensamble/terminado)", "material"),
             ("hs_code", "Fracción HS (6 díg.)", "720839"),
             ("costo_unitario", "Costo unitario", "30.00"),
@@ -328,7 +332,8 @@ SPECS = {
             "Una fila por número de parte. La fila de ejemplo (fila 2) puedes borrarla o sobreescribirla."),
         "help": {
             "sku": {"req": True, "help": "Clave única del número de parte. Si ya existe, se actualiza."},
-            "descripcion": {"req": False, "help": "Nombre o descripción del insumo/producto."},
+            "descripcion": {"req": False, "help": "Nombre o descripción del insumo/producto (en español)."},
+            "descripcion_en": {"req": False, "help": "Descripción en INGLÉS: es la que se imprime cuando el certificado se emite en inglés (si falta, se usa la de español)."},
             "tipo": {"req": False, "help": "material, subensamble o terminado. Si se omite, queda como material."},
             "hs_code": {"req": False, "help": _HS_HELP},
             "costo_unitario": {"req": False, "help": "Costo unitario; solo número (ej. 30.00)."},
@@ -547,6 +552,13 @@ def read_rows(file, columns):
     devuelve los renglones de datos como dicts con las CLAVES internas."""
     wb = openpyxl.load_workbook(file, data_only=True)
     label_to_key = {label.strip().lower(): key for key, label, _ in columns}
+    # Alias sin el sufijo entre paréntesis, para que sigan funcionando archivos
+    # llenados con plantillas viejas (ej. "Descripción" ↔ "Descripción (español)").
+    import re as _re
+    for key, label, _ in columns:
+        base = _re.sub(r"\s*\([^)]*\)\s*$", "", label).strip().lower()
+        if base and base not in label_to_key:
+            label_to_key[base] = key
 
     found = None  # (worksheet, índice_fila_encabezado, idx_to_key)
     for ws in wb.worksheets:

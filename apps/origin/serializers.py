@@ -280,8 +280,12 @@ class OriginAnalysisDetailSerializer(OriginAnalysisSerializer):
 
 class CertificateSerializer(serializers.ModelSerializer):
     product_sku = serializers.CharField(source="qualification.product.sku", read_only=True)
-    product_description = serializers.CharField(source="qualification.product.description", read_only=True)
+    # Descripción en el IDIOMA del documento (es/en, elegido al emitir).
+    product_description = serializers.SerializerMethodField()
     product_hs = serializers.CharField(source="qualification.product.hs_code", read_only=True)
+
+    def get_product_description(self, obj):
+        return obj.qualification.product.description_in(obj.language)
     treaty_code = serializers.CharField(source="qualification.treaty.code", read_only=True)
     treaty_label = serializers.SerializerMethodField()
     criterion = serializers.CharField(source="qualification.criterion", read_only=True)
@@ -311,7 +315,8 @@ class CertificateSerializer(serializers.ModelSerializer):
         model = Certificate
         fields = ["id", "folio", "certifier_type", "certifier_type_display", "certifier_data",
                   "exporter_data", "producer_data", "importer_data", "blanket_from", "blanket_to",
-                  "invoice_number", "issued_at", "product_sku", "product_description", "product_hs",
+                  "invoice_number", "language", "issued_at",
+                  "product_sku", "product_description", "product_hs",
                   "treaty_code", "treaty_label", "criterion", "origin_status", "rvc_value",
                   "verify_url", "qr_data_uri", "total_value", "vnm", "originating_value",
                   "country_of_origin", "pref_letter", "pref_label", "rule_text", "items",
@@ -385,7 +390,7 @@ class CertificateSerializer(serializers.ModelSerializer):
                 pass
             out.append({
                 "product": q.product_id, "product_sku": q.product.sku,
-                "product_description": q.product.description,
+                "product_description": q.product.description_in(obj.language),
                 "product_hs": q.product.hs_code,
                 "origin_status": q.status, "criterion": q.criterion,
                 "rvc_value": str(q.rvc_value) if q.rvc_value is not None else None,

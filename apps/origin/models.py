@@ -152,6 +152,13 @@ class Certificate(TenantOwnedModel):
     blanket_to = models.DateField("Periodo (hasta)", null=True, blank=True)
     # Anexo 5-A elemento 6(b): número de factura para envío único (opcional).
     invoice_number = models.CharField("Número de factura (envío único)", max_length=60, blank=True)
+    # Idioma del documento: define en qué idioma salen las DESCRIPCIONES de los
+    # bienes (el layout del certificado no cambia; ya está validado en aduana).
+    class Language(models.TextChoices):
+        ES = "es", "Español"
+        EN = "en", "Inglés"
+    language = models.CharField("Idioma del documento", max_length=2,
+                                choices=Language.choices, default=Language.ES)
     issued_at = models.DateTimeField("Emitido el", auto_now_add=True)
     issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL)

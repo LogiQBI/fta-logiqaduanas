@@ -426,7 +426,7 @@ def certificate_elements(certificate):
         "4_productor": certificate.producer_data,
         "5_importador": certificate.importer_data,
         "6_descripcion_y_hs": {
-            "descripcion": prod.description,
+            "descripcion": prod.description_in(certificate.language),
             "hs_6": (prod.hs_code or "")[:6],
         },
         "7_criterio_de_origen": q.criterion,
@@ -731,8 +731,8 @@ def build_certificate_xlsx(cert):
             # 9. Method of Qualification: TS / NC / TV / WO.
             method = usmca_method_of_qualification(qq) or "—"
         ws.row_dimensions[r].height = 58
-        for i, v in enumerate([pp.sku, pp.description, hs_fmt, crit, cert_ind,
-                               method, pais_origen]):
+        for i, v in enumerate([pp.sku, pp.description_in(cert.language), hs_fmt,
+                               crit, cert_ind, method, pais_origen]):
             c = ws.cell(row=r, column=1 + i, value=v)
             c.border = box; c.alignment = Alignment(wrap_text=True, vertical="top")
         r += 1

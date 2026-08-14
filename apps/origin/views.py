@@ -1061,6 +1061,8 @@ class CertificateViewSet(TenantScopedViewSet):
             blanket_from=parse_date(request.data.get("blanket_from") or "") or None,
             blanket_to=parse_date(request.data.get("blanket_to") or "") or None,
             invoice_number=(request.data.get("invoice_number") or "").strip()[:60],
+            # Idioma del documento: define el idioma de las DESCRIPCIONES.
+            language=("en" if request.data.get("language") == "en" else "es"),
             issued_by=request.user)
         cert.qualifications.set(quals)  # todas las partes del documento (multi-línea)
         return Response(s.CertificateSerializer(cert, context={"request": request}).data,
@@ -1762,7 +1764,8 @@ def verify_certificate(request, token):
                 ("Folio", "Document No.", cert.folio),
                 ("Documento", "Document type", f"{doc_es} / {doc_en}"),
                 ("Producto(s)", "Product(s)",
-                 "; ".join(f"{x.product.sku} — {x.product.description}" for x in quals)),
+                 "; ".join(f"{x.product.sku} — {x.product.description_in(cert.language)}"
+                           for x in quals)),
                 ("Fracción (HS)", "HS classification",
                  ", ".join(sorted({x.product.hs_code or "—" for x in quals}))),
                 ("Tratado", "Trade agreement", treaty),

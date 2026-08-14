@@ -124,6 +124,9 @@ class Product(TenantOwnedModel):
 
     sku = models.CharField("SKU / Núm. de parte", max_length=100)
     description = models.CharField("Descripción", max_length=255)
+    # Descripción en INGLÉS: la que se imprime en el certificado cuando se
+    # emite en inglés (si falta, se usa la descripción normal).
+    description_en = models.CharField("Descripción (inglés)", max_length=255, blank=True)
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.FINISHED)
     hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10, blank=True,
                                help_text="6 a 10 dígitos")
@@ -169,6 +172,13 @@ class Product(TenantOwnedModel):
         ordering = ["sku"]
         verbose_name = "Producto / Material"
         verbose_name_plural = "Productos / Materiales"
+
+    def description_in(self, lang):
+        """Descripción en el idioma del documento ('en' usa la de inglés si
+        existe; en su defecto, la normal)."""
+        if lang == "en" and self.description_en:
+            return self.description_en
+        return self.description
 
     def __str__(self):
         return f"{self.sku} — {self.description}"
