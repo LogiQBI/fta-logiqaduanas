@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
+import { initLangFromStorage, setLang as setAppLang, t as tr, useLang } from "@/lib/i18n";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -40,6 +41,9 @@ export default function Page() {
   const [me, setMe] = useState<Me | null>(null);
   const [lic, setLic] = useState<LicenseInfo | null>(null);
   const [ready, setReady] = useState(false);
+  // Idioma: re-renderiza TODO al cambiar; se carga el guardado tras montar.
+  useLang();
+  useEffect(() => { initLangFromStorage(); }, []);
 
   async function loadMe() {
     try {
@@ -206,6 +210,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo center big />
           <p className="mt-3 text-sm text-zinc-500">Sistema de gestión de origen</p>
+          <div className="mt-2 flex justify-center"><LangToggle /></div>
         </div>
         <form onSubmit={submit} className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           {adminMode ? (
@@ -459,6 +464,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             </div>
           )}
           <div className="ml-auto flex items-center gap-3">
+          <LangToggle />
           <ThemeToggle />
           <div className="relative">
             <button onClick={() => setMenuOpen(!menuOpen)}
@@ -589,6 +595,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 const inputCls = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-blue-500";
+
+// Botón de idioma ES/EN. Persiste la elección; el cambio re-renderiza todo
+// (useLang en la raíz) y el runtime JSX traduce con el diccionario.
+function LangToggle() {
+  const lang = useLang();
+  return (
+    <button onClick={() => setAppLang(lang === "es" ? "en" : "es")}
+      title={lang === "es" ? "Switch to English" : "Cambiar a español"}
+      className="grid h-9 min-w-9 place-items-center rounded-lg border border-zinc-200 px-1.5 text-xs font-bold text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700">
+      {lang === "es" ? "EN" : "ES"}
+    </button>
+  );
+}
 
 // Botón de modo día/noche. Persiste la elección en localStorage.
 function ThemeToggle() {
@@ -857,7 +876,7 @@ function EmpresasView() {
               <span className="mr-2 inline-block"><Btn size="sm" onClick={() => { setAsTenant(t.id); window.location.reload(); }}>Abrir empresa</Btn></span>
               <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
               <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLicFor(t)}>Licencia</Btn></span>
-              <Btn size="sm" variant="danger" onClick={() => { if (confirm(`¿Eliminar ${t.name}?`)) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>
+              <Btn size="sm" variant="danger" onClick={() => { if (confirm(tr(`¿Eliminar ${t.name}?`))) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>
             </td>
           </tr>
         ))}
@@ -984,7 +1003,7 @@ function UsuariosView() {
     catch (e) { setMsg((e as Error).message); }
   }
   async function resetPwd(u: { id: number; username: string }) {
-    if (!confirm(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`)) return;
+    if (!confirm(tr(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`))) return;
     setMsg("");
     try {
       const r = await api.masterResetPassword(u.id) as { username: string; temp_password: string };
@@ -1079,7 +1098,7 @@ function EquipoView({ me }: { me: Me }) {
     } catch (e) { setErr((e as Error).message); }
   }
   async function reset(u: CompanyUser) {
-    if (!confirm(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`)) return;
+    if (!confirm(tr(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`))) return;
     setErr(""); setMsg("");
     try {
       const r = await api.companyResetPassword(u.id);
@@ -1096,7 +1115,7 @@ function EquipoView({ me }: { me: Me }) {
     catch (e) { setErr((e as Error).message); }
   }
   async function eliminar(u: CompanyUser) {
-    if (!confirm(`¿Quitar el acceso de “${u.username}”? Ya no podrá entrar al sistema.`)) return;
+    if (!confirm(tr(`¿Quitar el acceso de “${u.username}”? Ya no podrá entrar al sistema.`))) return;
     setErr(""); setMsg("");
     try { await api.companyDeleteUser(u.id); if (temp?.username === u.username) setTemp(null); await reload(); }
     catch (e) { setErr((e as Error).message); }
@@ -1431,7 +1450,7 @@ function ReglasView({ me }: { me: Me }) {
   const { data, count, loading, reload } = useList<OriginRule>(
     () => api.rules(buildParams()), [treaty, hs, pageSize]);
   async function del(r: OriginRule) {
-    if (!confirm(`¿Eliminar la regla ${formatHs(r.hs_pattern)}?`)) return;
+    if (!confirm(tr(`¿Eliminar la regla ${formatHs(r.hs_pattern)}?`))) return;
     setMsg(""); try { await api.deleteRule(r.id); await reload(); } catch (e) { setMsg((e as Error).message); }
   }
   function exportar() {
@@ -1611,7 +1630,7 @@ function ProductosView() {
   const [bomFor, setBomFor] = useState<Product | null>(null);
   const [bulk, setBulk] = useState<"products" | "bom" | null>(null);
   async function del(p: Product) {
-    if (!confirm(`¿Eliminar el producto “${p.sku}”?`)) return;
+    if (!confirm(tr(`¿Eliminar el producto “${p.sku}”?`))) return;
     setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
@@ -1707,7 +1726,7 @@ function BomEditorModal({ product, allProducts, onClose }: {
     catch (e) { setErr((e as Error).message); }
   }
   async function quitar(c: BomComponent) {
-    if (!confirm(`¿Quitar “${c.component_sku}” del BOM?`)) return;
+    if (!confirm(tr(`¿Quitar “${c.component_sku}” del BOM?`))) return;
     try { await api.deleteBomComponent(c.id); await reload(); }
     catch (e) { setErr((e as Error).message); }
   }
@@ -2670,7 +2689,7 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
     catch (e) { setMsg((e as Error).message); }
   }
   async function borrar(id: number) {
-    if (!confirm("¿Borrar este análisis del histórico? La calificación vigente no cambia.")) return;
+    if (!confirm(tr("¿Borrar este análisis del histórico? La calificación vigente no cambia."))) return;
     try {
       await api.deleteOriginAnalysis(id);
       if (openId === id) { setOpenId(null); setDetail(null); }
@@ -3149,7 +3168,7 @@ function InsumosView() {
       vis.map((p) => [p.sku, p.kind_display ?? p.kind, p.description, p.supplier_name ?? "", p.hs_code ?? "", p.country_of_origin ?? "", p.unit_cost ?? "", p.currency ?? "", p.is_active ? "Activo" : "Inactivo"]));
   }
   async function del(p: Product) {
-    if (!confirm(`¿Eliminar el número de parte “${p.sku}”?`)) return;
+    if (!confirm(tr(`¿Eliminar el número de parte “${p.sku}”?`))) return;
     setMsg(""); try { await api.deleteProduct(p.id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
@@ -3414,7 +3433,7 @@ function OriginDocsModal({ product, suppliers, onClose }: {
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function borrar(d: ProductOriginDoc) {
-    if (!confirm(`¿Eliminar “${d.filename}”?${d.has_declaration ? " También se eliminará la declaración de origen que se registró con él." : ""}`)) return;
+    if (!confirm(tr(`¿Eliminar “${d.filename}”?${d.has_declaration ? " También se eliminará la declaración de origen que se registró con él." : ""}`))) return;
     setErr(""); setBusy(true);
     try { await api.deleteProductOriginDoc(product.id, d.id); await docs.reload(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -3593,7 +3612,7 @@ function ProveedoresView({ me }: { me: Me }) {
       vis.map((p) => [p.code ?? "", p.name, p.country ?? "", p.tax_id ?? "", p.email ?? "", p.phone ?? ""]));
   }
   async function del(p: Party) {
-    if (!confirm(`¿Eliminar el proveedor “${p.name}”?`)) return;
+    if (!confirm(tr(`¿Eliminar el proveedor “${p.name}”?`))) return;
     setMsg(""); try { await api.deleteParty(p.id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
@@ -3734,7 +3753,7 @@ function UsersModal({ party, tenantSlug, onClose, onChanged }: {
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function remove(u: SupplierUser) {
-    if (!confirm(`¿Quitar el usuario “${u.username}”? Ya no podrá entrar.`)) return;
+    if (!confirm(tr(`¿Quitar el usuario “${u.username}”? Ya no podrá entrar.`))) return;
     setErr(""); setBusy(true);
     try { await api.removeSupplierUser(party.id, u.id); if (temp?.username === u.username) setTemp(null); await refresh(); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -3894,7 +3913,7 @@ function ClientLayoutsModal({ client, onClose }: { client: Party; onClose: () =>
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function del(l: ClientLayout) {
-    if (!confirm(`¿Eliminar la plantilla ${l.treaty_code} de ${client.name}?`)) return;
+    if (!confirm(tr(`¿Eliminar la plantilla ${l.treaty_code} de ${client.name}?`))) return;
     try { await api.deleteClientLayout(l.id); setMode(null); await load(); }
     catch (e) { setErr((e as Error).message); }
   }
@@ -4010,7 +4029,7 @@ function ClientesView() {
       vis.map((p) => [p.name, p.country ?? "", p.tax_id ?? "", p.email ?? "", p.phone ?? ""]));
   }
   async function del(p: Party) {
-    if (!confirm(`¿Eliminar el cliente “${p.name}”?`)) return;
+    if (!confirm(tr(`¿Eliminar el cliente “${p.name}”?`))) return;
     setMsg(""); try { await api.deleteParty(p.id); await reload(); }
     catch (e) { setMsg((e as Error).message); }
   }
@@ -5975,8 +5994,8 @@ function SolicitudBloque({ items, prod, onDone }: {
   async function enviarTodo() {
     const noListos = pendientesItems.filter((i) => !i.submitted_bom?.origin_status);
     if (listas.length === 0) { setMsg("No hay productos listos para enviar (calcula el origen primero)."); return; }
-    if (noListos.length && !confirm(
-      `${noListos.length} producto(s) aún no tienen origen calculado y NO se enviarán. ¿Enviar los ${listas.length} listos?`)) return;
+    if (noListos.length && !confirm(tr(
+      `${noListos.length} producto(s) aún no tienen origen calculado y NO se enviarán. ¿Enviar los ${listas.length} listos?`))) return;
     setBusy(true);
     try { for (const i of listas) await api.sendBom(i.id); await onDone(); }
     catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
@@ -6378,9 +6397,9 @@ function BomCard({ s, onDone }: { s: Solicitation; onDone: () => void }) {
     setErr("");
     // ¿Es idéntico a lo traído de un periodo anterior? -> advertir.
     const unchanged = broughtSnap !== null && bomSnapshot(lines, ruleId) === broughtSnap;
-    if (unchanged && !confirm(
+    if (unchanged && !confirm(tr(
       "La información no ha cambiado desde el último periodo. Verifica si los precios y " +
-      "orígenes de tu BOM no han cambiado. ¿Deseas continuar y enviar igual?")) return;
+      "orígenes de tu BOM no han cambiado. ¿Deseas continuar y enviar igual?"))) return;
     setSaving(true);
     try { await api.sendBom(s.id, unchanged); onDone(); }
     catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
