@@ -191,13 +191,14 @@ class SupplierProfileSerializer(serializers.ModelSerializer):
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+    tenant_slug = serializers.CharField(source="tenant.slug", read_only=True)
 
     class Meta:
         model = CompanyProfile
-        fields = ["id", "tenant", "tenant_name", "legal_name", "tax_id", "address",
-                  "city", "state", "postal_code", "country", "contact_name",
-                  "contact_email", "contact_phone", "signatory_name",
-                  "signatory_title", "signature_png", "logo_png"]
+        fields = ["id", "tenant", "tenant_name", "tenant_slug", "legal_name",
+                  "tax_id", "address", "city", "state", "postal_code", "country",
+                  "contact_name", "contact_email", "contact_phone",
+                  "signatory_name", "signatory_title", "signature_png", "logo_png"]
         read_only_fields = ["tenant"]
 
     def validate_signature_png(self, value):

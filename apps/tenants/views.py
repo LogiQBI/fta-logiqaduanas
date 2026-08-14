@@ -48,15 +48,19 @@ class MasterTenantViewSet(viewsets.ModelViewSet):
         License.objects.get_or_create(tenant=tenant)
 
     def perform_update(self, serializer):
-        """Al cambiar el nombre/RFC del tenant (solo master), se sincroniza con
-        los Datos de la empresa (razón social/RFC del certificado)."""
+        """El nombre/RFC del tenant (master) es la identidad de ACCESO. La razón
+        social LEGAL del certificado la captura la empresa en Datos de la empresa,
+        así que aquí solo se siembra si la empresa aún no la ha llenado."""
         tenant = serializer.save()
-        from apps.catalog.models import CompanyProfile
         prof = getattr(tenant, "profile", None)
         if prof:
-            prof.legal_name = tenant.name or prof.legal_name
-            prof.tax_id = tenant.rfc or prof.tax_id
-            prof.save(update_fields=["legal_name", "tax_id", "updated_at"])
+            changed = []
+            if not prof.legal_name and tenant.name:
+                prof.legal_name = tenant.name; changed.append("legal_name")
+            if not prof.tax_id and tenant.rfc:
+                prof.tax_id = tenant.rfc; changed.append("tax_id")
+            if changed:
+                prof.save(update_fields=changed + ["updated_at"])
 
     def destroy(self, request, *args, **kwargs):
         """Elimina la empresa y TODOS sus datos. Primero se borran las relaciones

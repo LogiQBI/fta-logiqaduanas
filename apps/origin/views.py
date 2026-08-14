@@ -1961,9 +1961,10 @@ def company_profile_view(request):
         raise PermissionDenied("Solo la empresa puede gestionar los datos de la empresa.")
     forbid_read_only(m, request)
     prof, created = CompanyProfile.objects.get_or_create(tenant=m.tenant)
-    # La identidad (razón social y RFC) la fija el administrador de LogiQ desde el
-    # alta del tenant; se siembra aquí y NO la puede cambiar el usuario de empresa
-    # (evita que el sistema se use para otra empresa cambiando el nombre).
+    # La razón social y el RFC LEGALES los captura la empresa (rol admin): son
+    # los que salen en los certificados. El nombre/slug del tenant es solo la
+    # identidad de ACCESO y la administra LogiQ. Al inicio se siembran desde el
+    # tenant como sugerencia (solo si están vacíos).
     changed = []
     if not prof.legal_name and m.tenant.name:
         prof.legal_name = m.tenant.name; changed.append("legal_name")
@@ -1973,7 +1974,11 @@ def company_profile_view(request):
         prof.save(update_fields=changed)
     if request.method == "GET":
         return Response(s.CompanyProfileSerializer(prof).data)
-    data = {k: v for k, v in request.data.items() if k not in ("legal_name", "tax_id")}
+    # Solo el ADMINISTRADOR de la empresa puede corregir la identidad legal.
+    if m.role == Membership.Role.ADMIN:
+        data = dict(request.data)
+    else:
+        data = {k: v for k, v in request.data.items() if k not in ("legal_name", "tax_id")}
     ser = s.CompanyProfileSerializer(prof, data=data, partial=True)
     ser.is_valid(raise_exception=True)
     ser.save()

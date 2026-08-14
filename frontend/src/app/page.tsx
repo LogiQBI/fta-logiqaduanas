@@ -510,7 +510,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
     case "proveedores": return <ProveedoresView me={me} />;
     case "clientes": return <ClientesView />;
     case "licencia": return <LicenciaView />;
-    case "datos-empresa": return me.is_supplier ? <DatosEmpresaView /> : <DatosEmpresaCompanyView />;
+    case "datos-empresa": return me.is_supplier ? <DatosEmpresaView /> : <DatosEmpresaCompanyView me={me} />;
     case "solicitudes": return <SolicitudesEmpresaView />;
     case "mis-productos": return <ProveedorProductosView />;
     case "aceptadas": return <DeclaracionesAceptadasView me={me} />;
@@ -5237,7 +5237,7 @@ type ProfileShape = {
   state: string; postal_code: string; country: string;
   contact_name: string; contact_email: string; contact_phone: string;
   signatory_name: string; signatory_title: string; signature_png: string;
-  logo_png?: string;
+  logo_png?: string; tenant_slug?: string;
 };
 const EMPTY_PROFILE: ProfileShape = {
   legal_name: "", tax_id: "", address: "", city: "", state: "", postal_code: "",
@@ -5294,12 +5294,20 @@ function ProfileEditor({ desc, load, save, lockIdentity, showLogo, onLogoSaved }
       <PageTitle title="Datos de la empresa" desc={desc} />
       <Card className="mb-4 p-5">
         <div className="mb-3 text-sm font-semibold text-zinc-800">Información de la empresa</div>
+        {form.tenant_slug && (
+          <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            Tu <strong>nombre de acceso</strong> es <code className="rounded bg-white px-1.5 py-0.5 font-mono ring-1 ring-blue-200">{form.tenant_slug}</code> (lo
+            administra LogiQ): es lo que tu equipo y tus proveedores escriben al entrar. La{" "}
+            <strong>razón social</strong> de abajo es tu identidad LEGAL, la que sale en los
+            certificados — son cosas distintas.
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={lockIdentity ? "Razón social (la fija LogiQ)" : "Razón social"}>
+          <Field label={lockIdentity ? "Razón social (la edita el administrador)" : "Razón social (legal, sale en los certificados)"}>
             <input className={cx(inputCls, lockIdentity && "cursor-not-allowed bg-zinc-100 text-zinc-500")} value={form.legal_name}
               readOnly={lockIdentity} disabled={lockIdentity}
               onChange={(e) => !lockIdentity && set("legal_name", e.target.value)} /></Field>
-          <Field label={lockIdentity ? "RFC / Tax ID (la fija LogiQ)" : "RFC / Tax ID"}>
+          <Field label={lockIdentity ? "RFC / Tax ID (lo edita el administrador)" : "RFC / Tax ID"}>
             <input className={cx(inputCls, lockIdentity && "cursor-not-allowed bg-zinc-100 text-zinc-500")} value={form.tax_id}
               readOnly={lockIdentity} disabled={lockIdentity}
               onChange={(e) => !lockIdentity && set("tax_id", e.target.value)} /></Field>
@@ -5370,13 +5378,15 @@ function DatosEmpresaView() {
   return <ProfileEditor load={load} save={(p) => api.updateSupplierProfile(p)}
     desc="Información de contacto y firma de tu empresa. Se usan para llenar el certificado de origen." />;
 }
-// EMPRESA: sus datos para emitir certificados.
-function DatosEmpresaCompanyView() {
+// EMPRESA: sus datos para emitir certificados. La razón social y el RFC LEGALES
+// los captura el ADMINISTRADOR de la empresa (el nombre de acceso es aparte).
+function DatosEmpresaCompanyView({ me }: { me: Me }) {
   const load = useCallback(() => api.companyProfile() as Promise<ProfileShape>, []);
+  const esAdmin = me.role === "admin";
   // Al guardar, recargamos para que el logo nuevo aparezca en la barra superior.
-  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity showLogo
+  return <ProfileEditor load={load} save={(p) => api.updateCompanyProfile(p)} lockIdentity={!esAdmin} showLogo
     onLogoSaved={() => { setTimeout(() => window.location.reload(), 600); }}
-    desc="Datos, logo y firma de tu empresa. El logo aparece en la barra superior (y lo ven tus proveedores). La razón social y el RFC los administra LogiQ." />;
+    desc="Datos, logo y firma de tu empresa. El logo aparece en la barra superior (y lo ven tus proveedores). La razón social y el RFC son los LEGALES que salen en tus certificados." />;
 }
 // Color/etiqueta de la vigencia según días restantes.
 function vigenciaInfo(d: number | null | undefined): { txt: string; cls: string } {
