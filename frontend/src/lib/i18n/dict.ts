@@ -460,6 +460,7 @@ export const EN: Record<string, string> = {
   "Elige el archivo:": "Choose the file:",
   "Importar": "Import",
   "Elige un archivo .xlsx.": "Choose an .xlsx file.",
+  "Elige un archivo .xlsx o .csv.": "Choose an .xlsx or .csv file.",
   "✓ Cargado correctamente.": "✓ Uploaded successfully.",
   "creados": "created",
   "actualizados": "updated",

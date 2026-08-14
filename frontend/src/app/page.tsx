@@ -1845,7 +1845,7 @@ function CargaMasivaModal({ title, hint, specType, onClose, onDone, templateFn, 
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function importar() {
-    if (!file) { setErr("Elige un archivo .xlsx."); return; }
+    if (!file) { setErr("Elige un archivo .xlsx o .csv."); return; }
     // Si hay previsualización, primero avisamos cuántos ya existen.
     if (previewFn) {
       setBusy(true); setErr(""); setResult(null); setOk(false);
@@ -1916,7 +1916,7 @@ function CargaMasivaModal({ title, hint, specType, onClose, onDone, templateFn, 
         <li className="flex items-center gap-3">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">2</span>
           <span>Elige el archivo:</span>
-          <input type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setResult(null); setOk(false); }}
+          <input type="file" accept=".xlsx,.csv" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setResult(null); setOk(false); }}
             className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100" />
         </li>
         <li className="flex items-center gap-3">

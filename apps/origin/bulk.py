@@ -31,11 +31,16 @@ def _iso2(v):
     return "".join(c for c in str(v or "") if c.isalpha()).upper()[:2]
 
 
-# Mapeo de tipo de producto en español -> clave del modelo.
+# Mapeo de tipo de producto en español -> clave del modelo. Incluye también las
+# etiquetas que imprime el EXPORT del sistema, para que el archivo re-subido
+# funcione tal cual.
 KIND_MAP = {
     "material": "material", "insumo": "material", "materia prima": "material",
+    "material / insumo": "material",
     "subensamble": "subassembly", "subassembly": "subassembly",
+    "subproducto": "subassembly", "sub-assembly": "subassembly",
     "terminado": "finished", "producto terminado": "finished", "finished": "finished",
+    "producto": "finished", "finished product": "finished", "product": "finished",
 }
 
 
@@ -57,7 +62,9 @@ def import_products(tenant, rows, user):
         # mayúsc/minúsc, para que re-subir actualice aunque cambie el case.
         sku = str(r.get("sku") or "").strip().upper()
         if not sku:
-            res["errores"].append({"fila": i, "error": "Falta SKU."}); continue
+            res["errores"].append({"fila": i, "error": (
+                "Falta el número de parte (SKU). La columna puede llamarse "
+                "«SKU / Núm. de parte», «Número de parte» o «SKU».")}); continue
         # SKU repetido dentro del mismo archivo: se importa solo la PRIMERA aparición.
         if sku in seen:
             if len(res["duplicados_skus"]) < 200:
@@ -74,8 +81,12 @@ def import_products(tenant, rows, user):
                 supplier = None
                 scode = str(r.get("proveedor_codigo") or "").strip()
                 if scode:
-                    supplier = Party.objects.filter(
+                    # Acepta el CÓDIGO o el NOMBRE del proveedor (el export del
+                    # sistema trae el nombre); si no existe, se precarga.
+                    supplier = (Party.objects.filter(
                         tenant=tenant, kind=Party.Kind.SUPPLIER, code__iexact=scode).first()
+                        or Party.objects.filter(
+                            tenant=tenant, kind=Party.Kind.SUPPLIER, name__iexact=scode).first())
                     if not supplier:
                         supplier = Party.objects.create(
                             tenant=tenant, kind=Party.Kind.SUPPLIER, code=scode, name=scode)
@@ -546,11 +557,69 @@ def make_template(columns, sheet_name, instructions="", col_help=None, data_rows
     return buf.getvalue()
 
 
-def read_rows(file, columns):
-    """Lee el .xlsx subido. Busca —en cualquier hoja— la fila de ENCABEZADOS que
-    coincide con las ETIQUETAS de la plantilla (ignora la hoja de Instrucciones) y
-    devuelve los renglones de datos como dicts con las CLAVES internas."""
-    wb = openpyxl.load_workbook(file, data_only=True)
+# Alias de encabezados por clave interna: nombres alternativos que la gente
+# usa en sus propios archivos (o que produce el EXPORT del sistema). Se
+# comparan en minúsculas. "SKU = número de parte": cualquiera de estas formas
+# debe funcionar sin pelear con el layout.
+HEADER_ALIASES = {
+    "sku": ["sku", "núm. de parte", "num. de parte", "número de parte",
+            "numero de parte", "no. de parte", "part number", "part no."],
+    "num_parte": ["sku", "núm. de parte", "num. de parte", "número de parte",
+                  "numero de parte", "número de parte (sku)", "part number"],
+    "producto_sku": ["producto", "sku del producto", "producto (sku)",
+                     "sku padre", "parent sku"],
+    "insumo_sku": ["insumo", "componente", "sku del insumo", "sku del componente",
+                   "component sku"],
+    "descripcion": ["descripción", "descripcion", "description"],
+    "descripcion_en": ["descripción en inglés", "descripcion en ingles",
+                       "descripción (inglés)", "english description",
+                       "description (english)"],
+    "tipo": ["tipo", "type"],
+    "hs_code": ["hs", "fracción", "fraccion", "fracción hs", "fraccion hs",
+                "fracción arancelaria", "hs code"],
+    "costo_unitario": ["costo unitario", "precio unitario", "precio", "costo",
+                       "unit cost", "unit price"],
+    "moneda": ["moneda", "currency"],
+    "pais_origen": ["país", "pais", "país de origen", "pais de origen",
+                    "country", "country of origin"],
+    "pais": ["país", "pais", "country"],
+    "proveedor_codigo": ["proveedor", "código de proveedor", "codigo de proveedor",
+                         "supplier", "supplier code"],
+    "codigo_proveedor": ["proveedor", "código de proveedor", "codigo de proveedor",
+                         "código", "codigo", "supplier code"],
+    "clientes": ["clientes", "cliente(s)", "customers"],
+    "nombre": ["nombre", "razón social", "razon social", "nombre / razón social",
+               "name", "legal name"],
+    "codigo": ["código", "codigo", "code"],
+    "rfc": ["rfc", "tax id", "rfc / tax id"],
+    "email": ["email", "correo", "e-mail"],
+    "telefono": ["teléfono", "telefono", "phone"],
+    "cantidad": ["cantidad", "qty", "quantity"],
+    "uom": ["unidad de medida", "u.m.", "um", "uom", "unidad"],
+}
+
+
+def _rows_from_csv(file, header_len_hint=0):
+    """Convierte un CSV en 'filas' equivalentes a las de openpyxl (tuplas de
+    celdas). Acepta coma o punto y coma; tolera BOM de Excel."""
+    import csv
+    import io as _io
+    file.seek(0)
+    raw = file.read()
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8-sig", errors="replace")
+    else:
+        text = raw
+    sample = text[:2048]
+    delim = ";" if sample.count(";") > sample.count(",") else ","
+    return [tuple(row) for row in csv.reader(_io.StringIO(text), delimiter=delim)]
+
+
+def read_rows(file, columns, aliases=None):
+    """Lee el .xlsx (o .csv) subido. Busca —en cualquier hoja— la fila de
+    ENCABEZADOS que coincide con las ETIQUETAS de la plantilla (o sus ALIAS:
+    «Número de parte» = SKU, «Precio unitario» = costo, export del sistema…)
+    y devuelve los renglones de datos como dicts con las CLAVES internas."""
     label_to_key = {label.strip().lower(): key for key, label, _ in columns}
     # Alias sin el sufijo entre paréntesis, para que sigan funcionando archivos
     # llenados con plantillas viejas (ej. "Descripción" ↔ "Descripción (español)").
@@ -559,10 +628,28 @@ def read_rows(file, columns):
         base = _re.sub(r"\s*\([^)]*\)\s*$", "", label).strip().lower()
         if base and base not in label_to_key:
             label_to_key[base] = key
+    # Alias globales (solo de las claves que ESTA plantilla usa, sin pisar
+    # etiquetas oficiales) + alias extra del llamador.
+    keys_here = {key for key, _, _ in columns}
+    merged_aliases = {k: v for k, v in HEADER_ALIASES.items() if k in keys_here}
+    for k, v in (aliases or {}).items():
+        merged_aliases.setdefault(k, []).extend(v)
+    for key, labels in merged_aliases.items():
+        for lab in labels:
+            lab = lab.strip().lower()
+            if lab and lab not in label_to_key:
+                label_to_key[lab] = key
 
-    found = None  # (worksheet, índice_fila_encabezado, idx_to_key)
-    for ws in wb.worksheets:
-        for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+    # Hojas a recorrer: xlsx normal, o el CSV como una sola "hoja".
+    try:
+        wb = openpyxl.load_workbook(file, data_only=True)
+        sheets = [list(ws.iter_rows(values_only=True)) for ws in wb.worksheets]
+    except Exception:
+        sheets = [_rows_from_csv(file)]
+
+    found = None  # (filas, índice_fila_encabezado, idx_to_key)
+    for rows_ in sheets:
+        for r_idx, row in enumerate(rows_):
             if not row:
                 continue
             idx_to_key = {}
@@ -570,20 +657,20 @@ def read_rows(file, columns):
                 if h is None:
                     continue
                 key = label_to_key.get(str(h).strip().lower())
-                if key is not None:
+                if key is not None and key not in idx_to_key.values():
                     idx_to_key[idx] = key
             # La fila de encabezados tiene varias etiquetas conocidas a la vez.
             if len(idx_to_key) >= min(2, len(columns)):
-                found = (ws, r_idx, idx_to_key)
+                found = (rows_, r_idx, idx_to_key)
                 break
         if found:
             break
     if not found:
         return []
 
-    ws, header_idx, idx_to_key = found
+    rows_, header_idx, idx_to_key = found
     out = []
-    for r_idx, row in enumerate(ws.iter_rows(values_only=True)):
+    for r_idx, row in enumerate(rows_):
         if r_idx <= header_idx:
             continue
         if row is None or all(v in (None, "") for v in row):
