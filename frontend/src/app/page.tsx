@@ -569,11 +569,13 @@ function Btn({ children, onClick, variant = "primary", size = "md", disabled }: 
 function Modal({ title, onClose, children, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; wide?: boolean;
 }) {
+  // OJO: el fondo NO cierra el modal. Cerrarlo con un clic fuera (o al soltar
+  // el mouse fuera mientras se selecciona texto para copiar/pegar) tiraba
+  // capturas completas — caso real de Hanwha. Solo cierran la X y Cancelar.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className={cx("flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-xl",
-        wide ? "max-w-5xl" : "max-w-lg")} onClick={(e) => e.stopPropagation()}>
+        wide ? "max-w-5xl" : "max-w-lg")}>
         <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
           <h3 className="font-semibold text-zinc-900">{title}</h3>
           <button onClick={onClose} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
