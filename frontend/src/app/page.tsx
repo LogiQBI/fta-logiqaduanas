@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { COUNTRIES, isValidCountry } from "@/lib/countries";
 import { UOM_OPTIONS, uomLabel } from "@/lib/uom";
-import { initLangFromStorage, setLang as setAppLang, t as tr, useLang } from "@/lib/i18n";
+import { getLang as getAppLang, initLangFromStorage, setLang as setAppLang, t as tr, useLang } from "@/lib/i18n";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -2965,15 +2965,18 @@ function HistorialAnalisis({ productId, treatyId, reloadKey }: {
 // evidencia en auditorías internas o de la autoridad (CBP / aduana). Mismo patrón
 // que los certificados: abre una ventana y el usuario hace "Guardar como PDF".
 function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: string; tax_id?: string; logo_png?: string }) {
+  // El PDF sale en el idioma ACTIVO del sistema (botón ES/EN de la barra).
+  const en = getAppLang() === "en";
+  const locale = en ? "en-US" : "es-MX";
   const esc = (v?: unknown) =>
     String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
   const num = (v: unknown, dec = 2) => {
-    const n = Number(v); return isNaN(n) ? "—" : n.toLocaleString("es-MX", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    const n = Number(v); return isNaN(n) ? "—" : n.toLocaleString(locale, { minimumFractionDigits: dec, maximumFractionDigits: dec });
   };
   const d = (a.detail || {}) as Record<string, unknown>;
   const bom = Array.isArray(d.bom) ? (d.bom as Array<Record<string, unknown>>) : [];
   const treaty = treatyLabel(a.treaty_code);
-  const fecha = new Date(a.created_at).toLocaleString("es-MX",
+  const fecha = new Date(a.created_at).toLocaleString(locale,
     { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const folio = `FTA-ANA-${a.id}`;
   const automotive = a.kind === "automotive";
@@ -2984,13 +2987,17 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   const rvcVal = rvc?.rvc ?? a.rvc_value ?? (pillars[0]?.value ?? null);
   const threshold = rvc?.threshold ?? (pillars[0]?.threshold ?? (automotive ? "75" : null));
   const method = (rvc?.method as string) || (d.rvc_method as string) || (automotive ? "net_cost" : "");
-  const methodLabel = method === "transaction" ? "Valor de transacción" : method === "net_cost" ? "Costo neto" : "—";
+  const methodLabel = method === "transaction" ? (en ? "Transaction value" : "Valor de transacción")
+    : method === "net_cost" ? (en ? "Net cost" : "Costo neto") : "—";
   const base = (rvc?.transaction_value as string) ?? a.total_value ?? d.total_value;
   const vnm = (rvc?.vnm as string) ?? a.vnm ?? d.vnm;
   const hasRvc = rvcVal != null && base != null;
 
   const originario = a.status === "QUALIFIES";
-  const statusLabel = a.status_display || a.status;
+  const statusLabel = en
+    ? ({ QUALIFIES: "Qualifies (originating)", DOES_NOT: "Does not qualify",
+         INSUFFICIENT: "Insufficient information", AUTO_REVIEW: "Requires automotive review" }[a.status] ?? a.status)
+    : (a.status_display || a.status);
   const statusBadge = originario ? "ok" : (a.status === "DOES_NOT" ? "no" : "warn");
 
   const bomRows = bom.map((l, i) => {
@@ -2998,8 +3005,8 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     const estado = l.originating == null
       ? "—"
       : orig
-        ? `<span class="g">Originario</span>`
-        : `<span class="r">No originario</span><br><span class="muted">cuenta en VNM</span>`;
+        ? `<span class="g">${en ? "Originating" : "Originario"}</span>`
+        : `<span class="r">${en ? "Non-originating" : "No originario"}</span><br><span class="muted">${en ? "counts as VNM" : "cuenta en VNM"}</span>`;
     return `<tr>
       <td class="num">${i + 1}</td>
       <td><b>${esc(l.sku as string)}</b> — ${esc(l.description as string)}<br><span class="muted">HS ${esc(l.hs_code ? formatHs(l.hs_code as string) : "—")}</span></td>
@@ -3009,7 +3016,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
       <td class="num">${num(l.quantity, 0)}</td>
       <td class="num">${num(l.line_value)}</td>
       <td>${estado}</td>
-      <td class="muted">${esc((l.origin_source as string) || "—")}</td>
+      <td class="muted">${esc(tr((l.origin_source as string) || "—"))}</td>
     </tr>`;
   }).join("");
 
@@ -3023,35 +3030,45 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
     noOrig.slice(0, 3).forEach((l) => {
       const v = Number(l.line_value) || 0;
       const pct = tot ? Math.round((v / tot) * 100) : 0;
-      items.push(`<li><b>Proveeduría regional:</b> el insumo <b>${esc(l.sku as string)}</b> (${esc((l.supplier as string) || "—")}${l.country ? `, ${esc(l.country as string)}` : ""}) representa $${num(v)} (${pct}% del valor). Sustituirlo por un proveedor de la región ${esc(treaty)} elevaría el contenido regional.</li>`);
+      items.push(en
+        ? `<li><b>Regional sourcing:</b> material <b>${esc(l.sku as string)}</b> (${esc((l.supplier as string) || "—")}${l.country ? `, ${esc(l.country as string)}` : ""}) represents $${num(v)} (${pct}% of the value). Replacing it with a supplier from the ${esc(treaty)} region would raise the regional content.</li>`
+        : `<li><b>Proveeduría regional:</b> el insumo <b>${esc(l.sku as string)}</b> (${esc((l.supplier as string) || "—")}${l.country ? `, ${esc(l.country as string)}` : ""}) representa $${num(v)} (${pct}% del valor). Sustituirlo por un proveedor de la región ${esc(treaty)} elevaría el contenido regional.</li>`);
     });
-    items.push(`<li><b>Salto arancelario (CTC):</b> si no es posible cambiar de proveedor, validar si los insumos no originarios cumplen el cambio de clasificación arancelaria requerido por la regla específica.</li>`);
-    items.push(`<li><b>Costeo:</b> verificar que mano de obra directa, gastos indirectos de fabricación y transporte estén integrados en el costo neto, ya que un mayor valor agregado regional mejora el VCR.</li>`);
-    recos = `<div class="section">3. Recomendaciones y siguientes pasos</div><ul>${items.join("")}</ul>`;
+    items.push(en
+      ? `<li><b>Tariff shift (CTC):</b> if changing suppliers is not feasible, validate whether the non-originating materials meet the change in tariff classification required by the product-specific rule.</li>`
+      : `<li><b>Salto arancelario (CTC):</b> si no es posible cambiar de proveedor, validar si los insumos no originarios cumplen el cambio de clasificación arancelaria requerido por la regla específica.</li>`);
+    items.push(en
+      ? `<li><b>Costing:</b> verify that direct labor, manufacturing overhead and freight are included in the net cost, since higher regional value added improves the RVC.</li>`
+      : `<li><b>Costeo:</b> verificar que mano de obra directa, gastos indirectos de fabricación y transporte estén integrados en el costo neto, ya que un mayor valor agregado regional mejora el VCR.</li>`);
+    recos = `<div class="section">${en ? "3. Recommendations and next steps" : "3. Recomendaciones y siguientes pasos"}</div><ul>${items.join("")}</ul>`;
   }
 
   const materials = d.materials_total;
   const conversion = d.conversion_cost;
   const hasConv = conversion != null && Number(conversion) > 0;
   const vcrBlock = hasRvc ? `
-    <div class="section">2. Métrica del Valor de Contenido Regional (VCR)</div>
+    <div class="section">${en ? "2. Regional Value Content (RVC) metric" : "2. Métrica del Valor de Contenido Regional (VCR)"}</div>
     <div class="grid g3">
-      <div class="cell"><div class="lbl">Método utilizado</div><div class="big">${esc(methodLabel)}</div></div>
-      <div class="cell"><div class="lbl">Materiales (BOM)</div><div class="big">$${num(materials ?? base)} USD</div></div>
-      <div class="cell"><div class="lbl">Mano de obra / conversión</div><div class="big">$${num(conversion ?? 0)} USD</div></div>
-      <div class="cell"><div class="lbl">${automotive ? "Costo neto del bien" : "Valor del bien (costo neto)"}</div><div class="big">$${num(base)} USD</div></div>
-      <div class="cell"><div class="lbl">Materiales no originarios (VNM)</div><div class="big">$${num(vnm)} USD</div></div>
-      <div class="cell"><div class="lbl">Umbral requerido</div><div class="big">${esc(threshold)}%</div></div>
+      <div class="cell"><div class="lbl">${en ? "Method used" : "Método utilizado"}</div><div class="big">${esc(methodLabel)}</div></div>
+      <div class="cell"><div class="lbl">${en ? "Materials (BOM)" : "Materiales (BOM)"}</div><div class="big">$${num(materials ?? base)} USD</div></div>
+      <div class="cell"><div class="lbl">${en ? "Labor / conversion" : "Mano de obra / conversión"}</div><div class="big">$${num(conversion ?? 0)} USD</div></div>
+      <div class="cell"><div class="lbl">${automotive ? (en ? "Net cost of the good" : "Costo neto del bien") : (en ? "Value of the good (net cost)" : "Valor del bien (costo neto)")}</div><div class="big">$${num(base)} USD</div></div>
+      <div class="cell"><div class="lbl">${en ? "Non-originating materials (VNM)" : "Materiales no originarios (VNM)"}</div><div class="big">$${num(vnm)} USD</div></div>
+      <div class="cell"><div class="lbl">${en ? "Required threshold" : "Umbral requerido"}</div><div class="big">${esc(threshold)}%</div></div>
     </div>
-    ${hasConv ? `<p class="muted">Costo neto del bien = materiales $${num(materials)} + mano de obra/conversión $${num(conversion)} = <b>$${num(base)}</b>. La mano de obra es valor regional originario: suma al costo neto pero no al VNM.</p>` : ""}
-    <p class="formula">Fórmula del VCR: VCR = ((Costo neto − VNM) / Costo neto) × 100<br>
-       Cálculo aplicado: VCR = (($${num(base)} − $${num(vnm)}) / $${num(base)}) × 100 = <b>${num(rvcVal)}%</b></p>
-    <p>Determinación: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
-    <p class="muted">El VCR obtenido es de <b>${num(rvcVal)}%</b>, ${Number(rvcVal) >= Number(threshold) ? "igual o superior" : "por debajo"} del umbral mínimo de <b>${esc(threshold)}%</b> (${esc(methodLabel.toLowerCase())})${automotive ? " para autopartes esenciales del sector automotriz bajo el T-MEC" : ""}.</p>
+    ${hasConv ? (en
+      ? `<p class="muted">Net cost of the good = materials $${num(materials)} + labor/conversion $${num(conversion)} = <b>$${num(base)}</b>. Labor is originating regional value: it adds to the net cost but not to the VNM.</p>`
+      : `<p class="muted">Costo neto del bien = materiales $${num(materials)} + mano de obra/conversión $${num(conversion)} = <b>$${num(base)}</b>. La mano de obra es valor regional originario: suma al costo neto pero no al VNM.</p>`) : ""}
+    <p class="formula">${en ? "RVC formula: RVC = ((Net cost − VNM) / Net cost) × 100" : "Fórmula del VCR: VCR = ((Costo neto − VNM) / Costo neto) × 100"}<br>
+       ${en ? "Applied calculation" : "Cálculo aplicado"}: ${en ? "RVC" : "VCR"} = (($${num(base)} − $${num(vnm)}) / $${num(base)}) × 100 = <b>${num(rvcVal)}%</b></p>
+    <p>${en ? "Determination" : "Determinación"}: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
+    <p class="muted">${en
+      ? `The obtained RVC is <b>${num(rvcVal)}%</b>, ${Number(rvcVal) >= Number(threshold) ? "at or above" : "below"} the minimum threshold of <b>${esc(threshold)}%</b> (${esc(methodLabel.toLowerCase())})${automotive ? " for essential auto parts under the USMCA automotive regime" : ""}.`
+      : `El VCR obtenido es de <b>${num(rvcVal)}%</b>, ${Number(rvcVal) >= Number(threshold) ? "igual o superior" : "por debajo"} del umbral mínimo de <b>${esc(threshold)}%</b> (${esc(methodLabel.toLowerCase())})${automotive ? " para autopartes esenciales del sector automotriz bajo el T-MEC" : ""}.`}</p>
   ` : `
-    <div class="section">2. Resultado de la calificación</div>
-    <p>Criterio aplicado: <b>${esc(a.criterion || "—")}</b></p>
-    <p>Determinación: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
+    <div class="section">${en ? "2. Qualification result" : "2. Resultado de la calificación"}</div>
+    <p>${en ? "Applied criterion" : "Criterio aplicado"}: <b>${esc(a.criterion || "—")}</b></p>
+    <p>${en ? "Determination" : "Determinación"}: <span class="badge ${statusBadge}">${esc(statusLabel.toUpperCase())}</span></p>
     ${d.error ? `<p class="muted">${esc(d.error as string)}</p>` : ""}
   `;
 
@@ -3059,27 +3076,27 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   const psr = d.psr as { hs_pattern?: string; rule_type?: string; shift_level?: string; description?: string } | undefined;
   const core = d.core_part as { note?: string; note_en?: string } | undefined;
   const coreBlock = core ? `
-    <div class="section">Parte esencial (core part) — T-MEC</div>
-    <p><b>${esc(core.note ?? "")}</b></p>
-    ${core.note_en ? `<p class="muted">${esc(core.note_en)}</p>` : ""}
+    <div class="section">${en ? "Core part — USMCA" : "Parte esencial (core part) — T-MEC"}</div>
+    <p><b>${esc((en ? core.note_en : core.note) ?? core.note ?? "")}</b></p>
+    ${en ? "" : (core.note_en ? `<p class="muted">${esc(core.note_en)}</p>` : "")}
   ` : "";
   const psrBlock = psr ? `
-    <div class="section">Regla de origen específica (PSR) aplicable</div>
+    <div class="section">${en ? "Applicable product-specific rule of origin (PSR)" : "Regla de origen específica (PSR) aplicable"}</div>
     <table>
-      <tr><td class="k">Fracción / patrón</td><td>${esc(psr.hs_pattern ? formatHs(psr.hs_pattern) : (a.product_hs ? formatHs(a.product_hs) : "—"))}</td></tr>
-      <tr><td class="k">Tipo de regla</td><td><b>${esc(ruleTypeLabel(psr.rule_type, psr.shift_level))}</b></td></tr>
-      <tr><td class="k">Texto de la regla</td><td>${esc(cleanRuleDesc(psr.description) || "—")}</td></tr>
+      <tr><td class="k">${en ? "HS code / pattern" : "Fracción / patrón"}</td><td>${esc(psr.hs_pattern ? formatHs(psr.hs_pattern) : (a.product_hs ? formatHs(a.product_hs) : "—"))}</td></tr>
+      <tr><td class="k">${en ? "Rule type" : "Tipo de regla"}</td><td><b>${esc(tr(ruleTypeLabel(psr.rule_type, psr.shift_level)))}</b></td></tr>
+      <tr><td class="k">${en ? "Rule text" : "Texto de la regla"}</td><td>${esc(cleanRuleDesc(psr.description) || "—")}</td></tr>
     </table>
   ` : "";
   const lvcPillar = pillars.find((p) => (p.key as string) === "lvc");
   const lvcBlock = lvcPillar ? `
-    <div class="section">Contenido de Valor Laboral (LVC) — informativo</div>
-    <p>Contenido de alto salario reportado: <b>$${num(lvcPillar.value)} USD</b>${lvcPillar.value_pct ? ` (<b>${esc(lvcPillar.value_pct)}%</b> del costo neto)` : ""}</p>
+    <div class="section">${en ? "Labor Value Content (LVC) — informational" : "Contenido de Valor Laboral (LVC) — informativo"}</div>
+    <p>${en ? "Reported high-wage content" : "Contenido de alto salario reportado"}: <b>$${num(lvcPillar.value)} USD</b>${lvcPillar.value_pct ? ` (<b>${esc(lvcPillar.value_pct)}%</b> ${en ? "of net cost" : "del costo neto"})` : ""}</p>
     <p class="muted">${esc(lvcPillar.detail)}</p>
   ` : "";
 
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
-<title>Análisis de origen ${esc(a.product_sku)} — ${esc(treaty)}</title>
+  const html = `<!doctype html><html lang="${en ? "en" : "es"}"><head><meta charset="utf-8">
+<title>${en ? "Origin analysis" : "Análisis de origen"} ${esc(a.product_sku)} — ${esc(treaty)}</title>
 <style>
   *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:12.5px;line-height:1.45}
   .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:16px}
@@ -3108,50 +3125,60 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
       : `<div class="brand">${esc(company?.legal_name || "")}</div>`}
       ${company?.legal_name ? `<div class="sub">${esc(company.legal_name)}</div>` : ""}
     </div>
-    <div style="text-align:right"><h1>Análisis de Calificación de Origen</h1>
-      <div class="sub">Tratado: <b>${esc(treaty)}</b> · Folio: ${esc(folio)}</div>
-      <div class="sub">Generado: ${esc(fecha)}</div></div>
+    <div style="text-align:right"><h1>${en ? "Origin Qualification Analysis" : "Análisis de Calificación de Origen"}</h1>
+      <div class="sub">${en ? "Trade agreement" : "Tratado"}: <b>${esc(treaty)}</b> · ${en ? "Document No." : "Folio"}: ${esc(folio)}</div>
+      <div class="sub">${en ? "Generated" : "Generado"}: ${esc(fecha)}</div></div>
   </div>
 
   <div class="meta">
-    <div><b>Producto final:</b> ${esc(a.product_sku)} — ${esc(a.product_description)}</div>
-    <div><b>Fracción arancelaria (HS):</b> ${esc(a.product_hs ? formatHs(a.product_hs) : "—")}</div>
-    ${company?.legal_name ? `<div><b>Empresa (productor/exportador):</b> ${esc(company.legal_name)}${company.tax_id ? ` · RFC ${esc(company.tax_id)}` : ""}</div>` : ""}
-    <div><b>Tipo de análisis:</b> ${esc(a.kind_display)}</div>
+    <div><b>${en ? "Final product" : "Producto final"}:</b> ${esc(a.product_sku)} — ${esc(a.product_description)}</div>
+    <div><b>${en ? "HS tariff code" : "Fracción arancelaria (HS)"}:</b> ${esc(a.product_hs ? formatHs(a.product_hs) : "—")}</div>
+    ${company?.legal_name ? `<div><b>${en ? "Company (producer/exporter)" : "Empresa (productor/exportador)"}:</b> ${esc(company.legal_name)}${company.tax_id ? ` · ${en ? "Tax ID" : "RFC"} ${esc(company.tax_id)}` : ""}</div>` : ""}
+    <div><b>${en ? "Analysis type" : "Tipo de análisis"}:</b> ${esc(en ? (automotive ? "Automotive (USMCA)" : "BOM calculation") : a.kind_display)}</div>
   </div>
 
   ${psrBlock}
   ${coreBlock}
 
-  <div class="section">1. Desglose de la lista de materiales (BOM) e insumos</div>
+  <div class="section">${en ? "1. Bill of materials (BOM) breakdown" : "1. Desglose de la lista de materiales (BOM) e insumos"}</div>
   ${bom.length ? `<table class="bomtbl">
-    <thead><tr><th class="num">#</th><th>Insumo / Descripción / HS</th><th>Proveedor</th><th>País</th><th class="num">Precio unit.</th><th class="num">Cant.</th><th class="num">Valor</th><th>Origen</th><th>Cómo se determinó</th></tr></thead>
+    <thead><tr><th class="num">#</th><th>${en ? "Material / Description / HS" : "Insumo / Descripción / HS"}</th><th>${en ? "Supplier" : "Proveedor"}</th><th>${en ? "Country" : "País"}</th><th class="num">${en ? "Unit price" : "Precio unit."}</th><th class="num">${en ? "Qty." : "Cant."}</th><th class="num">${en ? "Value" : "Valor"}</th><th>${en ? "Origin" : "Origen"}</th><th>${en ? "How it was determined" : "Cómo se determinó"}</th></tr></thead>
     <tbody>${bomRows}</tbody>
   </table>
-  <p class="muted">Materiales (BOM): <b>$${num(materials ?? d.total_value)} USD</b>${hasConv ? ` · Mano de obra/conversión: <b>$${num(conversion)} USD</b>` : ""} · Costo neto del bien: <b>$${num(base ?? d.total_value)} USD</b> · Materiales no originarios (VNM): <b>$${num(vnm)} USD</b></p>
-  <p class="muted"><b>Cómo leer el origen:</b> “Originario” = el insumo es del país miembro del tratado o cumple la regla aplicable; “No originario” = su valor cuenta como VNM y resta al VCR. La columna “Cómo se determinó” indica el sustento (declaración del proveedor, captura manual, subensamble calculado por roll-up o país miembro).</p>`
-    : `<p class="muted">Este análisis no registró desglose de BOM.</p>`}
+  <p class="muted">${en ? "Materials (BOM)" : "Materiales (BOM)"}: <b>$${num(materials ?? d.total_value)} USD</b>${hasConv ? ` · ${en ? "Labor/conversion" : "Mano de obra/conversión"}: <b>$${num(conversion)} USD</b>` : ""} · ${en ? "Net cost of the good" : "Costo neto del bien"}: <b>$${num(base ?? d.total_value)} USD</b> · ${en ? "Non-originating materials (VNM)" : "Materiales no originarios (VNM)"}: <b>$${num(vnm)} USD</b></p>
+  <p class="muted">${en
+    ? `<b>How to read origin:</b> “Originating” = the material is from a member country of the agreement or meets the applicable rule; “Non-originating” = its value counts as VNM and lowers the RVC. The “How it was determined” column shows the support (supplier declaration, manual entry, sub-assembly calculated by roll-up, or member country).`
+    : `<b>Cómo leer el origen:</b> “Originario” = el insumo es del país miembro del tratado o cumple la regla aplicable; “No originario” = su valor cuenta como VNM y resta al VCR. La columna “Cómo se determinó” indica el sustento (declaración del proveedor, captura manual, subensamble calculado por roll-up o país miembro).`}</p>`
+    : `<p class="muted">${en ? "This analysis did not record a BOM breakdown." : "Este análisis no registró desglose de BOM."}</p>`}
 
   ${vcrBlock}
   ${lvcBlock}
   ${recos}
 
   <div class="legal">
-    Documento generado por <b>LogiQ Aduanas | FTA</b> el ${esc(fecha)} como evidencia del análisis de calificación de
+    ${en
+      ? `Document generated by <b>LogiQ Aduanas | FTA</b> on ${esc(fecha)} as evidence of the origin qualification
+    analysis under the ${esc(treaty)} agreement. The information was <b>processed and calculated by the LogiQ Aduanas
+    system</b> using the data provided by <b>${esc(company?.legal_name || (en ? "the company" : "la empresa"))}</b>; the system
+    <b>does not manipulate, alter or modify</b> the information, which is strictly entered by the company.
+    It consolidates the origin costing information and the applicable product-specific rules of origin. The result is
+    for guidance and must be validated by personnel with technical knowledge of rules of origin; keep this file
+    for the applicable retention periods (minimum 5 years, USMCA).`
+      : `Documento generado por <b>LogiQ Aduanas | FTA</b> el ${esc(fecha)} como evidencia del análisis de calificación de
     origen bajo el tratado ${esc(treaty)}. La información fue <b>procesada y calculada por el sistema LogiQ Aduanas</b>
     utilizando los datos proporcionados por <b>${esc(company?.legal_name || "la empresa")}</b>; el sistema
     <b>no manipula, altera ni modifica</b> la información, la cual es estrictamente ingresada por la empresa.
     Consolida la información de costeo de origen y las reglas de origen específicas aplicables. El resultado es
     orientativo y debe ser validado por personal con conocimientos técnicos en reglas de origen; conserve este
-    expediente conforme a los plazos de retención aplicables (mínimo 5 años, T-MEC).
+    expediente conforme a los plazos de retención aplicables (mínimo 5 años, T-MEC).`}
   </div>
 
   <div class="noprint" style="margin-top:24px;text-align:center">
-    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">Imprimir / Guardar PDF</button>
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">${en ? "Print / Save as PDF" : "Imprimir / Guardar PDF"}</button>
   </div>
 </body></html>`;
   const win = window.open("", "_blank", "width=900,height=1000");
-  if (!win) { alert("Permite las ventanas emergentes para generar el PDF del análisis."); return; }
+  if (!win) { alert(tr("Permite las ventanas emergentes para generar el PDF del análisis.")); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
 

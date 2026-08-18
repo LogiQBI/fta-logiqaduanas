@@ -993,6 +993,10 @@ export const EN: Record<string, string> = {
   "insumo": "material",
   "Master (LogiQ)": "Master (LogiQ)",
   "Sin fecha": "No date",
+  // Fuentes de origen del BOM (backend) — para el PDF del análisis en inglés.
+  "Captura manual de la empresa": "Manually captured by the company",
+  "País miembro (sin declaración)": "Member country (no declaration)",
+  "Sin declaración ni BOM propio": "No declaration and no own BOM",
 };
 
 /* Mensajes con partes dinámicas (folios, nombres, números): regex → reemplazo.
@@ -1045,4 +1049,8 @@ export const EN_PATTERNS: [RegExp, string][] = [
     "The information has not changed since the last period. Check whether your BOM prices and origins have changed. Do you want to continue and send anyway?"],
   [/^(\d+) insumos sin proveedor asignado\.$/, "$1 materials without an assigned supplier."],
   [/^(\d+) insumo(s?) sin proveedor asignado\.$/, "$1 material$2 without an assigned supplier."],
+  [/^País manual: (.+)$/, "Manual country: $1"],
+  [/^Declaración del proveedor (.+) → (.+)$/, "Supplier declaration $1 → $2"],
+  [/^Subensamble calculado \(roll-up\): originario(.*)$/, "Sub-assembly calculated (roll-up): originating$1"],
+  [/^Subensamble calculado \(roll-up\): no originario(.*)$/, "Sub-assembly calculated (roll-up): non-originating$1"],
 ];
