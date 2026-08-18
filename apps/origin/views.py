@@ -863,7 +863,10 @@ class ProductViewSet(TenantScopedViewSet):
         from django.utils.dateparse import parse_date
         raw = request.data.get("as_of")
         as_of = parse_date(raw) if raw else None
-        result = calculate_product_origin(product, treaty, as_of=as_of, user=request.user)
+        result = calculate_product_origin(
+            product, treaty, as_of=as_of, user=request.user,
+            # Marca manual de PARTE ESENCIAL (core part): solo VCR. Solo T-MEC.
+            core_part=bool(request.data.get("core_part")))
         return Response(result)
 
 

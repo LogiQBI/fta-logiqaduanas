@@ -2426,6 +2426,66 @@ function SupercoreModal({ treatyId, onClose }: { treatyId: number; onClose: () =
 }
 // Cálculo de origen del producto de la EMPRESA a partir de su BOM, con toggle
 // por insumo (declaración del proveedor / periodo, o captura manual).
+/* ==== Ayuda: qué es una core part (T-MEC/USMCA), bilingüe ES/EN ==== */
+function CorePartInfoModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="🚗 ¿Qué es una parte esencial (core part)? / What is a core part?" onClose={onClose} wide>
+      <div className="grid grid-cols-1 gap-5 text-sm sm:grid-cols-2">
+        <div>
+          <h4 className="mb-2 font-semibold text-zinc-900">Español</h4>
+          <p className="mb-2">
+            Las <strong>partes esenciales (core parts)</strong> son las autopartes listadas en la
+            <strong> Tabla A.1 del Apéndice al Anexo 4-B del T-MEC</strong>, usadas en vehículos de
+            pasajeros y camiones ligeros: <strong>motores, transmisiones, carrocerías y chasis,
+            ejes, sistemas de suspensión, sistemas de dirección y baterías avanzadas</strong>.
+          </p>
+          <div className="mb-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
+            <div className="mb-1 font-semibold text-zinc-700">Extracto (Apéndice al Anexo 4-B, Art. 3)</div>
+            «Una parte esencial listada en la Tabla A.1 es originaria <strong>solo si cumple el
+            requisito de Valor de Contenido Regional (VCR)</strong> aplicable — método de costo
+            neto, con calendario de transición (phase-in) que llega al <strong>75%</strong> —.
+            No obstante cualquier otra regla, <strong>el cambio de clasificación arancelaria
+            (salto) no es suficiente</strong> por sí solo para conferir origen a estas partes.»
+          </div>
+          <p className="text-xs text-zinc-600">
+            <strong>En el sistema:</strong> al marcar la casilla, el cálculo <strong>omite el
+            CTH/CTSH</strong> y determina el origen <strong>exclusivamente por VCR</strong> sobre
+            costo neto (materiales + mano de obra). El resultado y el PDF lo indican.
+          </p>
+        </div>
+        <div>
+          <h4 className="mb-2 font-semibold text-zinc-900">English</h4>
+          <p className="mb-2">
+            <strong>Core parts</strong> are the auto parts listed in <strong>Table A.1 of the
+            Appendix to Annex 4-B of the USMCA</strong>, for use in passenger vehicles and light
+            trucks: <strong>engines, transmissions, bodies and chassis, axles, suspension
+            systems, steering systems, and advanced batteries</strong>.
+          </p>
+          <div className="mb-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
+            <div className="mb-1 font-semibold text-zinc-700">Excerpt (Appendix to Annex 4-B, Art. 3)</div>
+            “A core part listed in Table A.1 is originating <strong>only if it satisfies the
+            applicable Regional Value Content (RVC) requirement</strong> — net cost method, with
+            a phase-in schedule reaching <strong>75%</strong> —. Notwithstanding any other rule,
+            <strong> a change in tariff classification (tariff shift) alone is not
+            sufficient</strong> to confer origin on these parts.”
+          </div>
+          <p className="text-xs text-zinc-600">
+            <strong>In the system:</strong> when the box is checked, the calculation
+            <strong> skips CTH/CTSH</strong> and determines origin <strong>exclusively by
+            RVC</strong> over net cost (materials + labor). The result and the PDF state it.
+          </p>
+        </div>
+      </div>
+      <p className="mt-4 text-[11px] text-zinc-400">
+        Referencia: T-MEC/USMCA, Apéndice al Anexo 4-B (Disposiciones relacionadas con las reglas
+        de origen específicas por producto para mercancías automotrices), Art. 3 y Tabla A.1.
+        Texto orientativo; confirma contra la normativa vigente y las Reglamentaciones Uniformes.
+      </p>
+      <div className="mt-4 flex justify-end"><Btn variant="ghost" onClick={onClose}>Cerrar</Btn></div>
+    </Modal>
+  );
+}
+
 function CalculoOrigenView() {
   const productsL = useList<Product>(() => api.products());
   const treatiesL = useList<Treaty>(() => api.treaties());
@@ -2446,6 +2506,9 @@ function CalculoOrigenView() {
   const [supercoreOpen, setSupercoreOpen] = useState(false);
   const [histKey, setHistKey] = useState(0);  // refresca el histórico tras cada cálculo
   const [autoCore, setAutoCore] = useState<string | null>(null);  // core part SOLO si T-MEC
+  // Marca MANUAL de parte esencial (core part): solo VCR, sin CTH. Solo T-MEC.
+  const [corePart, setCorePart] = useState(false);
+  const [coreInfo, setCoreInfo] = useState(false);
   const productos = productsL.data.filter((p) => p.kind !== "material");
   // El régimen automotriz (core part) es exclusivo del T-MEC: el backend solo
   // devuelve automotive_core_code cuando el tratado es T-MEC.
@@ -2475,6 +2538,9 @@ function CalculoOrigenView() {
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
   useEffect(() => { loadBom(); }, [loadBom]);
+  // Si la fracción está en la Tabla A.1 (detección automática), la casilla de
+  // core part se pre-marca; la empresa puede quitarla.
+  useEffect(() => { setCorePart(!!autoCore); }, [autoCore]);
 
   async function patch(c: BomOriginComponent, payload: Record<string, unknown>) {
     setMsg("");
@@ -2485,7 +2551,7 @@ function CalculoOrigenView() {
     if (!productId || !treatyId) return;
     setCalc(true); setMsg("");
     try {
-      setResult(await api.calcBomOrigin(Number(productId), Number(treatyId)));
+      setResult(await api.calcBomOrigin(Number(productId), Number(treatyId), null, corePart));
       setHistKey((k) => k + 1);
     }
     catch (e) { setMsg((e as Error).message); }
@@ -2518,12 +2584,21 @@ function CalculoOrigenView() {
             {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
           </select>
         </div>
-        {!automotive && (
+        {treatiesL.data.find((t) => t.id === treatyId)?.code === "TMEC" && (
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm">
+            <input type="checkbox" checked={corePart} onChange={(e) => setCorePart(e.target.checked)} />
+            <span>🚗 <strong>Parte esencial (core part)</strong> — solo VCR</span>
+            <button type="button" onClick={() => setCoreInfo(true)} title="¿Qué es una core part?"
+              className="grid h-5 w-5 place-items-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700 hover:bg-blue-200">?</button>
+          </label>
+        )}
+        {(!automotive || corePart) && (
           <Btn onClick={calcular} disabled={!productId || !treatyId || comps.length === 0 || calc}>
             {calc ? "Calculando…" : "Calcular origen"}
           </Btn>
         )}
       </div>
+      {coreInfo && <CorePartInfoModal onClose={() => setCoreInfo(false)} />}
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
 
       {product && comps.length > 0 && (
@@ -2665,7 +2740,14 @@ function CalculoOrigenView() {
         <AutomotivePanel productId={Number(productId)} treatyId={Number(treatyId)}
           suggestNet={bomNetCost} autoVnm={bomVnm} onCalcDone={() => setHistKey((k) => k + 1)} />
       )}
-      {result && !automotive && <OriginResultReport result={result} />}
+      {result?.detail?.core_part != null && (
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          🚗 <strong>Parte esencial (core part).</strong> El salto arancelario (CTH/CTSH) no se
+          aplicó: el origen se determinó <strong>exclusivamente por VCR</strong> sobre costo
+          neto (T-MEC, Apéndice al Anexo 4-B, Tabla A.1).
+        </div>
+      )}
+      {result && (!automotive || corePart) && <OriginResultReport result={result} />}
       {productId && treatyId && comps.length > 0 && (
         <HistorialAnalisis productId={Number(productId)} treatyId={Number(treatyId)} reloadKey={histKey} />
       )}
@@ -2890,6 +2972,12 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
 
   // LVC opcional (informativo) — si se reportó en el cálculo automotriz.
   const psr = d.psr as { hs_pattern?: string; rule_type?: string; shift_level?: string; description?: string } | undefined;
+  const core = d.core_part as { note?: string; note_en?: string } | undefined;
+  const coreBlock = core ? `
+    <div class="section">Parte esencial (core part) — T-MEC</div>
+    <p><b>${esc(core.note ?? "")}</b></p>
+    ${core.note_en ? `<p class="muted">${esc(core.note_en)}</p>` : ""}
+  ` : "";
   const psrBlock = psr ? `
     <div class="section">Regla de origen específica (PSR) aplicable</div>
     <table>
@@ -2948,6 +3036,7 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   </div>
 
   ${psrBlock}
+  ${coreBlock}
 
   <div class="section">1. Desglose de la lista de materiales (BOM) e insumos</div>
   ${bom.length ? `<table class="bomtbl">

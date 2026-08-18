@@ -426,9 +426,9 @@ export const api = {
     req(`/bom-components/${id}/`, { method: "DELETE" }),
   productBomOrigin: (id: number, treaty: number): Promise<BomOriginResponse> =>
     req(`/products/${id}/bom-origin/?treaty=${treaty}`),
-  calcBomOrigin: (id: number, treaty: number, as_of?: string | null): Promise<OriginCalcResult> =>
+  calcBomOrigin: (id: number, treaty: number, as_of?: string | null, corePart?: boolean): Promise<OriginCalcResult> =>
     req(`/products/${id}/calc-bom-origin/`, {
-      method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null }),
+      method: "POST", body: JSON.stringify({ treaty, as_of: as_of || null, core_part: !!corePart }),
     }),
   originAnalyses: (productId: number, treaty?: number): Promise<{ results: OriginAnalysis[] } | OriginAnalysis[]> =>
     req(`/origin-analyses/?product=${productId}${treaty ? `&treaty=${treaty}` : ""}`),

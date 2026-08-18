@@ -199,10 +199,15 @@ def bom_lines_for(product, treaty, as_of=None):
     return lines, total, vnm
 
 
-def _evaluate_product(product, treaty, as_of, visited):
+def _evaluate_product(product, treaty, as_of, visited, core_part=False):
     """Evalúa el origen de un producto a partir de su BOM, RECURSIVAMENTE: los
     subensambles con BOM propio se califican primero y, si originan, hacen
-    roll-up (su valor total cuenta como originario). Detecta ciclos."""
+    roll-up (su valor total cuenta como originario). Detecta ciclos.
+
+    `core_part` (solo T-MEC): la empresa marcó el bien como PARTE ESENCIAL
+    (core part, Apéndice al Anexo 4-B, Tabla A.1). Para esas partes el salto
+    arancelario NO basta: el origen se determina EXCLUSIVAMENTE por VCR
+    (método de costo neto), así que se omite el CTC y se evalúa solo el VCR."""
     if product.id in visited:
         return {"status": "INSUFFICIENT", "criterion": "", "rvc_value": None, "rule": None,
                 "detail": {"error": f"Ciclo en el BOM detectado en {product.sku}."}}
@@ -243,6 +248,12 @@ def _evaluate_product(product, treaty, as_of, visited):
     rt = rule.rule_type
     params = dict(rule.params or {})
     params.setdefault("rvc_method", "transaction")
+    core_part = bool(core_part) and engine.is_tmec(treaty)
+    if core_part:
+        # Core part: NO se aplica el salto (CTH/CTSH); el origen es SOLO por VCR,
+        # sobre costo neto (regla de las partes esenciales del T-MEC).
+        rt = "RVC"
+        params["rvc_method"] = "net_cost"
     shift_level = params.get("shift_level", "CTH")
     de_minimis = params.get("de_minimis", treaty.de_minimis_pct)
     if (params.get("extra") or {}).get("de_minimis_excluded"):
@@ -255,6 +266,17 @@ def _evaluate_product(product, treaty, as_of, visited):
               "psr": {"hs_pattern": rule.hs_pattern, "rule_type": rt,
                       "shift_level": (rule.params or {}).get("shift_level", ""),
                       "description": rule.description}}
+    if core_part:
+        detail["core_part"] = {
+            "manual": True,
+            "note": ("Parte esencial (core part) del T-MEC (Apéndice al Anexo 4-B, "
+                     "Tabla A.1): el salto arancelario no es suficiente; el origen se "
+                     "determinó EXCLUSIVAMENTE por Valor de Contenido Regional (VCR) "
+                     "sobre costo neto."),
+            "note_en": ("USMCA core part (Appendix to Annex 4-B, Table A.1): tariff "
+                        "shift is not sufficient; origin was determined EXCLUSIVELY "
+                        "by Regional Value Content (RVC) over net cost."),
+        }
 
     ctc_pass = rvc_pass = None
     rvc_value = None
@@ -284,15 +306,20 @@ def _evaluate_product(product, treaty, as_of, visited):
 
     result = {"status": "QUALIFIES" if passed else "DOES_NOT", "criterion": criterion,
               "rvc_value": rvc_value, "detail": detail, "rule": rule}
+    if core_part:
+        # La empresa ya aplicó el método de core part (solo VCR): el resultado
+        # CONCLUYE aquí; no se degrada a AUTO_REVIEW.
+        return result
     # Core part (Anexo 4-B): SOLO T-MEC; el salto/VCR del BOM no concluye y requiere
     # el régimen automotriz. En otros tratados rige la PSR normal.
     return engine.apply_core_part_review(product.hs_code or "", result, treaty)
 
 
-def calculate_product_origin(product, treaty, as_of=None, user=None):
+def calculate_product_origin(product, treaty, as_of=None, user=None, core_part=False):
     """Calcula el origen del producto de la EMPRESA a partir de SU BOM, con
-    roll-up recursivo de subensambles. Guarda la Qualification y devuelve la traza."""
-    result = _evaluate_product(product, treaty, as_of, set())
+    roll-up recursivo de subensambles. Guarda la Qualification y devuelve la traza.
+    `core_part`: la empresa marcó el bien como parte esencial (solo VCR; T-MEC)."""
+    result = _evaluate_product(product, treaty, as_of, set(), core_part=core_part)
     rule = result.get("rule")
     _save_qual(product, treaty, rule, result, user)
     # Snapshot en el histórico: cada corrida queda guardada con su fecha, para poder
