@@ -218,7 +218,7 @@ export type BomOriginComponent = BomComponent & { declarations: ComponentDeclara
 export type BomOriginResponse = {
   product: Product; components: BomOriginComponent[]; treaty_members?: string[];
   total_value?: string; conversion_cost?: string; net_cost?: string; vnm?: string;
-  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
+  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; shift_level?: string; description: string } | null;
   automotive_core_code?: string | null;
 };
 export type OriginCalcResult = {
@@ -335,7 +335,7 @@ export type Solicitation = {
   product_unit_cost?: string; treaty_code?: string; supplier_name?: string;
   supplier_country?: string; tenant_name?: string;
   treaty_members?: string[]; treaty_de_minimis?: string; logs?: SolLog[];
-  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; description: string } | null;
+  suggested_rule?: { id: number; hs_pattern: string; rule_type: string; shift_level?: string; description: string } | null;
   origin_hint?: string; declared_originating?: boolean | null;
   declaration_detail?: DeclarationDetail | null;
   supplier_profile?: SupplierProfile | null;

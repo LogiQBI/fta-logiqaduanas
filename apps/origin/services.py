@@ -253,6 +253,7 @@ def _evaluate_product(product, treaty, as_of, visited):
               "materials_total": str(total), "conversion_cost": str(conversion),
               "total_value": str(net_cost), "vnm": str(vnm),
               "psr": {"hs_pattern": rule.hs_pattern, "rule_type": rt,
+                      "shift_level": (rule.params or {}).get("shift_level", ""),
                       "description": rule.description}}
 
     ctc_pass = rvc_pass = None

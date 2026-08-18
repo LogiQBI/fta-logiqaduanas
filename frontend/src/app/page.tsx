@@ -1230,14 +1230,26 @@ function formatHs(p: string) {
   return out;
 }
 // Etiqueta legible del tipo de regla de origen.
-function ruleTypeLabel(t?: string) {
+// Etiqueta del tipo de regla. Si la regla trae su NIVEL de salto (params.
+// shift_level), se muestra el específico (CC/CTH/CTSH) en vez del genérico CTC.
+const SHIFT_LABELS: Record<string, string> = {
+  CC: "CC (cambio de capítulo)",
+  CTH: "CTH (cambio de partida)",
+  CTSH: "CTSH (cambio de subpartida)",
+};
+function ruleTypeLabel(t?: string, level?: string) {
+  const shift = SHIFT_LABELS[(level ?? "").toUpperCase()];
   return ({
-    CTC: "Cambio de clasificación arancelaria (CTC)",
+    CTC: shift ?? "Cambio de clasificación arancelaria (CTC)",
     RVC: "Valor de contenido regional (VCR)",
-    CTC_OR_RVC: "Cambio de clasificación arancelaria o VCR",
-    CTC_AND_RVC: "Cambio de clasificación arancelaria y VCR",
+    CTC_OR_RVC: shift ? `${shift} o VCR` : "Cambio de clasificación arancelaria o VCR",
+    CTC_AND_RVC: shift ? `${shift} y VCR` : "Cambio de clasificación arancelaria y VCR",
     WO: "Totalmente obtenido",
   } as Record<string, string>)[t ?? ""] ?? (t ?? "");
+}
+// Nivel de salto de una regla (para pasarlo a ruleTypeLabel).
+function ruleShift(r?: { params?: Record<string, unknown> } | null): string {
+  return String(r?.params?.shift_level ?? "");
 }
 // Criterio de preferencia USMCA (A–D) a partir del criterio interno del motor.
 // Etiquetas en INGLÉS porque se imprimen en el certificado (fallback del
@@ -1259,7 +1271,7 @@ function cleanRuleDesc(d?: string) {
 function ruleOptionLabel(r: OriginRule) {
   const type = r.display_type || r.rule_type;
   const desc = cleanRuleDesc(r.display_description || r.description);
-  return `${formatHs(r.hs_pattern)} · ${ruleTypeLabel(type)}${desc ? " — " + desc : ""}`;
+  return `${formatHs(r.hs_pattern)} · ${ruleTypeLabel(type, ruleShift(r))}${desc ? " — " + desc : ""}`;
 }
 // Input de fracción: solo 6 dígitos, se muestra con punto (8708.10).
 function HsInput({ value, onChange, className, placeholder }: {
@@ -1458,7 +1470,7 @@ function ReglasView({ me }: { me: Me }) {
   function exportar() {
     exportCSV("reglas_de_origen", ["Tratado", "HS", "Tipo", "Descripción"],
       data.map((r) => [r.treaty_label ?? r.treaty_code ?? "", r.hs_pattern || "General",
-        ruleTypeLabel(r.display_type || r.rule_type), cleanRuleDesc(r.display_description || r.description)]));
+        ruleTypeLabel(r.display_type || r.rule_type, ruleShift(r)), cleanRuleDesc(r.display_description || r.description)]));
   }
   return (
     <div>
@@ -1498,7 +1510,7 @@ function ReglasView({ me }: { me: Me }) {
             <td className="px-4 py-3"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">{r.treaty_label ?? r.treaty_code}</span></td>
             <td className="px-4 py-3 font-mono text-xs font-semibold">{r.hs_pattern ? (r.hs_pattern.includes("-") ? r.hs_pattern.split("-").map((x) => formatHs(x)).join(" – ") : formatHs(r.hs_pattern)) : <span className="rounded-full bg-amber-100 px-2 py-0.5 font-sans text-[11px] font-medium text-amber-700">General</span>}</td>
             <td className="px-4 py-3">
-              <Pill>{ruleTypeLabel(r.display_type || r.rule_type)}</Pill>
+              <Pill>{ruleTypeLabel(r.display_type || r.rule_type, ruleShift(r))}</Pill>
               {r.has_override && <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">personalizado</span>}
             </td>
             <td className="px-4 py-3 text-zinc-600">{cleanRuleDesc(r.display_description || r.description)}</td>
@@ -1604,7 +1616,7 @@ function RuleDisplayModal({ rule, onClose, onSaved }: {
         Personaliza cómo se muestra este PSR en tu empresa (ej. usar <strong>CTH</strong> en vez de <strong>CC</strong>).
         Es <strong>solo cosmético</strong>: el cálculo de origen siempre usa la regla oficial.
       </p>
-      <div className="mb-2 text-xs text-zinc-500">Oficial: <strong>{ruleTypeLabel(rule.rule_type)}</strong> — {cleanRuleDesc(rule.description)}</div>
+      <div className="mb-2 text-xs text-zinc-500">Oficial: <strong>{ruleTypeLabel(rule.rule_type, ruleShift(rule))}</strong> — {cleanRuleDesc(rule.description)}</div>
       <Field label="Tipo/código a mostrar (déjalo vacío para el oficial)">
         <input value={t} onChange={(e) => setT(e.target.value)} className={inputCls} placeholder="ej. CTH" />
       </Field>
@@ -2425,7 +2437,7 @@ function CalculoOrigenView() {
   const [bomConversion, setBomConversion] = useState("0");
   const [bomNetCost, setBomNetCost] = useState("0");
   const [bomVnm, setBomVnm] = useState("0");
-  const [suggestedRule, setSuggestedRule] = useState<{ rule_type: string; description: string; hs_pattern: string } | null>(null);
+  const [suggestedRule, setSuggestedRule] = useState<{ rule_type: string; description: string; hs_pattern: string; shift_level?: string } | null>(null);
   const [loadingBom, setLoadingBom] = useState(false);
   const [bomError, setBomError] = useState(false);
   const [result, setResult] = useState<OriginCalcResult | null>(null);
@@ -2529,7 +2541,7 @@ function CalculoOrigenView() {
               <span className="text-xs text-zinc-500">Regla de origen sugerida (catálogo)</span>
               <div className="text-sm">
                 {suggestedRule
-                  ? <><strong>{ruleTypeLabel(suggestedRule.rule_type)}</strong>{suggestedRule.description ? <span className="text-zinc-500"> — {cleanRuleDesc(suggestedRule.description)}</span> : null}</>
+                  ? <><strong>{ruleTypeLabel(suggestedRule.rule_type, suggestedRule.shift_level)}</strong>{suggestedRule.description ? <span className="text-zinc-500"> — {cleanRuleDesc(suggestedRule.description)}</span> : null}</>
                   : <span className="text-amber-600">No hay una regla específica en el catálogo para esta fracción.</span>}
               </div>
             </div>
@@ -2877,12 +2889,12 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
   `;
 
   // LVC opcional (informativo) — si se reportó en el cálculo automotriz.
-  const psr = d.psr as { hs_pattern?: string; rule_type?: string; description?: string } | undefined;
+  const psr = d.psr as { hs_pattern?: string; rule_type?: string; shift_level?: string; description?: string } | undefined;
   const psrBlock = psr ? `
     <div class="section">Regla de origen específica (PSR) aplicable</div>
     <table>
       <tr><td class="k">Fracción / patrón</td><td>${esc(psr.hs_pattern ? formatHs(psr.hs_pattern) : (a.product_hs ? formatHs(a.product_hs) : "—"))}</td></tr>
-      <tr><td class="k">Tipo de regla</td><td><b>${esc(ruleTypeLabel(psr.rule_type))}</b></td></tr>
+      <tr><td class="k">Tipo de regla</td><td><b>${esc(ruleTypeLabel(psr.rule_type, psr.shift_level))}</b></td></tr>
       <tr><td class="k">Texto de la regla</td><td>${esc(cleanRuleDesc(psr.description) || "—")}</td></tr>
     </table>
   ` : "";
@@ -6140,7 +6152,7 @@ function SugerenciaPanel({ s, onUse, ruleId }: { s: Solicitation; onUse: (id: nu
       💡 <strong>Sugerencia del sistema:</strong> {s.origin_hint}
       {s.suggested_rule && (
         <div className="mt-1.5">
-          Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {ruleTypeLabel(s.suggested_rule.rule_type)}{cleanRuleDesc(s.suggested_rule.description) ? ` — ${cleanRuleDesc(s.suggested_rule.description)}` : ""}
+          Regla sugerida: <strong className="font-mono">{formatHs(s.suggested_rule.hs_pattern)}</strong> · {ruleTypeLabel(s.suggested_rule.rule_type, s.suggested_rule.shift_level)}{cleanRuleDesc(s.suggested_rule.description) ? ` — ${cleanRuleDesc(s.suggested_rule.description)}` : ""}
           {ruleId !== s.suggested_rule.id &&
             <button onClick={() => onUse(s.suggested_rule!.id)} className="ml-2 rounded bg-blue-600 px-2 py-0.5 font-medium text-white">Usar</button>}
         </div>

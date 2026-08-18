@@ -684,7 +684,8 @@ class ProductViewSet(TenantScopedViewSet):
             r = engine.find_rule(treaty, product.hs_code or "")
             if r:
                 suggested_rule = {"id": r.id, "hs_pattern": r.hs_pattern,
-                                  "rule_type": r.rule_type, "description": r.description}
+                                  "rule_type": r.rule_type, "description": r.description,
+                                  "shift_level": (r.params or {}).get("shift_level", "")}
         # El régimen automotriz de 'core parts' es exclusivo del T-MEC.
         core_code = (engine.core_part_code(product.hs_code or "")
                      if (treaty and engine.is_tmec(treaty)) else None)
@@ -833,6 +834,7 @@ class ProductViewSet(TenantScopedViewSet):
             net_cost = _Dec(str(d.get("net_cost"))) if d.get("net_cost") not in (None, "") else (materials_total + conversion)
             _r = _engine.find_rule(treaty, product.hs_code or "")
             psr = ({"hs_pattern": _r.hs_pattern, "rule_type": _r.rule_type,
+                    "shift_level": (_r.params or {}).get("shift_level", ""),
                     "description": _r.description} if _r else None)
             snap = {"status": ("QUALIFIES" if result["qualifies"] else "DOES_NOT"),
                     "criterion": "Automotriz (T-MEC)", "rvc_value": result.get("rvc_value"),

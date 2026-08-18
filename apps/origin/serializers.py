@@ -573,7 +573,8 @@ class SolicitationRequestSerializer(serializers.ModelSerializer):
         if not r:
             return None
         return {"id": r.id, "hs_pattern": r.hs_pattern,
-                "rule_type": r.rule_type, "description": r.description}
+                "rule_type": r.rule_type, "description": r.description,
+                "shift_level": (r.params or {}).get("shift_level", "")}
 
     def get_origin_hint(self, obj):
         hs = "".join(c for c in (obj.product.hs_code or "") if c.isdigit())
