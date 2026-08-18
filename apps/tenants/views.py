@@ -24,15 +24,49 @@ def _temp_password(n=8):
 
 
 class IsMaster(IsAdminUser):
-    """Solo el equipo master de LogiQ (superusuario)."""
+    """Solo el equipo master COMPLETO de LogiQ (superusuario)."""
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_superuser)
+
+
+class IsAnyMaster(IsAdminUser):
+    """Master completo (superusuario) o master LIMITADO (con MasterScope)."""
+    def has_permission(self, request, view):
+        u = request.user
+        return bool(u and u.is_authenticated
+                    and (u.is_superuser or getattr(u, "master_scope", None)))
 
 
 class MasterTenantViewSet(viewsets.ModelViewSet):
     queryset = Tenant.objects.select_related("license").prefetch_related("memberships").all()
     serializer_class = TenantSerializer
-    permission_classes = [IsMaster]
+    permission_classes = [IsAnyMaster]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        u = self.request.user
+        if not u.is_superuser:
+            # Master LIMITADO: solo sus empresas asignadas.
+            qs = qs.filter(master_scopes__user=u)
+        return qs
+
+    def _solo_master_completo(self):
+        if not self.request.user.is_superuser:
+            raise PermissionDenied(
+                "Tu acceso master es LIMITADO: puedes ver y abrir tus empresas "
+                "asignadas, pero no crear, editar ni eliminar empresas o licencias.")
+
+    def create(self, request, *args, **kwargs):
+        self._solo_master_completo()
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        self._solo_master_completo()
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._solo_master_completo()
+        return super().partial_update(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         name = serializer.validated_data.get("name", "")
@@ -66,6 +100,7 @@ class MasterTenantViewSet(viewsets.ModelViewSet):
         """Elimina la empresa y TODOS sus datos. Primero se borran las relaciones
         protegidas (componentes de BOM y certificados) para que la cascada del
         tenant no choque con on_delete=PROTECT."""
+        self._solo_master_completo()
         tenant = self.get_object()
         with transaction.atomic():
             BOMComponent.objects.filter(tenant=tenant).delete()
@@ -77,6 +112,7 @@ class MasterTenantViewSet(viewsets.ModelViewSet):
     def license(self, request, pk=None):
         """Actualiza la licencia: {plan, status, valid_until, renewal_amount,
         renewal_currency, renewal_notes, max_users, max_products}."""
+        self._solo_master_completo()
         tenant = self.get_object()
         lic, _ = License.objects.get_or_create(tenant=tenant)
         for field in ["plan", "status", "valid_until", "renewal_amount",

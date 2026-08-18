@@ -106,6 +106,25 @@ class UserSecurity(TimeStampedModel):
         return f"{self.user} ({estado}, {self.failed_attempts} fallidos)"
 
 
+class MasterScope(TimeStampedModel):
+    """Alcance de un master LIMITADO del equipo LogiQ: solo puede VER y ABRIR
+    las empresas asignadas (administrándolas por dentro como admin), pero no
+    puede crear/editar/eliminar empresas ni gestionar licencias o usuarios
+    globales. Un usuario con MasterScope NO es superusuario."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name="master_scope")
+    tenants = models.ManyToManyField(Tenant, blank=True, related_name="master_scopes",
+                                     verbose_name="Empresas asignadas")
+
+    class Meta:
+        verbose_name = "Alcance de master limitado"
+        verbose_name_plural = "Alcances de masters limitados"
+
+    def __str__(self):
+        return f"{self.user} → {self.tenants.count()} empresa(s)"
+
+
 class Membership(TimeStampedModel):
     """Vincula un usuario con una empresa y su rol dentro de ella."""
 

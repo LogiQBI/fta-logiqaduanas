@@ -310,7 +310,9 @@ function navFor(me: Me, badges: Record<string, number>): NavSection[] {
       { items: [{ key: "home", label: "Inicio", icon: Home }] },
       { label: "Administración", items: [
         { key: "empresas", label: "Empresas", icon: Building2 },
-        { key: "usuarios", label: "Usuarios", icon: Users },
+        // El master LIMITADO no gestiona usuarios globales (solo los de sus
+        // empresas asignadas, desde adentro de cada una).
+        ...(me.master_limited ? [] : [{ key: "usuarios", label: "Usuarios", icon: Users }]),
       ] },
       { label: "Catálogos", items: [
         { key: "tratados", label: "Tratados (TLC)", icon: ScrollText },
@@ -500,7 +502,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
 function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void }) {
   switch (view) {
     case "home": return <HomeView me={me} go={go} />;
-    case "empresas": return <EmpresasView />;
+    case "empresas": return <EmpresasView me={me} />;
     case "usuarios": return <UsuariosView />;
     case "equipo": return <EquipoView me={me} />;
     case "tratados": return <TratadosView />;
@@ -855,15 +857,18 @@ function PendientesPanel({ me, go }: { me: Me; go: (v: string) => void }) {
 }
 
 /* ============ MASTER ============ */
-function EmpresasView() {
+function EmpresasView({ me }: { me: Me }) {
   const { data, reload, loading } = useList<MasterTenant>(() => api.masterTenants());
   const [name, setName] = useState(""); const [rfc, setRfc] = useState(""); const [msg, setMsg] = useState("");
   const [edit, setEdit] = useState<MasterTenant | null>(null);
   const [licFor, setLicFor] = useState<MasterTenant | null>(null);
+  const limitado = !!me.master_limited;
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); await reload(); } catch (e) { setMsg((e as Error).message); } };
   return (
     <div>
-      <PageTitle title="Empresas" desc="Clientes del sistema y sus licencias." />
+      <PageTitle title="Empresas" desc={limitado
+        ? "Tus empresas asignadas. Puedes abrirlas y administrarlas por dentro; el alta, baja y licencias las gestiona el equipo master completo."
+        : "Clientes del sistema y sus licencias."} />
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
       <Table head={["Empresa", "Slug", "RFC", "Usuarios", "Plan", "Licencia", ""]}>
         {data.map((t) => (
@@ -876,15 +881,17 @@ function EmpresasView() {
             <td className="px-4 py-3"><Pill k={t.license?.status}>{t.license?.status_display ?? "—"}</Pill></td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
               <span className="mr-2 inline-block"><Btn size="sm" onClick={() => { setAsTenant(t.id); window.location.reload(); }}>Abrir empresa</Btn></span>
-              <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
-              <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLicFor(t)}>Licencia</Btn></span>
-              <Btn size="sm" variant="danger" onClick={() => { if (confirm(tr(`¿Eliminar ${t.name}?`))) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>
+              {!limitado && <>
+                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setEdit(t)}>Editar</Btn></span>
+                <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setLicFor(t)}>Licencia</Btn></span>
+                <Btn size="sm" variant="danger" onClick={() => { if (confirm(tr(`¿Eliminar ${t.name}?`))) act(() => api.masterDeleteTenant(t.id)); }}>Eliminar</Btn>
+              </>}
             </td>
           </tr>
         ))}
         {!loading && data.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Sin empresas.</td></tr>}
       </Table>
-      <Card className="mt-6 max-w-md p-5">
+      {!limitado && <Card className="mt-6 max-w-md p-5">
         <h3 className="mb-3 font-semibold">Nueva empresa</h3>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Razón social"
           className="mb-2 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" />
@@ -893,7 +900,7 @@ function EmpresasView() {
         <Btn onClick={() => name && act(async () => { await api.masterCreateTenant({ name, rfc }); setName(""); setRfc(""); })}>
           <Plus size={15} className="-mt-0.5 mr-1 inline" />Crear empresa
         </Btn>
-      </Card>
+      </Card>}
       {edit && <EditTenantModal tenant={edit} onClose={() => setEdit(null)}
         onSaved={async () => { setEdit(null); await reload(); }} />}
       {licFor && <LicenseModal tenant={licFor} onClose={() => setLicFor(null)}
@@ -979,14 +986,32 @@ function EditTenantModal({ tenant, onClose, onSaved }: {
 }
 
 function UsuariosView() {
-  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; must_change_password: boolean; membership: { tenant: string; role_display: string; party: string | null } | null }>(() => api.masterUsers());
+  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; must_change_password: boolean; membership: { tenant: string; role_display: string; party: string | null } | null; master_scope?: { tenants: { id: number; name: string }[] } | null }>(() => api.masterUsers());
   const tenants = useList<MasterTenant>(() => api.masterTenants());
   const [f, setF] = useState({ username: "", password: "", tenant: "" as number | "", role: "admin" });
   const [msg, setMsg] = useState("");
+  // Empresas asignadas para el master LIMITADO (solo ve/abre esas).
+  const [scopeSel, setScopeSel] = useState<number[]>([]);
+  const toggleScope = (id: number) =>
+    setScopeSel((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   // Última contraseña temporal generada (para mostrarla/copiarla una sola vez).
   const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
   const esMaster = f.role === "master";
+  const esLimitado = f.role === "master_limited";
   async function create() {
+    if (esLimitado) {
+      // Master LIMITADO: sin superusuario; solo ve/abre sus empresas asignadas.
+      if (!f.username) { setMsg("Escribe el nombre de usuario."); return; }
+      if (!scopeSel.length) { setMsg("Asigna al menos una empresa al master limitado."); return; }
+      try {
+        const r = await api.masterCreateUser({ username: f.username, password: f.password || undefined,
+          is_limited_master: true, scope_tenants: scopeSel }) as { username: string; temp_password?: string };
+        if (r.temp_password) setTemp({ username: r.username, password: r.temp_password });
+        setF({ username: "", password: "", tenant: "", role: "admin" }); setScopeSel([]);
+        setMsg("Master limitado creado."); await reload();
+      } catch (e) { setMsg((e as Error).message); }
+      return;
+    }
     if (esMaster) {
       // Usuario del equipo LogiQ: superusuario, sin empresa.
       if (!f.username || !f.password) { setMsg("Un usuario master necesita usuario y contraseña."); return; }
@@ -1032,8 +1057,10 @@ function UsuariosView() {
         {data.map((u) => (
           <tr key={u.id}>
             <td className="px-4 py-3 font-medium">{u.username}</td>
-            <td className="px-4 py-3">{u.membership?.tenant ?? "—"}</td>
-            <td className="px-4 py-3">{u.membership?.role_display ?? "Master"}</td>
+            <td className="px-4 py-3">{u.membership?.tenant
+              ?? (u.master_scope ? u.master_scope.tenants.map((t) => t.name).join(", ") : "—")}</td>
+            <td className="px-4 py-3">{u.membership?.role_display
+              ?? (u.master_scope ? "Master limitado" : "Master")}</td>
             <td className="px-4 py-3">{u.membership?.party ?? "—"}</td>
             <td className="px-4 py-3">
               {u.is_locked
@@ -1069,8 +1096,27 @@ function UsuariosView() {
             <option value="analyst">Analista</option>
             <option value="auditor">Auditor</option>
             <option value="master">Master (equipo LogiQ)</option>
+            <option value="master_limited">Master limitado (empresas asignadas)</option>
           </select>
         </div>
+        {esLimitado && (
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-semibold text-zinc-700">Empresas asignadas</div>
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 p-2">
+              {tenants.data.map((t) => (
+                <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-zinc-50">
+                  <input type="checkbox" checked={scopeSel.includes(t.id)} onChange={() => toggleScope(t.id)} />
+                  <span>{t.name}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              Solo podrá VER y ABRIR estas empresas (administrándolas por dentro). No podrá crear,
+              editar ni eliminar empresas, licencias ni usuarios globales. Sin contraseña se genera
+              una temporal con cambio obligatorio.
+            </p>
+          </div>
+        )}
         {esMaster && <p className="mt-2 text-xs text-amber-600">⚠️ Un usuario <strong>master</strong> administra TODO el sistema (empresas, licencias, usuarios) y puede abrir cualquier empresa. Crea solo los necesarios.</p>}
         <div className="mt-3"><Btn onClick={create}><Plus size={15} className="-mt-0.5 mr-1 inline" />{esMaster ? "Crear usuario master" : "Crear usuario"}</Btn></div>
       </Card>

@@ -108,21 +108,33 @@ class CatalogPagination(PageNumberPagination):
     max_page_size = 10000
 
 
+def master_scope_of(user):
+    """MasterScope del usuario si es un master LIMITADO del equipo LogiQ
+    (usuario sin superusuario con empresas asignadas); None en otro caso."""
+    if not user or not user.is_authenticated or user.is_superuser:
+        return None
+    return getattr(user, "master_scope", None)
+
+
 def active_membership(request):
     """Membresía efectiva del request.
 
-    Para el equipo LogiQ (superusuario) que "abre" una empresa con el header
-    `X-As-Tenant: <id>`, devuelve una membresía SINTÉTICA de administrador de ese
-    tenant (objeto en memoria, NO se guarda en BD). Así el master ve el sistema de
-    esa empresa como admin sin un login aparte. Para usuarios normales devuelve su
-    membresía real (comportamiento sin cambios)."""
+    Para el equipo LogiQ que "abre" una empresa con el header `X-As-Tenant: <id>`,
+    devuelve una membresía SINTÉTICA de administrador de ese tenant (objeto en
+    memoria, NO se guarda en BD). El superusuario puede abrir CUALQUIER empresa;
+    un master LIMITADO (MasterScope) solo las que tiene ASIGNADAS. Para usuarios
+    normales devuelve su membresía real (comportamiento sin cambios)."""
     user = getattr(request, "user", None)
     if not user or not user.is_authenticated:
         return None
-    if user.is_superuser:
+    scope = master_scope_of(user)
+    if user.is_superuser or scope:
         tid = request.headers.get("X-As-Tenant")
         if tid:
-            t = Tenant.objects.filter(pk=tid).first()
+            qs = Tenant.objects.filter(pk=tid)
+            if scope is not None:
+                qs = qs.filter(master_scopes=scope)  # solo empresas asignadas
+            t = qs.first()
             if t:
                 return Membership(user=user, tenant=t,
                                   role=Membership.Role.ADMIN, party=None)
@@ -131,9 +143,12 @@ def active_membership(request):
 
 
 def is_impersonating(request):
-    """True si un master está viendo una empresa vía X-As-Tenant."""
+    """True si un master (completo o limitado) está viendo una empresa vía
+    X-As-Tenant."""
     user = getattr(request, "user", None)
-    return bool(user and user.is_superuser and request.headers.get("X-As-Tenant"))
+    if not (user and request.headers.get("X-As-Tenant")):
+        return False
+    return bool(user.is_superuser or master_scope_of(user))
 
 
 READ_ONLY_ROLE_MSG = ("Tu perfil de AUDITOR es de solo lectura: puedes consultar "
@@ -2034,22 +2049,28 @@ def change_password(request):
 def me(request):
     """Identidad del usuario: master, empresa o proveedor."""
     impersonating = is_impersonating(request)
-    # El equipo de LogiQ (superusuario) es el perfil MASTER del SaaS. Salvo que
-    # esté "abriendo" una empresa (X-As-Tenant): en ese caso responde como admin
-    # de esa empresa pero conservando is_master + impersonating.
-    if request.user.is_superuser and not impersonating:
+    scope = master_scope_of(request.user)
+    es_master = request.user.is_superuser or scope is not None
+    m = active_membership(request)
+    # El equipo de LogiQ es el perfil MASTER del SaaS (superusuario = completo;
+    # MasterScope = limitado a sus empresas asignadas). Salvo que esté "abriendo"
+    # una empresa (X-As-Tenant válido): en ese caso responde como admin de esa
+    # empresa pero conservando is_master + impersonating.
+    if es_master and (not impersonating or m is None):
         sec = UserSecurity.objects.filter(user=request.user).first()
         return Response({
             "username": request.user.username,
-            "role": "master", "role_display": "Master (LogiQ)",
-            "is_master": True, "is_supplier": False, "impersonating": False,
+            "role": "master",
+            "role_display": ("Master (LogiQ)" if request.user.is_superuser
+                             else "Master limitado (LogiQ)"),
+            "is_master": True, "master_limited": scope is not None,
+            "is_supplier": False, "impersonating": False,
             "must_change_password": bool(sec and sec.must_change_password),
             "tenant": None, "supplier": None,
         })
-    m = active_membership(request)
     if not m:
         return Response({"username": request.user.username, "role": None,
-                         "is_master": request.user.is_superuser,
+                         "is_master": es_master,
                          "impersonating": False, "tenant": None, "supplier": None})
     # Logo de la empresa (tenant). El proveedor ve el logo de su empresa-cliente.
     tprof = getattr(m.tenant, "profile", None)
@@ -2057,7 +2078,8 @@ def me(request):
         "username": (m.login_name or request.user.username) if m.is_supplier else request.user.username,
         "role": m.role,
         "role_display": m.get_role_display(),
-        "is_master": request.user.is_superuser,
+        "is_master": es_master,
+        "master_limited": scope is not None,
         "impersonating": impersonating,
         "is_supplier": m.is_supplier,
         "must_change_password": getattr(m, "must_change_password", False),

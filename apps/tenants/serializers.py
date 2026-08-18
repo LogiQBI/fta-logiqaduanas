@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from apps.catalog.models import Party
-from apps.tenants.models import License, Membership, Tenant, UserSecurity
+from apps.tenants.models import License, MasterScope, Membership, Tenant, UserSecurity
 
 
 class LicenseSerializer(serializers.ModelSerializer):
@@ -61,12 +61,31 @@ class UserAdminSerializer(serializers.ModelSerializer):
     membership = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
     must_change_password = serializers.SerializerMethodField()
+    # Master LIMITADO: solo ve/abre sus empresas asignadas (sin alta/baja de
+    # empresas ni panel global de usuarios).
+    is_limited_master = serializers.BooleanField(write_only=True, required=False,
+                                                 default=False)
+    scope_tenants = serializers.PrimaryKeyRelatedField(
+        queryset=Tenant.objects.all(), many=True, write_only=True, required=False)
+    master_scope = serializers.SerializerMethodField()
+    temp_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "is_superuser", "is_active",
                   "password", "tenant", "role", "party", "membership", "is_locked",
-                  "must_change_password"]
+                  "must_change_password", "is_limited_master", "scope_tenants",
+                  "master_scope", "temp_password"]
+
+    def get_master_scope(self, obj):
+        sc = getattr(obj, "master_scope", None)
+        if not sc:
+            return None
+        return {"tenants": [{"id": t.id, "name": t.name} for t in sc.tenants.all()]}
+
+    def get_temp_password(self, obj):
+        # Solo presente justo después de crear (no se vuelve a mostrar).
+        return getattr(obj, "_temp_password", None)
 
     def get_is_locked(self, obj):
         return UserSecurity.objects.filter(user=obj, is_locked=True).exists()
@@ -95,6 +114,30 @@ class UserAdminSerializer(serializers.ModelSerializer):
         tenant = validated_data.pop("tenant", None)
         role = validated_data.pop("role", Membership.Role.ANALYST)
         party = validated_data.pop("party", None)
+        limited = bool(validated_data.pop("is_limited_master", False))
+        scope_tenants = validated_data.pop("scope_tenants", [])
+        # Master LIMITADO (equipo LogiQ): SIN superusuario y SIN membresía; su
+        # alcance son las empresas asignadas (MasterScope). Contraseña temporal
+        # si no se da, y cambio obligatorio al primer ingreso.
+        if limited:
+            if not scope_tenants:
+                raise serializers.ValidationError(
+                    {"scope_tenants": "Asigna al menos una empresa al master limitado."})
+            import secrets
+            alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"
+            pwd = password or "".join(secrets.choice(alphabet) for _ in range(8))
+            user = User(username=validated_data["username"],
+                        email=validated_data.get("email", ""),
+                        is_superuser=False, is_staff=False)
+            user.set_password(pwd)
+            user.save()
+            scope = MasterScope.objects.create(user=user)
+            scope.tenants.set(scope_tenants)
+            sec, _ = UserSecurity.objects.get_or_create(user=user)
+            sec.must_change_password = True
+            sec.save(update_fields=["must_change_password", "updated_at"])
+            user._temp_password = pwd
+            return user
         # Usuario MASTER (equipo LogiQ): superusuario sin membresía a empresas.
         is_super = bool(validated_data.get("is_superuser"))
         if is_super and not password:

@@ -278,7 +278,7 @@ export type CompanyUser = {
 };
 export type Me = {
   username: string; role: string | null; role_display?: string;
-  is_supplier?: boolean; is_master?: boolean; impersonating?: boolean;
+  is_supplier?: boolean; is_master?: boolean; master_limited?: boolean; impersonating?: boolean;
   must_change_password?: boolean;
   tenant: { id: number; name: string; slug: string; logo?: string } | null;
   supplier: { id: number; name: string; slug: string } | null;
