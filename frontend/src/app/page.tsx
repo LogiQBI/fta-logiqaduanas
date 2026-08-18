@@ -1638,6 +1638,10 @@ function RuleDisplayModal({ rule, onClose, onSaved }: {
 function ProductosView() {
   const { data, reload, loading } = useList<Product>(() => api.products());
   const parties = useList<{ id: number; name: string; kind: string }>(() => api.parties());
+  // Calificaciones (cálculos de origen) para el badge Calculado / Sin cálculo.
+  const qualsL = useList<Qualification>(() => api.qualifications());
+  const treatiesL = useList<Treaty>(() => api.treaties());
+  const [treatyFilter, setTreatyFilter] = useState<number | "">("");
   const [msg, setMsg] = useState("");
   const [busq, setBusq] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
@@ -1649,19 +1653,30 @@ function ProductosView() {
     catch (e) { setMsg((e as Error).message); }
   }
   const suppliers = parties.data.filter((p) => p.kind === "supplier");
+  // Calificaciones por producto (todas, o solo las del tratado filtrado).
+  const qualsDe = (pid: number) =>
+    qualsL.data.filter((q) => q.product === pid && (treatyFilter === "" || q.treaty === Number(treatyFilter)));
   // En "Productos" solo los terminados/subensambles; los insumos van en "Números de parte".
   const visibles = smartFilter(data.filter((p) => p.kind !== "material"), busq, (p) => [p.sku, p.description, p.hs_code]);
   const money = (v?: string, cur?: string) =>
     v != null && Number(v) > 0 ? `${Number(v).toLocaleString("es-MX")} ${cur ?? ""}`.trim() : "—";
   function exportar() {
-    exportCSV("productos", ["SKU", "Descripción", "Tipo", "HS", "Precio", "Moneda", "Mano de obra/conversión"],
+    exportCSV("productos", ["Núm. de parte", "Descripción", "Tipo", "HS", "Cálculo de origen", "Precio", "Moneda", "Mano de obra/conversión"],
       visibles.map((p) => [p.sku, p.description, p.kind_display ?? p.kind, p.hs_code ?? "",
+        qualsDe(p.id).length ? "Calculado" : "Sin cálculo",
         p.unit_cost ?? "", p.currency ?? "", p.conversion_cost ?? ""]));
   }
   return (
     <div>
       <PageTitle title="Productos terminados" desc="Ficha de tus productos: fracción (HS), costos, mano de obra y BOM. Para calificarlos ve a “Cálculo de origen”; para pedir origen a proveedores, a “Solicitudes”." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="min-w-[16rem]">
+          <span className="mb-1 block text-xs font-semibold text-zinc-700">Ver cálculo por tratado</span>
+          <select value={treatyFilter} onChange={(e) => setTreatyFilter(e.target.value ? Number(e.target.value) : "")} className={inputCls}>
+            <option value="">Todos los tratados</option>
+            {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
+          </select>
+        </div>
         <div className="ml-auto flex flex-wrap gap-2">
           <Btn variant="ghost" onClick={() => setBulk("products")}><Upload size={15} className="-mt-0.5 mr-1 inline" />Carga masiva</Btn>
           <Btn variant="ghost" onClick={() => setBulk("bom")}><Upload size={15} className="-mt-0.5 mr-1 inline" />BOM masivo</Btn>
@@ -1669,14 +1684,30 @@ function ProductosView() {
         </div>
       </div>
       {msg && <p className="mb-3 text-sm text-amber-600">{msg}</p>}
-      <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (SKU o descripción)" />
-      <Table head={["SKU", "Descripción", "Tipo", "HS", "Precio", "Mano de obra", ""]}>
-        {visibles.map((p) => (
+      <ReportToolbar q={busq} setQ={setBusq} onExport={exportar} placeholder="Buscar producto… (número de parte o descripción)" />
+      <Table head={["Núm. de parte", "Descripción", "Tipo", "HS", "Cálculo de origen", "Precio", "Mano de obra", ""]}>
+        {visibles.map((p) => {
+          const qs = qualsDe(p.id);
+          return (
           <tr key={p.id}>
             <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
             <td className="px-4 py-3">{p.description}</td>
             <td className="px-4 py-3 text-xs text-zinc-500">{p.kind_display ?? p.kind}</td>
             <td className="px-4 py-3 font-mono text-xs">{formatHs(p.hs_code)}</td>
+            <td className="px-4 py-3">
+              {qs.length ? (
+                <>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Calculado</span>
+                  <div className="mt-0.5 text-[11px] text-zinc-500">
+                    {treatyFilter === ""
+                      ? qs.map((q) => q.treaty_code ? treatyLabel(q.treaty_code) : "").filter(Boolean).join(", ")
+                      : <>{qs[0].status_display}{qs[0].rvc_value ? ` · VCR ${qs[0].rvc_value}%` : ""}{qs[0].is_stale ? " ⚠️" : ""}</>}
+                  </div>
+                </>
+              ) : (
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500">Sin cálculo</span>
+              )}
+            </td>
             <td className="px-4 py-3 text-xs">{money(p.unit_cost, p.currency)}</td>
             <td className="px-4 py-3 text-xs">{money(p.conversion_cost, p.currency)}</td>
             <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -1687,8 +1718,9 @@ function ProductosView() {
                 className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
             </td>
           </tr>
-        ))}
-        {!loading && visibles.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos terminados. Crea el primero con “Nuevo producto”.</td></tr>}
+          );
+        })}
+        {!loading && visibles.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Aún no tienes productos terminados. Crea el primero con “Nuevo producto”.</td></tr>}
       </Table>
       {editing && (
         <ProductForm product={editing === "new" ? null : editing} suppliers={suppliers}
@@ -3114,7 +3146,7 @@ function ProductForm({ product, suppliers, onClose, onSaved }: {
   return (
     <Modal title={product ? "Editar producto" : "Nuevo producto"} onClose={onClose}>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="SKU / Núm. de parte">
+        <Field label="Número de parte (SKU)">
           <input value={f.sku} onChange={(e) => set("sku", e.target.value.toUpperCase())} className={cx(inputCls, "uppercase")} placeholder="PT-001" autoFocus />
         </Field>
         <Field label="Tipo">
