@@ -2570,9 +2570,10 @@ function CalculoOrigenView() {
     finally { setLoadingBom(false); }
   }, [productId, treatyId]);
   useEffect(() => { loadBom(); }, [loadBom]);
-  // Si la fracción está en la Tabla A.1 (detección automática), la casilla de
-  // core part se pre-marca; la empresa puede quitarla.
-  useEffect(() => { setCorePart(!!autoCore); }, [autoCore]);
+  // La marca de core part es POR PRODUCTO (persistida en el catálogo): hay
+  // empresas que manejan ambos tipos. Si el producto no la tiene definida,
+  // se pre-marca con la detección automática (Tabla A.1).
+  useEffect(() => { setCorePart(product?.is_core_part ?? !!autoCore); }, [product, autoCore]);
 
   async function patch(c: BomOriginComponent, payload: Record<string, unknown>) {
     setMsg("");
@@ -2616,9 +2617,15 @@ function CalculoOrigenView() {
             {treatiesL.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)} — {t.name}</option>)}
           </select>
         </div>
-        {treatiesL.data.find((t) => t.id === treatyId)?.code === "TMEC" && (
+        {product && treatiesL.data.find((t) => t.id === treatyId)?.code === "TMEC" && (
           <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm">
-            <input type="checkbox" checked={corePart} onChange={(e) => setCorePart(e.target.checked)} />
+            <input type="checkbox" checked={corePart} onChange={async (e) => {
+              const v = e.target.checked;
+              setCorePart(v);
+              // Se persiste POR PRODUCTO en el catálogo (no es un estado general).
+              try { await api.updateProduct(product.id, { is_core_part: v }); }
+              catch (err) { setMsg((err as Error).message); }
+            }} />
             <span>🚗 <strong>Parte esencial (core part)</strong> — solo VCR</span>
             <button type="button" onClick={() => setCoreInfo(true)} title="¿Qué es una core part?"
               className="grid h-5 w-5 place-items-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-700 hover:bg-blue-200">?</button>
@@ -3085,9 +3092,12 @@ function generarAnalisisPDF(a: OriginAnalysisDetail, company?: { legal_name?: st
 
   <div class="legal">
     Documento generado por <b>LogiQ Aduanas | FTA</b> el ${esc(fecha)} como evidencia del análisis de calificación de
-    origen bajo el tratado ${esc(treaty)}. Consolida la información de costeo de origen y las reglas de origen
-    específicas aplicables. El resultado es orientativo y debe ser validado por personal con conocimientos técnicos
-    en reglas de origen; conserve este expediente conforme a los plazos de retención aplicables (mínimo 5 años, T-MEC).
+    origen bajo el tratado ${esc(treaty)}. La información fue <b>procesada y calculada por el sistema LogiQ Aduanas</b>
+    utilizando los datos proporcionados por <b>${esc(company?.legal_name || "la empresa")}</b>; el sistema
+    <b>no manipula, altera ni modifica</b> la información, la cual es estrictamente ingresada por la empresa.
+    Consolida la información de costeo de origen y las reglas de origen específicas aplicables. El resultado es
+    orientativo y debe ser validado por personal con conocimientos técnicos en reglas de origen; conserve este
+    expediente conforme a los plazos de retención aplicables (mínimo 5 años, T-MEC).
   </div>
 
   <div class="noprint" style="margin-top:24px;text-align:center">

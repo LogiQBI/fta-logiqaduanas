@@ -127,6 +127,12 @@ class Product(TenantOwnedModel):
     # Descripción en INGLÉS: la que se imprime en el certificado cuando se
     # emite en inglés (si falta, se usa la descripción normal).
     description_en = models.CharField("Descripción (inglés)", max_length=255, blank=True)
+    # Marca POR PRODUCTO de parte esencial (core part) del T-MEC: define si su
+    # cálculo de origen omite el salto y evalúa solo VCR. Nulo = sin definir
+    # (se usa la detección automática por fracción, Tabla A.1). Persistente
+    # porque hay empresas que manejan productos de ambos tipos.
+    is_core_part = models.BooleanField("Parte esencial (core part) T-MEC",
+                                       null=True, blank=True)
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.FINISHED)
     hs_code = models.CharField("Fracción arancelaria (HS)", max_length=10, blank=True,
                                help_text="6 a 10 dígitos")

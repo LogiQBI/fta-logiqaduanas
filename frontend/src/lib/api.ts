@@ -186,6 +186,7 @@ export type ProductChangeLog = {
 };
 export type Product = {
   id: number; sku: string; description: string; description_en?: string; kind: string;
+  is_core_part?: boolean | null;
   kind_display?: string; hs_code: string; unit_cost: string; conversion_cost?: string;
   currency: string; country_of_origin: string; supplier: number | null;
   supplier_name?: string | null; supplier_code?: string | null;
