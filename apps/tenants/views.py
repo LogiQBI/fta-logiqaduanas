@@ -161,6 +161,61 @@ class MasterUserViewSet(viewsets.ModelViewSet):
         sec.save(update_fields=["is_locked", "failed_attempts", "updated_at"])
         return Response({"ok": True})
 
+    def destroy(self, request, *args, **kwargs):
+        """Elimina un usuario (de empresa, proveedor o master). Cascada: se van
+        sus membresías, alcance y tokens. No puedes eliminarte a ti mismo."""
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response({"error": "No puedes eliminar tu propia cuenta."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="set-role")
+    def set_role(self, request, pk=None):
+        """Cambia el nivel de un usuario de EMPRESA: {role} (admin/analyst/
+        auditor). Los roles de proveedor y de master no se cambian aquí."""
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response({"error": "No puedes cambiar tu propio rol."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if user.is_superuser or getattr(user, "master_scope", None):
+            return Response({"error": "El rol de un master no se cambia aquí. "
+                             "Elimina el usuario y créalo de nuevo con el rol deseado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        m = user.memberships.first()
+        if not m:
+            return Response({"error": "El usuario no tiene membresía a ninguna empresa."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if m.role == Membership.Role.SUPPLIER:
+            return Response({"error": "Los accesos de proveedor no cambian de rol; "
+                             "gestónalos desde la empresa (Proveedores → Crear acceso)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        role = request.data.get("role")
+        if role not in TEAM_ROLES:
+            return Response({"error": "Rol inválido. Usa administrador, analista o auditor."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        m.role = role
+        m.save(update_fields=["role", "updated_at"])
+        return Response(UserAdminSerializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="set-scope")
+    def set_scope(self, request, pk=None):
+        """Actualiza las empresas asignadas de un master LIMITADO:
+        {scope_tenants: [ids]}."""
+        user = self.get_object()
+        sc = getattr(user, "master_scope", None)
+        if not sc:
+            return Response({"error": "Este usuario no es un master limitado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = request.data.get("scope_tenants") or []
+        tenants = list(Tenant.objects.filter(pk__in=ids))
+        if not tenants:
+            return Response({"error": "Asigna al menos una empresa al master limitado."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        sc.tenants.set(tenants)
+        return Response(UserAdminSerializer(user).data)
+
 
 # Roles que el ADMIN de una empresa puede asignar a su equipo (el rol proveedor
 # se gestiona aparte, en Catálogos → Proveedores → Crear acceso).

@@ -503,7 +503,7 @@ function View({ view, me, go }: { view: string; me: Me; go: (v: string) => void 
   switch (view) {
     case "home": return <HomeView me={me} go={go} />;
     case "empresas": return <EmpresasView me={me} />;
-    case "usuarios": return <UsuariosView />;
+    case "usuarios": return <UsuariosView me={me} />;
     case "equipo": return <EquipoView me={me} />;
     case "tratados": return <TratadosView />;
     case "reglas": return <ReglasView me={me} />;
@@ -985,8 +985,14 @@ function EditTenantModal({ tenant, onClose, onSaved }: {
   );
 }
 
-function UsuariosView() {
-  const { data, reload } = useList<{ id: number; username: string; is_locked: boolean; must_change_password: boolean; membership: { tenant: string; role_display: string; party: string | null } | null; master_scope?: { tenants: { id: number; name: string }[] } | null }>(() => api.masterUsers());
+type MasterUserRow = {
+  id: number; username: string; is_superuser: boolean; is_locked: boolean;
+  must_change_password: boolean;
+  membership: { tenant: string; tenant_id?: number; role: string; role_display: string; party: string | null } | null;
+  master_scope?: { tenants: { id: number; name: string }[] } | null;
+};
+function UsuariosView({ me }: { me: Me }) {
+  const { data, reload } = useList<MasterUserRow>(() => api.masterUsers());
   const tenants = useList<MasterTenant>(() => api.masterTenants());
   const [f, setF] = useState({ username: "", password: "", tenant: "" as number | "", role: "admin" });
   const [msg, setMsg] = useState("");
@@ -996,6 +1002,7 @@ function UsuariosView() {
     setScopeSel((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   // Última contraseña temporal generada (para mostrarla/copiarla una sola vez).
   const [temp, setTemp] = useState<{ username: string; password: string } | null>(null);
+  const [scopeFor, setScopeFor] = useState<MasterUserRow | null>(null);
   const esMaster = f.role === "master";
   const esLimitado = f.role === "master_limited";
   async function create() {
@@ -1030,13 +1037,26 @@ function UsuariosView() {
     catch (e) { setMsg((e as Error).message); }
   }
   async function resetPwd(u: { id: number; username: string }) {
-    if (!confirm(tr(`¿Restablecer la contraseña de “${u.username}”? Se generará una temporal y deberá cambiarla en su próximo ingreso.`))) return;
+    // Escribe una contraseña específica, o déjalo vacío para generar temporal.
+    const pwd = prompt(tr(`Nueva contraseña para “${u.username}” (déjalo VACÍO para generar una temporal). En ambos casos deberá cambiarla en su próximo ingreso.`), "");
+    if (pwd === null) return;
     setMsg("");
     try {
-      const r = await api.masterResetPassword(u.id) as { username: string; temp_password: string };
+      const r = await api.masterResetPassword(u.id, pwd.trim() || undefined) as { username: string; temp_password: string };
       setTemp({ username: u.username, password: r.temp_password });
       await reload();
     } catch (e) { setMsg((e as Error).message); }
+  }
+  async function eliminar(u: MasterUserRow) {
+    if (!confirm(tr(`¿Eliminar el usuario “${u.username}”? Perderá el acceso al sistema definitivamente.`))) return;
+    setMsg("");
+    try { await api.masterDeleteUser(u.id); if (temp?.username === u.username) setTemp(null); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
+  }
+  async function cambiarRol(u: MasterUserRow, role: string) {
+    setMsg("");
+    try { await api.masterSetRole(u.id, role); await reload(); }
+    catch (e) { setMsg((e as Error).message); }
   }
   return (
     <div>
@@ -1054,13 +1074,28 @@ function UsuariosView() {
         </div>
       )}
       <Table head={["Usuario", "Empresa", "Rol", "Proveedor", "Estado", ""]}>
-        {data.map((u) => (
+        {data.map((u) => {
+          const soyYo = u.username === me.username;
+          return (
           <tr key={u.id}>
-            <td className="px-4 py-3 font-medium">{u.username}</td>
+            <td className="px-4 py-3 font-medium">{u.username}{soyYo && <span className="ml-1.5 text-xs text-zinc-400">(tú)</span>}</td>
             <td className="px-4 py-3">{u.membership?.tenant
               ?? (u.master_scope ? u.master_scope.tenants.map((t) => t.name).join(", ") : "—")}</td>
-            <td className="px-4 py-3">{u.membership?.role_display
-              ?? (u.master_scope ? "Master limitado" : "Master")}</td>
+            <td className="px-4 py-3">
+              {u.membership && u.membership.role !== "supplier" && !soyYo ? (
+                <select value={u.membership.role} onChange={(e) => cambiarRol(u, e.target.value)}
+                  className="rounded-lg border border-zinc-300 px-2 py-1 text-sm">
+                  <option value="admin">Administrador</option>
+                  <option value="analyst">Analista de origen</option>
+                  <option value="auditor">Auditor (solo lectura)</option>
+                </select>
+              ) : u.membership ? u.membership.role_display
+                : u.master_scope ? (
+                  <span>Master limitado <button onClick={() => setScopeFor(u)}
+                    className="ml-1 text-xs text-blue-600 hover:underline">Empresas…</button></span>
+                ) : u.is_superuser ? "Master"
+                : <span className="text-zinc-400">Sin membresía (huérfano)</span>}
+            </td>
             <td className="px-4 py-3">{u.membership?.party ?? "—"}</td>
             <td className="px-4 py-3">
               {u.is_locked
@@ -1071,12 +1106,20 @@ function UsuariosView() {
             <td className="px-4 py-3 text-right">
               <div className="flex items-center justify-end gap-1">
                 {u.is_locked && <Btn size="sm" onClick={() => unlock(u.id)}>Desbloquear</Btn>}
-                <Btn size="sm" variant="ghost" onClick={() => resetPwd(u)}>Restablecer contraseña</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => resetPwd(u)}>Cambiar contraseña</Btn>
+                {!soyYo && (
+                  <button onClick={() => eliminar(u)} title="Eliminar usuario"
+                    className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+                )}
               </div>
             </td>
           </tr>
-        ))}
+          );
+        })}
       </Table>
+      {scopeFor && <MasterScopeModal user={scopeFor} tenants={tenants.data}
+        onClose={() => setScopeFor(null)}
+        onSaved={async () => { setScopeFor(null); await reload(); }} />}
       <Card className="mt-6 max-w-xl p-5">
         <h3 className="mb-3 font-semibold">Nuevo usuario</h3>
         <div className="grid grid-cols-2 gap-2">
@@ -1121,6 +1164,42 @@ function UsuariosView() {
         <div className="mt-3"><Btn onClick={create}><Plus size={15} className="-mt-0.5 mr-1 inline" />{esMaster ? "Crear usuario master" : "Crear usuario"}</Btn></div>
       </Card>
     </div>
+  );
+}
+
+/* ==== Empresas asignadas de un master limitado (edición) ==== */
+function MasterScopeModal({ user, tenants, onClose, onSaved }: {
+  user: MasterUserRow; tenants: MasterTenant[]; onClose: () => void; onSaved: () => void;
+}) {
+  const [sel, setSel] = useState<number[]>(user.master_scope?.tenants.map((t) => t.id) ?? []);
+  const [err, setErr] = useState(""); const [saving, setSaving] = useState(false);
+  const toggle = (id: number) =>
+    setSel((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  async function save() {
+    if (!sel.length) { setErr("Asigna al menos una empresa al master limitado."); return; }
+    setErr(""); setSaving(true);
+    try { await api.masterSetScope(user.id, sel); onSaved(); }
+    catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title={`Empresas asignadas — ${user.username}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">
+        Este master limitado solo podrá VER y ABRIR las empresas marcadas.
+      </p>
+      <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 p-2">
+        {tenants.map((t) => (
+          <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-zinc-50">
+            <input type="checkbox" checked={sel.includes(t.id)} onChange={() => toggle(t.id)} />
+            <span>{t.name}</span>
+          </label>
+        ))}
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Btn>
+      </div>
+    </Modal>
   );
 }
 

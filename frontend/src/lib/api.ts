@@ -598,10 +598,16 @@ export const api = {
     req("/master/users/", { method: "POST", body: JSON.stringify(payload) }),
   masterUnlockUser: (id: number) =>
     req(`/master/users/${id}/unlock/`, { method: "POST" }),
-  // Restablece la contraseña de un usuario de cualquier empresa: se genera una
-  // temporal y el usuario deberá cambiarla en su próximo ingreso.
-  masterResetPassword: (id: number) =>
-    req(`/master/users/${id}/set_password/`, { method: "POST", body: JSON.stringify({}) }),
+  // Restablece la contraseña de un usuario de cualquier empresa: sin password
+  // se genera una temporal; en ambos casos deberá cambiarla al ingresar.
+  masterResetPassword: (id: number, password?: string) =>
+    req(`/master/users/${id}/set_password/`, { method: "POST", body: JSON.stringify(password ? { password } : {}) }),
+  masterDeleteUser: (id: number) =>
+    req(`/master/users/${id}/`, { method: "DELETE" }),
+  masterSetRole: (id: number, role: string) =>
+    req(`/master/users/${id}/set-role/`, { method: "POST", body: JSON.stringify({ role }) }),
+  masterSetScope: (id: number, scope_tenants: number[]) =>
+    req(`/master/users/${id}/set-scope/`, { method: "POST", body: JSON.stringify({ scope_tenants }) }),
 };
 
 export type LicenseInfo = {
