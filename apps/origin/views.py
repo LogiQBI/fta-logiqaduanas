@@ -468,19 +468,29 @@ class ProductViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get", "post"], url_path="origin-docs")
     def origin_docs(self, request, pk=None):
-        """Certificados de origen (PDF) que la EMPRESA ya tiene de este insumo,
-        subidos sin pasar por el portal del proveedor.
-        GET: lista. POST: {filename, data_b64, content_type?, supplier?, treaty?,
-        valid_from?, valid_to?, notes?, register_declaration?, is_originating?,
-        country_of_origin?}. Con register_declaration=true además registra la
-        declaración de origen (requiere tratado, vigencia y proveedor) para que
-        el cálculo de origen la tome como si la hubiera respondido el proveedor."""
+        """Expediente de certificados (PDF) que la EMPRESA ya tiene de este
+        insumo: certificados de ORIGEN y de MOLINO, organizados por año de
+        expediente (histórico al menos anual por número de parte).
+        GET: lista (filtros opcionales ?doc_type=origin|mill y ?year=2026).
+        POST: {filename, data_b64, doc_type?, period_year?, content_type?,
+        supplier?, treaty?, valid_from?, valid_to?, notes?,
+        register_declaration?, is_originating?, country_of_origin?}.
+        Con register_declaration=true (solo certificados de ORIGEN) además
+        registra la declaración de origen (requiere tratado, vigencia y
+        proveedor) para que el cálculo de origen la tome como si la hubiera
+        respondido el proveedor."""
         m = self.membership()
         if not m or m.is_supplier:
             raise PermissionDenied("Solo usuarios de empresa pueden gestionar estos documentos.")
         product = self.get_object()
         if request.method == "GET":
             docs = product.origin_documents.select_related("supplier", "treaty", "uploaded_by")
+            doc_type = (request.query_params.get("doc_type") or "").strip()
+            if doc_type in ProductOriginDocument.DocType.values:
+                docs = docs.filter(doc_type=doc_type)
+            year = (request.query_params.get("year") or "").strip()
+            if year.isdigit():
+                docs = docs.filter(period_year=int(year))
             rows = s.ProductOriginDocumentSerializer(docs, many=True).data
             # Mismo formato paginado que el resto de la API (el front usa useList).
             return Response({"results": rows, "count": len(rows)})
@@ -510,8 +520,32 @@ class ProductViewSet(TenantScopedViewSet):
         valid_from = request.data.get("valid_from") or None
         valid_to = request.data.get("valid_to") or None
 
+        doc_type = (request.data.get("doc_type") or ProductOriginDocument.DocType.ORIGIN)
+        if doc_type not in ProductOriginDocument.DocType.values:
+            return Response({"error": "Tipo de documento inválido (origin o mill)."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Año del expediente: explícito > inicio de vigencia > año actual.
+        from datetime import date
+        period_year = request.data.get("period_year")
+        try:
+            period_year = int(period_year) if period_year not in (None, "") else None
+        except (TypeError, ValueError):
+            period_year = None
+        if period_year is None:
+            period_year = int(str(valid_from)[:4]) if valid_from else date.today().year
+        if not (2000 <= period_year <= 2100):
+            return Response({"error": "Año del expediente inválido."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
         declaration = None
         if request.data.get("register_declaration"):
+            if doc_type == ProductOriginDocument.DocType.MILL:
+                return Response(
+                    {"error": "Un certificado de molino no registra declaración de "
+                              "origen: soporta el país de fabricación de la materia "
+                              "prima, no su carácter originario."},
+                    status=status.HTTP_400_BAD_REQUEST)
             faltan = []
             if not treaty:
                 faltan.append("tratado")
@@ -533,6 +567,7 @@ class ProductViewSet(TenantScopedViewSet):
         doc = ProductOriginDocument.objects.create(
             tenant=m.tenant, product=product, supplier=supplier, treaty=treaty,
             declaration=declaration, filename=filename,
+            doc_type=doc_type, period_year=period_year,
             content_type=(request.data.get("content_type") or "application/pdf")[:120],
             size=size, data_b64=data_b64, valid_from=valid_from, valid_to=valid_to,
             notes=(request.data.get("notes") or "")[:255], uploaded_by=request.user)

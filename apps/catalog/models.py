@@ -370,12 +370,26 @@ class SupplierDeclaration(TenantOwnedModel):
 
 
 class ProductOriginDocument(TenantOwnedModel):
-    """Certificado/evidencia de origen (PDF) que la EMPRESA ya tiene de un
-    insumo y sube directamente, sin pasar por el portal del proveedor. El
-    contenido vive en BD (base64) porque el disco del contenedor es efímero."""
+    """Certificado/evidencia (PDF) que la EMPRESA ya tiene de un insumo y sube
+    directamente, sin pasar por el portal del proveedor: certificados de ORIGEN
+    y certificados de MOLINO (mill test certificates). Cada documento pertenece
+    a un AÑO de expediente, para poder resguardar el histórico al menos
+    anualmente por número de parte. El contenido vive en BD (base64) porque el
+    disco del contenedor es efímero."""
+
+    class DocType(models.TextChoices):
+        ORIGIN = "origin", "Certificado de origen"
+        MILL = "mill", "Certificado de molino"
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE,
                                 related_name="origin_documents")
+    doc_type = models.CharField("Tipo de documento", max_length=10,
+                                choices=DocType.choices, default=DocType.ORIGIN)
+    # Año del expediente al que corresponde el certificado (histórico anual).
+    period_year = models.PositiveSmallIntegerField(
+        "Año del expediente", null=True, blank=True,
+        help_text="Año del histórico al que corresponde el certificado. Si se "
+                  "omite, se toma del inicio de vigencia o de la fecha de subida.")
     supplier = models.ForeignKey(Party, null=True, blank=True, on_delete=models.SET_NULL,
                                  related_name="origin_documents")
     treaty = models.ForeignKey("treaties.Treaty", null=True, blank=True,

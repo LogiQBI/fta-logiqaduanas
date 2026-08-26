@@ -419,6 +419,22 @@ export const EN: Record<string, string> = {
   "Buscar por núm. de parte o proveedor…": "Search by part number or supplier…",
   "Filtrar productos…": "Filter products…",
   "Certificados de origen (PDF) de este insumo": "Certificates of origin (PDF) for this material",
+  "Expediente de certificados (origen y molino, PDF) de este insumo":
+    "Certificate file (origin and mill, PDF) for this material",
+  "Tipo de documento": "Document type",
+  "Año del expediente": "File year",
+  "Certificado de origen": "Certificate of origin",
+  "Certificado de molino (mill test)": "Mill test certificate",
+  "Molino": "Mill",
+  "origen ·": "origin ·",
+  "molino": "mill",
+  "Histórico (PDF)": "History (PDF)",
+  "Genera el PDF del histórico anual de certificados de este insumo":
+    "Generates the PDF of this material's annual certificate history",
+  "Indica el año del expediente (ej. 2026).": "Enter the file year (e.g. 2026).",
+  "Folio, colada/lote, observaciones…": "Reference No., heat/lot, remarks…",
+  "Permite las ventanas emergentes para generar el PDF del expediente.":
+    "Allow pop-up windows to generate the file history PDF.",
   "Ficha de tus productos: fracción (HS), costos, mano de obra y BOM. Para calificarlos ve a “Cálculo de origen”; para pedir origen a proveedores, a “Solicitudes”.": "Your product records: HS code, costs, labor and BOM. To qualify them go to “Origin calculation”; to request origin from suppliers, go to “Requests”.",
   "Lo que tus clientes te compran. Tú defines el país de origen; si una fracción es incorrecta, puedes sugerir la correcta.": "What your customers buy from you. You set the country of origin; if an HS code is wrong, you can suggest the correct one.",
   "Todavía no hay productos asignados a ti por tus clientes.": "No products have been assigned to you by your customers yet.",
@@ -1007,6 +1023,8 @@ export const EN: Record<string, string> = {
 /* Mensajes con partes dinámicas (folios, nombres, números): regex → reemplazo.
  * Se evalúan en orden; la primera que haga match gana. */
 export const EN_PATTERNS: [RegExp, string][] = [
+  [/^Expediente (\d{4})$/, "File year $1"],
+  [/^Origen: (\d+) · Molino: (\d+)$/, "Origin: $1 · Mill: $2"],
   [/^Bienvenido, (.+)\.$/, "Welcome, $1."],
   [/^Hola (.+)\.$/, "Hi $1."],
   [/^Usuario “(.+)” creado\.$/, "User “$1” created."],

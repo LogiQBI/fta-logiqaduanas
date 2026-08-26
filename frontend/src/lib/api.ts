@@ -200,6 +200,7 @@ export type Treaty = { id: number; code: string; name: string };
 export type ProductOriginDoc = {
   id: number; product: number; supplier: number | null; supplier_name?: string | null;
   treaty: number | null; treaty_code?: string | null; filename: string;
+  doc_type: "origin" | "mill"; doc_type_display?: string; period_year: number | null;
   content_type: string; size: number; valid_from: string | null; valid_to: string | null;
   notes: string; uploaded_by_name?: string | null; has_declaration: boolean; created_at: string;
 };

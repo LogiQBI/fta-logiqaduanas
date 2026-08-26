@@ -116,11 +116,12 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class ProductOriginDocumentSerializer(serializers.ModelSerializer):
-    """Metadatos del certificado de origen subido por la empresa (sin el
-    contenido base64: ese solo viaja en la descarga)."""
+    """Metadatos del certificado (origen o molino) subido por la empresa (sin
+    el contenido base64: ese solo viaja en la descarga)."""
     supplier_name = serializers.CharField(source="supplier.name", read_only=True, default=None)
     treaty_code = serializers.CharField(source="treaty.code", read_only=True, default=None)
     uploaded_by_name = serializers.CharField(source="uploaded_by.username", read_only=True, default=None)
+    doc_type_display = serializers.CharField(source="get_doc_type_display", read_only=True)
     has_declaration = serializers.SerializerMethodField()
 
     def get_has_declaration(self, obj):
@@ -129,6 +130,7 @@ class ProductOriginDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductOriginDocument
         fields = ["id", "product", "supplier", "supplier_name", "treaty", "treaty_code",
+                  "doc_type", "doc_type_display", "period_year",
                   "filename", "content_type", "size", "valid_from", "valid_to",
                   "notes", "uploaded_by_name", "has_declaration", "created_at"]
 

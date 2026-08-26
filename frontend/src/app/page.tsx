@@ -3538,7 +3538,7 @@ function InsumosView() {
               {p.kind !== "material" && (
                 <span className="mr-2 inline-block"><Btn size="sm" variant="ghost" onClick={() => setBomFor(p)}>BOM</Btn></span>
               )}
-              <button onClick={() => setDocsFor(p)} title="Certificados de origen (PDF) de este insumo"
+              <button onClick={() => setDocsFor(p)} title="Expediente de certificados (origen y molino, PDF) de este insumo"
                 className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600"><FileText size={15} /></button>
               <button onClick={() => setEditing(p)} title="Editar"
                 className="mr-1 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-blue-600"><Pencil size={15} /></button>
@@ -3692,7 +3692,12 @@ function InsumoForm({ insumo, suppliers, onClose, onSaved }: {
     </Modal>
   );
 }
-/* ==== Certificados de origen (PDF) que la empresa ya tiene de un insumo ==== */
+/* ==== Expediente de certificados (origen y molino, PDF) de un insumo ====
+   Histórico al menos ANUAL por número de parte: cada certificado pertenece a
+   un año de expediente y el sistema muestra la cobertura año por año. */
+const docYear = (d: ProductOriginDoc) =>
+  d.period_year ?? Number((d.valid_from ?? d.created_at).slice(0, 4));
+
 function OriginDocsModal({ product, suppliers, onClose }: {
   product: Product; suppliers: Party[]; onClose: () => void;
 }) {
@@ -3700,16 +3705,21 @@ function OriginDocsModal({ product, suppliers, onClose }: {
   const treaties = useList<Treaty>(() => api.treaties());
   const fileInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const currentYear = new Date().getFullYear();
   const [f, setF] = useState({
+    doc_type: "origin" as "origin" | "mill", period_year: String(currentYear),
     supplier: (product.supplier ?? "") as number | "", treaty: "" as number | "",
     valid_from: "", valid_to: "", notes: "",
     register: false, is_originating: true, country: product.country_of_origin ?? "",
   });
   const set = (k: keyof typeof f, v: string | number | boolean) => setF({ ...f, [k]: v });
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const esMill = f.doc_type === "mill";
   async function subir() {
     if (!file) { setErr("Elige el archivo PDF del certificado."); return; }
     if (file.size > 10_000_000) { setErr("El archivo es muy grande (máximo ~10 MB)."); return; }
+    const yr = Number(f.period_year);
+    if (!yr || yr < 2000 || yr > 2100) { setErr("Indica el año del expediente (ej. 2026)."); return; }
     setErr(""); setBusy(true);
     try {
       const b64 = await new Promise<string>((res, rej) => {
@@ -3719,10 +3729,11 @@ function OriginDocsModal({ product, suppliers, onClose }: {
       });
       await api.uploadProductOriginDoc(product.id, {
         filename: file.name, content_type: file.type || "application/pdf", data_b64: b64,
+        doc_type: f.doc_type, period_year: yr,
         supplier: f.supplier === "" ? null : f.supplier,
-        treaty: f.treaty === "" ? null : f.treaty,
+        treaty: esMill || f.treaty === "" ? null : f.treaty,
         valid_from: f.valid_from || null, valid_to: f.valid_to || null,
-        notes: f.notes, register_declaration: f.register,
+        notes: f.notes, register_declaration: esMill ? false : f.register,
         is_originating: f.is_originating, country_of_origin: f.country,
       });
       setFile(null); if (fileInput.current) fileInput.current.value = "";
@@ -3736,37 +3747,84 @@ function OriginDocsModal({ product, suppliers, onClose }: {
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   const kb = (n: number) => n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`;
+
+  // Agrupación por año de expediente (descendente) + cobertura anual.
+  const years = [...new Set(docs.data.map(docYear))].sort((a, b) => b - a);
+  const minYear = years.length ? Math.min(...years) : currentYear;
+  const cobertura: { year: number; origin: number; mill: number }[] = [];
+  for (let y = currentYear; y >= minYear; y--) {
+    const delAno = docs.data.filter((d) => docYear(d) === y);
+    cobertura.push({
+      year: y,
+      origin: delAno.filter((d) => d.doc_type !== "mill").length,
+      mill: delAno.filter((d) => d.doc_type === "mill").length,
+    });
+  }
+  const tipoBadge = (d: ProductOriginDoc) => d.doc_type === "mill"
+    ? <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">Molino</span>
+    : <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-700">Origen</span>;
+
   return (
-    <Modal title={`Certificados de origen — ${product.sku}`} onClose={onClose}>
-      <p className="mb-4 text-sm text-zinc-500">
-        Si ya tienes el <strong>certificado de origen en PDF</strong> de este insumo (te lo dio tu
-        proveedor por fuera), súbelo aquí directamente: no hace falta que el proveedor entre a su
-        portal. Queda guardado como evidencia del expediente.
+    <Modal title={`Expediente de certificados — ${product.sku}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-zinc-500">
+        Resguarda aquí los <strong>certificados de origen</strong> y los <strong>certificados de
+        molino</strong> (mill test certificates) en PDF de este insumo. Cada certificado se archiva
+        en su <strong>año de expediente</strong>, para conservar el histórico al menos anual por
+        número de parte (auditorías de origen).
       </p>
+      {docs.data.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {cobertura.map((c) => (
+            <span key={c.year} title={tr(`Origen: ${c.origin} · Molino: ${c.mill}`)}
+              className={cx("rounded-lg border px-2 py-1 text-[11px] font-medium",
+                c.origin && c.mill ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : c.origin || c.mill ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-red-200 bg-red-50 text-red-600")}>
+              {c.year}: {c.origin ? "✓" : "✗"} origen · {c.mill ? "✓" : "✗"} molino
+            </span>
+          ))}
+        </div>
+      )}
       <div className="mb-4 overflow-hidden rounded-lg border border-zinc-200">
         {docs.data.length === 0 && <div className="px-3 py-4 text-center text-sm text-zinc-400">Aún no hay certificados subidos para este insumo.</div>}
-        {docs.data.map((d) => (
-          <div key={d.id} className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 last:border-0">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <FileText size={14} className="shrink-0 text-emerald-600" />
-                <button onClick={() => api.downloadProductOriginDoc(product.id, d.id, d.filename)}
-                  className="truncate text-sm font-medium text-blue-700 hover:underline" title="Descargar">{d.filename}</button>
-                {d.has_declaration && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">con declaración</span>}
+        {years.map((y) => (
+          <div key={y}>
+            <div className="border-b border-zinc-100 bg-zinc-50 px-3 py-1.5 text-xs font-semibold text-zinc-600">{tr(`Expediente ${y}`)}</div>
+            {docs.data.filter((d) => docYear(d) === y).map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 last:border-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className={cx("shrink-0", d.doc_type === "mill" ? "text-amber-600" : "text-emerald-600")} />
+                    <button onClick={() => api.downloadProductOriginDoc(product.id, d.id, d.filename)}
+                      className="truncate text-sm font-medium text-blue-700 hover:underline" title="Descargar">{d.filename}</button>
+                    {tipoBadge(d)}
+                    {d.has_declaration && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">con declaración</span>}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400">
+                    {d.treaty_code ? `${treatyLabel(d.treaty_code)} · ` : ""}{d.supplier_name ? `${d.supplier_name} · ` : ""}
+                    {d.valid_from && d.valid_to ? `vigencia ${d.valid_from} → ${d.valid_to} · ` : ""}{kb(d.size)}
+                    {d.uploaded_by_name ? ` · subió ${d.uploaded_by_name}` : ""}{d.notes ? ` · ${d.notes}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => borrar(d)} disabled={busy} title="Eliminar"
+                  className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
               </div>
-              <div className="mt-0.5 text-[11px] text-zinc-400">
-                {d.treaty_code ? `${treatyLabel(d.treaty_code)} · ` : ""}{d.supplier_name ? `${d.supplier_name} · ` : ""}
-                {d.valid_from && d.valid_to ? `vigencia ${d.valid_from} → ${d.valid_to} · ` : ""}{kb(d.size)}
-                {d.uploaded_by_name ? ` · subió ${d.uploaded_by_name}` : ""}{d.notes ? ` · ${d.notes}` : ""}
-              </div>
-            </div>
-            <button onClick={() => borrar(d)} disabled={busy} title="Eliminar"
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={15} /></button>
+            ))}
           </div>
         ))}
       </div>
       <h4 className="mb-2 text-sm font-semibold text-zinc-800">Subir certificado</h4>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Tipo de documento">
+          <select value={f.doc_type} onChange={(e) => set("doc_type", e.target.value)} className={inputCls}>
+            <option value="origin">Certificado de origen</option>
+            <option value="mill">Certificado de molino (mill test)</option>
+          </select>
+        </Field>
+        <Field label="Año del expediente">
+          <input type="number" min={2000} max={2100} value={f.period_year}
+            onChange={(e) => set("period_year", e.target.value)} className={inputCls} placeholder={String(currentYear)} />
+        </Field>
         <div className="col-span-2">
           <Field label="Archivo (PDF)">
             <input ref={fileInput} type="file" accept=".pdf,application/pdf,image/*"
@@ -3780,12 +3838,14 @@ function OriginDocsModal({ product, suppliers, onClose }: {
             {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}{sp.code ? ` (${sp.code})` : ""}</option>)}
           </select>
         </Field>
-        <Field label="Tratado que ampara">
-          <select value={f.treaty} onChange={(e) => set("treaty", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
-            <option value="">— Sin especificar —</option>
-            {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
-          </select>
-        </Field>
+        {!esMill && (
+          <Field label="Tratado que ampara">
+            <select value={f.treaty} onChange={(e) => set("treaty", e.target.value === "" ? "" : Number(e.target.value))} className={inputCls}>
+              <option value="">— Sin especificar —</option>
+              {treaties.data.map((t) => <option key={t.id} value={t.id}>{treatyLabel(t.code)}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Vigente desde">
           <input type="date" value={f.valid_from} onChange={(e) => set("valid_from", e.target.value)} className={inputCls} />
         </Field>
@@ -3794,19 +3854,27 @@ function OriginDocsModal({ product, suppliers, onClose }: {
         </Field>
         <div className="col-span-2">
           <Field label="Notas (opcional)">
-            <input value={f.notes} onChange={(e) => set("notes", e.target.value)} className={inputCls} placeholder="Folio, observaciones…" />
+            <input value={f.notes} onChange={(e) => set("notes", e.target.value)} className={inputCls} placeholder="Folio, colada/lote, observaciones…" />
           </Field>
         </div>
       </div>
-      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
-        <input type="checkbox" checked={f.register} onChange={(e) => set("register", e.target.checked)} className="mt-0.5" />
-        <span>
-          <strong>Registrar también la declaración de origen</strong> con este certificado como
-          respaldo, para que el <strong>cálculo de origen</strong> la tome en cuenta (igual que si
-          el proveedor la hubiera respondido). Requiere tratado, vigencia y proveedor.
-        </span>
-      </label>
-      {f.register && (
+      {esMill ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          El certificado de molino soporta el <strong>país de fabricación de la materia prima</strong> (molino
+          productor, grado, colada). No registra declaración de origen: el material importado se sigue
+          tratando como no originario en el cálculo.
+        </p>
+      ) : (
+        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
+          <input type="checkbox" checked={f.register} onChange={(e) => set("register", e.target.checked)} className="mt-0.5" />
+          <span>
+            <strong>Registrar también la declaración de origen</strong> con este certificado como
+            respaldo, para que el <strong>cálculo de origen</strong> la tome en cuenta (igual que si
+            el proveedor la hubiera respondido). Requiere tratado, vigencia y proveedor.
+          </span>
+        </label>
+      )}
+      {!esMill && f.register && (
         <div className="mt-2 grid grid-cols-2 gap-3">
           <Field label="¿El insumo es originario?">
             <select value={f.is_originating ? "1" : "0"} onChange={(e) => set("is_originating", e.target.value === "1")} className={inputCls}>
@@ -3821,12 +3889,127 @@ function OriginDocsModal({ product, suppliers, onClose }: {
         </div>
       )}
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-      <div className="mt-5 flex justify-end gap-2">
-        <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
-        <Btn onClick={subir} disabled={busy || !file}><Upload size={15} className="-mt-0.5 mr-1 inline" />{busy ? "Subiendo…" : "Subir certificado"}</Btn>
+      <div className="mt-5 flex justify-between gap-2">
+        <span title={tr("Genera el PDF del histórico anual de certificados de este insumo")}>
+          <Btn variant="ghost" onClick={() => generarExpedientePDF(product, docs.data)} disabled={docs.data.length === 0}>
+            <FileText size={15} className="-mt-0.5 mr-1 inline" />Histórico (PDF)
+          </Btn>
+        </span>
+        <div className="flex gap-2">
+          <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+          <Btn onClick={subir} disabled={busy || !file}><Upload size={15} className="-mt-0.5 mr-1 inline" />{busy ? "Subiendo…" : "Subir certificado"}</Btn>
+        </div>
       </div>
     </Modal>
   );
+}
+
+/* PDF del histórico ANUAL de certificados (origen + molino) de un insumo.
+   Mismo patrón que el PDF de análisis: HTML en ventana emergente + imprimir. */
+async function generarExpedientePDF(product: Product, docs: ProductOriginDoc[]) {
+  const en = getAppLang() === "en";
+  const locale = en ? "en-US" : "es-MX";
+  const esc = (v?: unknown) =>
+    String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const company = await api.companyProfile().catch(() => null);
+  const fecha = new Date().toLocaleString(locale,
+    { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const folio = `FTA-EXP-${product.id}-${new Date().getFullYear()}`;
+  const kb = (n: number) => n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`;
+
+  const currentYear = new Date().getFullYear();
+  const years = [...new Set(docs.map(docYear))].sort((a, b) => b - a);
+  const minYear = years.length ? Math.min(...years) : currentYear;
+
+  // Resumen de cobertura anual (¿hay certificado de origen y de molino cada año?).
+  let coverRows = "";
+  for (let y = currentYear; y >= minYear; y--) {
+    const delAno = docs.filter((d) => docYear(d) === y);
+    const nOrigin = delAno.filter((d) => d.doc_type !== "mill").length;
+    const nMill = delAno.filter((d) => d.doc_type === "mill").length;
+    const completo = nOrigin > 0 && nMill > 0;
+    const parcial = nOrigin > 0 || nMill > 0;
+    const estado = completo
+      ? `<span class="g">${en ? "COMPLETE" : "COMPLETO"}</span>`
+      : parcial
+        ? `<span class="w">${en ? "PARTIAL" : "PARCIAL"}</span>`
+        : `<span class="r">${en ? "NO CERTIFICATES" : "SIN CERTIFICADOS"}</span>`;
+    coverRows += `<tr><td class="num"><b>${y}</b></td><td class="num">${nOrigin}</td><td class="num">${nMill}</td><td>${estado}</td></tr>`;
+  }
+
+  const tipoLabel = (d: ProductOriginDoc) => d.doc_type === "mill"
+    ? (en ? "Mill certificate" : "Certificado de molino")
+    : (en ? "Certificate of origin" : "Certificado de origen");
+  const detailBlocks = years.map((y) => {
+    const rows = docs.filter((d) => docYear(d) === y).map((d) => `<tr>
+      <td>${esc(tipoLabel(d))}</td>
+      <td><b>${esc(d.filename)}</b>${d.notes ? `<br><span class="muted">${esc(d.notes)}</span>` : ""}</td>
+      <td>${esc(d.supplier_name || "—")}</td>
+      <td>${d.treaty_code ? esc(treatyLabel(d.treaty_code)) : "—"}</td>
+      <td>${d.valid_from && d.valid_to ? `${esc(d.valid_from)} → ${esc(d.valid_to)}` : "—"}</td>
+      <td>${esc(new Date(d.created_at).toLocaleDateString(locale))}${d.uploaded_by_name ? `<br><span class="muted">${esc(d.uploaded_by_name)}</span>` : ""}</td>
+      <td class="num">${kb(d.size)}</td>
+    </tr>`).join("");
+    return `<div class="section">${en ? "File year" : "Expediente"} ${y}</div>
+    <table><thead><tr><th>${en ? "Type" : "Tipo"}</th><th>${en ? "File" : "Archivo"}</th><th>${en ? "Issued by" : "Emitió"}</th><th>${en ? "Agreement" : "Tratado"}</th><th>${en ? "Validity" : "Vigencia"}</th><th>${en ? "Uploaded" : "Subido"}</th><th class="num">${en ? "Size" : "Tamaño"}</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  }).join("");
+
+  const html = `<!doctype html><html lang="${en ? "en" : "es"}"><head><meta charset="utf-8">
+<title>${en ? "Certificate file history" : "Histórico de certificados"} ${esc(product.sku)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;margin:0;padding:32px;font-size:12.5px;line-height:1.45}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${NAVY};padding-bottom:12px;margin-bottom:16px}
+  .brand{font-size:19px;font-weight:bold;color:${NAVY}} .sub{color:#6b7280;font-size:11px}
+  h1{font-size:15px;color:${NAVY};margin:0 0 2px}
+  .meta{margin:6px 0 14px} .meta b{color:#111827}
+  .section{font-size:12.5px;font-weight:bold;color:${NAVY};margin:18px 0 6px;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #e5e7eb;padding-bottom:3px}
+  table{width:100%;border-collapse:collapse;margin:6px 0 8px} th,td{border:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;text-align:left;font-size:11px}
+  th{background:${NAVY};color:#fff} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .muted{color:#6b7280;font-size:10.5px} .g{color:#15803d;font-weight:bold} .r{color:#b91c1c;font-weight:bold} .w{color:#92400e;font-weight:bold}
+  .legal{margin-top:24px;font-size:10.5px;color:#6b7280;line-height:1.5;border-top:1px solid #e5e7eb;padding-top:10px}
+  @media print{.noprint{display:none} body{padding:16px}}
+</style></head><body>
+  <div class="head">
+    <div>${company?.logo_png
+      ? `<img src="${company.logo_png}" alt="${esc(company.legal_name || "")}" style="max-height:60px;max-width:240px;object-fit:contain"/>`
+      : `<div class="brand">${esc(company?.legal_name || "")}</div>`}
+      ${company?.legal_name ? `<div class="sub">${esc(company.legal_name)}</div>` : ""}
+    </div>
+    <div style="text-align:right"><h1>${en ? "Annual Certificate File History" : "Histórico Anual de Certificados del Insumo"}</h1>
+      <div class="sub">${en ? "Document No." : "Folio"}: ${esc(folio)}</div>
+      <div class="sub">${en ? "Generated" : "Generado"}: ${esc(fecha)}</div></div>
+  </div>
+  <div class="meta">
+    <div><b>${en ? "Material / part number" : "Insumo / número de parte"}:</b> ${esc(product.sku)} — ${esc(product.description)}</div>
+    <div><b>${en ? "HS tariff code" : "Fracción arancelaria (HS)"}:</b> ${esc(product.hs_code ? formatHs(product.hs_code) : "—")}</div>
+    <div><b>${en ? "Documents on file" : "Documentos en expediente"}:</b> ${docs.length} · <b>${en ? "Coverage" : "Cobertura"}:</b> ${minYear}–${currentYear}</div>
+  </div>
+  <div class="section">${en ? "1. Annual coverage summary" : "1. Resumen de cobertura anual"}</div>
+  <table><thead><tr><th class="num">${en ? "Year" : "Año"}</th><th class="num">${en ? "Certificates of origin" : "Certificados de origen"}</th><th class="num">${en ? "Mill certificates" : "Certificados de molino"}</th><th>${en ? "Status" : "Estado"}</th></tr></thead>
+  <tbody>${coverRows}</tbody></table>
+  <p class="muted">${en
+    ? "“COMPLETE” = the year has at least one certificate of origin and one mill certificate on file for this part number."
+    : "“COMPLETO” = el año tiene en expediente al menos un certificado de origen y un certificado de molino de este número de parte."}</p>
+  ${detailBlocks}
+  <div class="legal">
+    ${en
+      ? `Document generated by <b>LogiQ Aduanas | FTA</b> on ${esc(fecha)}. It lists the certificates of origin and
+    mill test certificates safeguarded in the system for part number <b>${esc(product.sku)}</b>, organized by file
+    year. The PDF files themselves are stored in the system and can be downloaded individually at any time.
+    Keep this file for the applicable retention periods (minimum 5 years, USMCA).`
+      : `Documento generado por <b>LogiQ Aduanas | FTA</b> el ${esc(fecha)}. Relaciona los certificados de origen y
+    certificados de molino resguardados en el sistema para el número de parte <b>${esc(product.sku)}</b>, organizados
+    por año de expediente. Los archivos PDF están almacenados en el sistema y pueden descargarse individualmente en
+    cualquier momento. Conserve este expediente conforme a los plazos de retención aplicables (mínimo 5 años, T-MEC).`}
+  </div>
+  <div class="noprint" style="margin-top:24px;text-align:center">
+    <button onclick="window.print()" style="background:${NAVY};color:#fff;border:0;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer">${en ? "Print / Save as PDF" : "Imprimir / Guardar PDF"}</button>
+  </div>
+</body></html>`;
+  const win = window.open("", "_blank", "width=900,height=1000");
+  if (!win) { alert(tr("Permite las ventanas emergentes para generar el PDF del expediente.")); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 function CalificacionesView() {
   const { data, count } = useList<Qualification & { product: number }>(() => api.qualifications());
